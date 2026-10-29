@@ -2407,6 +2407,49 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     .color(th::text_dim()),
             );
 
+            ui.add_space(8.0);
+            let mut watching = app.settings.watch_enabled;
+            if ui
+                .checkbox(
+                    &mut watching,
+                    RichText::new("Watch scanned folders for new or changed files").size(11.5),
+                )
+                .on_hover_text(
+                    "New audio files are imported automatically and tag edits refresh existing \
+                     rows. Manual Scan still works.",
+                )
+                .changed()
+            {
+                app.set_watch_enabled(watching);
+            }
+            if app.settings.watch_folders.is_empty() {
+                ui.label(
+                    RichText::new("Scan a folder once to start watching it.")
+                        .size(10.0)
+                        .color(th::text_dim()),
+                );
+            } else {
+                let folders = app.settings.watch_folders.join("\n");
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!(
+                            "{} watched folder(s)",
+                            app.settings.watch_folders.len()
+                        ))
+                        .size(10.0)
+                        .color(th::text_dim()),
+                    )
+                    .on_hover_text(folders);
+                    if ui
+                        .small_button("Forget")
+                        .on_hover_text("Stop watching these folders")
+                        .clicked()
+                    {
+                        app.forget_watch_folders();
+                    }
+                });
+            }
+
             ui.add_space(10.0);
             ui.separator();
             ui.add_space(4.0);

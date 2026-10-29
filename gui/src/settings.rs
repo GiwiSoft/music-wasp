@@ -221,9 +221,19 @@ pub struct Settings {
     /// Show the play-queue panel on the right.
     #[serde(default = "default_queue_open")]
     pub queue_open: bool,
+    /// Watch scanned folders and import new or changed audio automatically.
+    #[serde(default = "default_watch_enabled")]
+    pub watch_enabled: bool,
+    /// Folders handed to the OS watcher. Added by a successful scan.
+    #[serde(default)]
+    pub watch_folders: Vec<String>,
     /// What the app looked and sounded like when it last closed.
     #[serde(default)]
     pub session: Session,
+}
+
+fn default_watch_enabled() -> bool {
+    true
 }
 
 /// The view that was open when the app last closed.
@@ -278,6 +288,8 @@ impl Default for Settings {
             skin: Skin::default(),
             folded: FoldedSections::default(),
             queue_open: default_queue_open(),
+            watch_enabled: default_watch_enabled(),
+            watch_folders: Vec::new(),
             session: Session::default(),
         }
     }
@@ -507,6 +519,8 @@ mod tests {
         let path = dir.path().join("settings.json");
 
         let settings = Settings {
+            watch_enabled: false,
+            watch_folders: vec!["/music".to_string()],
             session: Session {
                 view: SessionView::Playlist(7),
                 search: "radio".to_string(),
@@ -527,6 +541,8 @@ mod tests {
 
         let loaded = Settings::load(&path);
         assert_eq!(loaded.session, settings.session);
+        assert!(!loaded.watch_enabled);
+        assert_eq!(loaded.watch_folders, vec!["/music".to_string()]);
     }
 
     #[test]
@@ -559,5 +575,7 @@ mod tests {
         assert_eq!(loaded.skin, crate::theme::Skin::default());
         assert_eq!(loaded.shortcut(Action::PlayPause).unwrap().token(), "space");
         assert_eq!(loaded.session, Session::default());
+        assert!(loaded.watch_enabled);
+        assert!(loaded.watch_folders.is_empty());
     }
 }

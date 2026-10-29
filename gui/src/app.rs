@@ -4,8 +4,9 @@ use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
 use musicwasp_core::Playlist;
 use musicwasp_core::{Filter, Library, Player, SortKey, TagEdit, Track};
+use notify::Watcher as _;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -607,6 +608,13 @@ pub struct App {
     pub autotag: Option<AutoTagState>,
     pub show_hygiene: bool,
     pub hygiene: Option<HygieneState>,
+    /// OS watcher for scanned folders; `None` when disabled or idle.
+    watcher: Option<notify::RecommendedWatcher>,
+    watch_rx: Option<Receiver<PathBuf>>,
+    watch_pending: BTreeSet<PathBuf>,
+    watch_deadline: Option<std::time::Instant>,
+    watch_dirty: bool,
+    watched_folders: Vec<PathBuf>,
     dirty_browser: bool,
     dirty_tracks: bool,
 
@@ -714,6 +722,12 @@ impl App {
             autotag: None,
             show_hygiene: false,
             hygiene: None,
+            watcher: None,
+            watch_rx: None,
+            watch_pending: BTreeSet::new(),
+            watch_deadline: None,
+            watch_dirty: false,
+            watched_folders: Vec::new(),
             dirty_browser: true,
             dirty_tracks: true,
             settings,
@@ -741,6 +755,9 @@ impl App {
         app.refresh_brand_icon(&cc.egui_ctx);
         if let Some(player) = &app.player {
             player.set_equalizer(app.settings.equalizer);
+        }
+        if app.session_enabled {
+            app.restart_watcher(&cc.egui_ctx);
         }
         app
     }
@@ -1268,6 +1285,172 @@ impl App {
         }
     }
 
+    // ---- folder watching ----
+
+    /// Enable or disable automatic imports from the watched folders.
+    pub fn set_watch_enabled(&mut self, enabled: bool) {
+        if self.settings.watch_enabled == enabled {
+            return;
+        }
+        self.settings.watch_enabled = enabled;
+        self.watch_dirty = true;
+        self.persist_settings();
+    }
+
+    /// Stop watching every remembered folder.
+    pub fn forget_watch_folders(&mut self) {
+        if self.settings.watch_folders.is_empty() {
+            return;
+        }
+        self.settings.watch_folders.clear();
+        self.watch_dirty = true;
+        self.persist_settings();
+    }
+
+    /// Remember a folder the user scanned, so it is watched after a restart.
+    fn remember_watch_folder(&mut self, path: &Path) {
+        let folder = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if !folder.is_dir() {
+            return;
+        }
+        let entry = folder.to_string_lossy().to_string();
+        if self.settings.watch_folders.contains(&entry) {
+            return;
+        }
+        self.settings.watch_folders.push(entry);
+        self.persist_settings();
+        self.watch_dirty = true;
+    }
+
+    /// (Re)build the OS watcher. Dropping the old watcher stops its events.
+    fn restart_watcher(&mut self, ctx: &egui::Context) {
+        self.watcher = None;
+        self.watch_rx = None;
+        self.watch_pending.clear();
+        self.watch_deadline = None;
+        self.watched_folders.clear();
+
+        if !self.settings.watch_enabled || !self.session_enabled {
+            return;
+        }
+        let folders: Vec<PathBuf> = self
+            .settings
+            .watch_folders
+            .iter()
+            .map(PathBuf::from)
+            .filter(|path| path.is_dir())
+            .collect();
+        if folders.is_empty() {
+            return;
+        }
+
+        let (tx, rx) = mpsc::channel::<PathBuf>();
+        let repaint = ctx.clone();
+        let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+            let Ok(event) = event else { return };
+            if !matches!(
+                event.kind,
+                notify::EventKind::Create(_)
+                    | notify::EventKind::Modify(_)
+                    | notify::EventKind::Any
+            ) {
+                return;
+            }
+            for path in event.paths {
+                if tx.send(path).is_err() {
+                    break;
+                }
+            }
+            repaint.request_repaint();
+        });
+
+        match watcher {
+            Ok(mut watcher) => {
+                let mut watched = Vec::new();
+                for folder in folders {
+                    match watcher.watch(&folder, notify::RecursiveMode::Recursive) {
+                        Ok(()) => watched.push(folder),
+                        Err(e) => {
+                            self.message =
+                                format!("watcher: cannot watch {}: {e}", folder.display());
+                        }
+                    }
+                }
+                self.watcher = Some(watcher);
+                self.watch_rx = Some(rx);
+                self.watched_folders = watched;
+            }
+            Err(e) => self.message = format!("watcher could not start: {e}"),
+        }
+    }
+
+    /// Drain watcher events and run a debounced batch once the filesystem has
+    /// settled. Metadata writes can emit several events for one file.
+    fn poll_watcher(&mut self, ctx: &egui::Context) {
+        if self.watch_rx.is_none() {
+            return;
+        }
+        let mut received = Vec::new();
+        let mut disconnected = false;
+        if let Some(rx) = &self.watch_rx {
+            loop {
+                match rx.try_recv() {
+                    Ok(path) => received.push(path),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if disconnected {
+            self.watch_rx = None;
+        }
+        if !received.is_empty() {
+            for path in received {
+                self.watch_pending.insert(path);
+            }
+            self.watch_deadline =
+                Some(std::time::Instant::now() + std::time::Duration::from_millis(700));
+        }
+        if let Some(deadline) = self.watch_deadline {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                self.watch_deadline = None;
+                self.apply_watched_paths();
+            } else {
+                ctx.request_repaint_after(deadline - now);
+            }
+        }
+    }
+
+    /// Import new files and refresh tags for modified ones. `import_paths`
+    /// upserts on the unique path, so repeated events never duplicate rows.
+    fn apply_watched_paths(&mut self) {
+        let pending = std::mem::take(&mut self.watch_pending);
+        if pending.is_empty() {
+            return;
+        }
+        let paths: Vec<PathBuf> = pending
+            .into_iter()
+            .filter(|path| {
+                path.is_dir() || (path.is_file() && musicwasp_core::library::is_audio_path(path))
+            })
+            .collect();
+        if paths.is_empty() {
+            return;
+        }
+        match self.lib.import_paths(&paths) {
+            Ok(indexed) if !indexed.is_empty() => {
+                self.mark_browser_dirty();
+                self.message = format!("watcher refreshed {} track(s)", indexed.len());
+            }
+            Ok(_) => {}
+            Err(e) => self.message = format!("watcher import failed: {e}"),
+        }
+    }
+
     // ---- playback ----
 
     fn play_loaded(&mut self) {
@@ -1764,6 +1947,11 @@ impl App {
                 return;
             }
         };
+        for path in &paths {
+            if path.is_dir() {
+                self.remember_watch_folder(path);
+            }
+        }
 
         let mut ids = Vec::new();
         for path in &indexed {
@@ -2205,6 +2393,7 @@ impl App {
         match self.lib.scan(&path, false) {
             Ok(n) => {
                 self.message = format!("indexed {n} tracks from {}", path.display());
+                self.remember_watch_folder(&path);
                 self.mark_browser_dirty();
             }
             Err(e) => self.message = format!("scan failed: {e}"),
@@ -2216,6 +2405,11 @@ impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
         self.capture_window(&ctx);
+        if self.watch_dirty {
+            self.restart_watcher(&ctx);
+            self.watch_dirty = false;
+        }
+        self.poll_watcher(&ctx);
         self.poll_autotag();
         self.handle_capture(&ctx);
         self.handle_shortcuts(&ctx);

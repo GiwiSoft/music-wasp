@@ -32,6 +32,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Skins | five palettes (MusicWasp Dark, Midnight, Forest, Mono, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
 | Settings | rebindable keyboard shortcuts with conflict detection, persisted to `settings.json` |
 | Library hygiene | find rows whose files vanished, detect duplicate artist/title/album groups, and remove entries from the library in bulk; audio files are never deleted |
+| Folder watching | scanned folders are watched with `notify`: new audio is imported automatically and external tag edits refresh existing rows; manual **Scan** still works |
 | Session restore | reopens the last view, search, selection, volume, play queue and window size/position; playback always starts stopped |
 | Portability | `MUSICWASP_DATA_DIR` for a portable library, data lives in the OS app-data dir by default |
 
@@ -135,6 +136,9 @@ entry uses the app icon.
     but the first in each group**) and confirm **Remove from library**. Only database entries are
     deleted: audio files stay on disk, and playlist entries disappear with the removed rows. Files
     can be re-imported at any time.
+16. A successful **Scan** also watches that folder. New audio files are imported automatically and
+    tag changes made in another editor refresh their library rows. Toggle watching in **Settings**.
+    Renames and deletions are not auto-pruned; **Library hygiene** reports those rows.
 
 ### Default shortcuts
 
