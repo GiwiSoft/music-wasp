@@ -33,6 +33,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Settings | tabbed panel: General (skins, folder watching), Keybindings, About; shortcuts persist to `settings.json` |
 | Library hygiene | find rows whose files vanished, detect duplicate artist/title/album groups, and remove entries from the library in bulk; audio files are never deleted |
 | Folder watching | scanned folders are watched with `notify`: new audio is imported automatically and external tag edits refresh existing rows; manual **Scan** still works |
+| Linux desktop | MPRIS2 service: desktop media keys, GNOME/KDE controls, lock screen, `playerctl` and Bluetooth headset buttons; publishes track, position, volume, shuffle and repeat |
 | Session restore | reopens the last view, search, selection, volume, play queue and window size/position; playback always starts stopped |
 | Portability | `MUSICWASP_DATA_DIR` for a portable library, data lives in the OS app-data dir by default |
 
@@ -41,7 +42,7 @@ AcoustID fingerprinting, file watching.
 
 ## Build
 
-Needs a stable Rust toolchain (`rustup`), version 1.75 or newer.
+Needs a stable Rust toolchain (`rustup`), version 1.85 or newer.
 
 ```bash
 # Linux (Debian/Ubuntu)
@@ -141,6 +142,10 @@ entry uses the app icon.
 16. A successful **Scan** also watches that folder. New audio files are imported automatically and
     tag changes made in another editor refresh their library rows. Toggle watching in **Settings**.
     Renames and deletions are not auto-pruned; **Library hygiene** reports those rows.
+17. On Linux, MusicWasp registers `org.mpris.MediaPlayer2.musicwasp` with the session bus. Desktop
+    media keys, GNOME/KDE media controls, the lock screen, `playerctl` and Bluetooth headset
+    buttons control playback; track, position, volume, shuffle and repeat are published. Try
+    `playerctl --player=musicwasp play-pause`.
 
 ### Default shortcuts
 

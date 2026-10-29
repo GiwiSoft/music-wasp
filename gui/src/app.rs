@@ -623,6 +623,11 @@ pub struct App {
     watch_deadline: Option<std::time::Instant>,
     watch_dirty: bool,
     watched_folders: Vec<PathBuf>,
+    /// Linux desktop integration (MPRIS2) and its last publish time.
+    #[cfg(target_os = "linux")]
+    mpris: Option<crate::mpris::MprisService>,
+    #[cfg(target_os = "linux")]
+    mpris_last: Option<std::time::Instant>,
     dirty_browser: bool,
     dirty_tracks: bool,
 
@@ -685,6 +690,12 @@ impl App {
         let volume = session.volume.unwrap_or(0.8).clamp(0.0, 1.5);
         let window_geometry = session.window;
         let anchor = session.selected.first().copied();
+        #[cfg(target_os = "linux")]
+        let mpris = if session_enabled {
+            crate::mpris::MprisService::start(cc.egui_ctx.clone())
+        } else {
+            None
+        };
 
         let mut app = Self {
             lib,
@@ -737,6 +748,10 @@ impl App {
             watch_deadline: None,
             watch_dirty: false,
             watched_folders: Vec::new(),
+            #[cfg(target_os = "linux")]
+            mpris,
+            #[cfg(target_os = "linux")]
+            mpris_last: None,
             dirty_browser: true,
             dirty_tracks: true,
             settings,
@@ -1458,6 +1473,146 @@ impl App {
             }
             Ok(_) => {}
             Err(e) => self.message = format!("watcher import failed: {e}"),
+        }
+    }
+
+    // ---- Linux desktop integration (MPRIS2) ----
+
+    /// Feed desktop controls with the current track, status and position.
+    #[cfg(target_os = "linux")]
+    fn publish_mpris(&mut self, ctx: &egui::Context) {
+        use crate::mpris::{IDLE_REFRESH, PLAYING_REFRESH};
+        use musicwasp_core::PlayerStatus;
+
+        let Some(service) = &self.mpris else {
+            return;
+        };
+        let playing = self
+            .player
+            .as_ref()
+            .is_some_and(|player| player.snapshot().status == PlayerStatus::Playing);
+        let interval = if playing {
+            PLAYING_REFRESH
+        } else {
+            IDLE_REFRESH
+        };
+        // Wake up even when idle so asynchronous transitions (a pause command,
+        // end of track) reach MPRIS without waiting for the next input event.
+        ctx.request_repaint_after(interval);
+
+        let now = std::time::Instant::now();
+        if self
+            .mpris_last
+            .is_some_and(|last| now.duration_since(last) < interval)
+        {
+            return;
+        }
+        self.mpris_last = Some(now);
+
+        service.publish(self.mpris_snapshot());
+    }
+
+    #[cfg(target_os = "linux")]
+    fn mpris_snapshot(&self) -> crate::mpris::MprisSnapshot {
+        use crate::mpris::{LoopMode, MprisSnapshot, MprisStatus};
+        use musicwasp_core::PlayerStatus;
+
+        let current_id = self.queue_pos.and_then(|pos| self.queue.get(pos).copied());
+        let track = current_id
+            .and_then(|id| self.lib.tracks_by_ids(&[id]).ok())
+            .and_then(|mut tracks| tracks.pop());
+        let player = self.player.as_ref().map(|player| player.snapshot());
+        let status = match player.as_ref().map(|snapshot| snapshot.status) {
+            Some(PlayerStatus::Playing) => MprisStatus::Playing,
+            Some(PlayerStatus::Paused) => MprisStatus::Paused,
+            _ => MprisStatus::Stopped,
+        };
+        let duration = track
+            .as_ref()
+            .map(|track| track.duration_secs as f64)
+            .unwrap_or(0.0);
+        let can_next = self
+            .queue_pos
+            .is_some_and(|pos| pos + 1 < self.queue.len() || self.repeat != RepeatMode::Off);
+
+        MprisSnapshot {
+            status,
+            track_id: track.as_ref().map(|track| track.id),
+            title: track
+                .as_ref()
+                .map(|track| track.title.clone())
+                .unwrap_or_default(),
+            artist: track
+                .as_ref()
+                .map(|track| track.artist.clone())
+                .unwrap_or_default(),
+            album: track
+                .as_ref()
+                .map(|track| track.album.clone())
+                .unwrap_or_default(),
+            duration_secs: duration,
+            position_secs: player.as_ref().map_or(0.0, |snapshot| snapshot.position),
+            volume: self.volume,
+            can_next,
+            can_previous: self.queue_pos.is_some(),
+            shuffle: self.shuffle,
+            loop_mode: match self.repeat {
+                RepeatMode::Off => LoopMode::None,
+                RepeatMode::All => LoopMode::Playlist,
+                RepeatMode::One => LoopMode::Track,
+            },
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn poll_mpris(&mut self, ctx: &egui::Context) {
+        let mut commands = Vec::new();
+        if let Some(service) = &self.mpris {
+            while let Some(command) = service.try_recv() {
+                commands.push(command);
+            }
+        }
+        for command in commands {
+            self.apply_mpris_command(command, ctx);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn apply_mpris_command(&mut self, command: crate::mpris::MprisCommand, ctx: &egui::Context) {
+        use crate::mpris::{LoopMode, MprisCommand};
+        use musicwasp_core::PlayerStatus;
+
+        let playing = self
+            .player
+            .as_ref()
+            .is_some_and(|player| player.snapshot().status == PlayerStatus::Playing);
+        match command {
+            MprisCommand::Play if !playing => self.toggle_pause(),
+            MprisCommand::Pause if playing => self.toggle_pause(),
+            MprisCommand::PlayPause => self.toggle_pause(),
+            MprisCommand::Stop => self.stop(),
+            MprisCommand::Next => self.next_track(),
+            MprisCommand::Previous => self.prev_track(),
+            MprisCommand::Seek(delta) => self.seek_relative(delta),
+            MprisCommand::SetPosition(secs) => {
+                if let Some(player) = &self.player {
+                    player.seek(secs);
+                }
+            }
+            MprisCommand::SetVolume(volume) => {
+                self.volume = volume.clamp(0.0, 1.0);
+            }
+            MprisCommand::SetShuffle(shuffle) => self.shuffle = shuffle,
+            MprisCommand::SetLoop(mode) => {
+                self.repeat = match mode {
+                    LoopMode::None => RepeatMode::Off,
+                    LoopMode::Track => RepeatMode::One,
+                    LoopMode::Playlist => RepeatMode::All,
+                };
+            }
+            MprisCommand::Raise => ctx.send_viewport_cmd(egui::ViewportCommand::Focus),
+            MprisCommand::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            _ => {}
         }
     }
 
@@ -2431,6 +2586,8 @@ impl eframe::App for App {
             self.watch_dirty = false;
         }
         self.poll_watcher(&ctx);
+        #[cfg(target_os = "linux")]
+        self.poll_mpris(&ctx);
         self.poll_autotag();
         self.handle_capture(&ctx);
         self.handle_shortcuts(&ctx);
@@ -2495,6 +2652,9 @@ impl eframe::App for App {
                 ctx.request_repaint_after(std::time::Duration::from_millis(200));
             }
         }
+
+        #[cfg(target_os = "linux")]
+        self.publish_mpris(&ctx);
 
         self.persist_session(false);
     }

@@ -27,5 +27,9 @@ serde_json.workspace = true
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 notify = "6.1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+mpris-server = { version = "0.11", features = ["tokio"] }
+tokio = { version = "1", features = ["rt", "sync", "time", "net"] }
+
 [dev-dependencies]
 tempfile = "3"

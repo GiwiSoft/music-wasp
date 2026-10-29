@@ -1,6 +1,8 @@
 mod app;
 mod equalizer;
 mod icons;
+#[cfg(target_os = "linux")]
+mod mpris;
 mod settings;
 mod theme;
 mod ui;
