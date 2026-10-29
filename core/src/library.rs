@@ -67,6 +67,22 @@ impl Library {
         stats(&self.conn)
     }
 
+    /// Tracks whose files are no longer on disk.
+    pub fn missing_tracks(&self) -> Result<Vec<Track>> {
+        missing_tracks(&self.conn)
+    }
+
+    /// Groups of tracks sharing normalized artist, title and album.
+    pub fn duplicate_groups(&self) -> Result<Vec<Vec<Track>>> {
+        duplicate_groups(&self.conn)
+    }
+
+    /// Delete library rows only. Audio files stay on disk, and playlist entries
+    /// disappear through the `ON DELETE CASCADE` foreign keys.
+    pub fn remove_tracks(&self, ids: &[i64]) -> Result<usize> {
+        remove_tracks(&self.conn, ids)
+    }
+
     pub fn scan(&self, root: &Path, rescan: bool) -> Result<usize> {
         scan(&self.conn, root, rescan)
     }
@@ -329,6 +345,71 @@ pub fn list(conn: &Connection, text: Option<&str>) -> Result<Vec<Track>> {
         ..Default::default()
     };
     query(conn, &filter, SortKey::Artist, true)
+}
+
+/// Tracks whose files cannot be found at their indexed path.
+pub fn missing_tracks(conn: &Connection) -> Result<Vec<Track>> {
+    Ok(list(conn, None)?
+        .into_iter()
+        .filter(|track| !Path::new(&track.path).is_file())
+        .collect())
+}
+
+/// Delete library rows without touching the files. Returns the number removed.
+pub fn remove_tracks(conn: &Connection, ids: &[i64]) -> Result<usize> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let placeholders = vec!["?"; ids.len()].join(",");
+    let sql = format!("DELETE FROM tracks WHERE id IN ({placeholders})");
+    Ok(conn.execute(&sql, params_from_iter(ids.iter()))?)
+}
+
+/// Groups of tracks that look like the same recording: same artist, title and
+/// album after trimming, collapsing whitespace and ignoring case. Empty titles
+/// are skipped because they cannot be identified reliably.
+pub fn duplicate_groups(conn: &Connection) -> Result<Vec<Vec<Track>>> {
+    Ok(find_duplicate_groups(list(conn, None)?))
+}
+
+fn normalize_tag(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+pub fn find_duplicate_groups(tracks: Vec<Track>) -> Vec<Vec<Track>> {
+    use std::collections::BTreeMap;
+
+    let mut groups: BTreeMap<(String, String, String), Vec<Track>> = BTreeMap::new();
+    for track in tracks {
+        let title = normalize_tag(&track.title);
+        if title.is_empty() {
+            continue;
+        }
+        let key = (
+            normalize_tag(&track.artist),
+            title,
+            normalize_tag(&track.album),
+        );
+        groups.entry(key).or_default().push(track);
+    }
+
+    let mut out: Vec<Vec<Track>> = groups
+        .into_values()
+        .filter(|group| group.len() > 1)
+        .collect();
+    for group in &mut out {
+        group.sort_by(|a, b| a.path.cmp(&b.path));
+    }
+    out.sort_by(|a, b| {
+        let left = (&a[0].artist, &a[0].title, &a[0].album);
+        let right = (&b[0].artist, &b[0].title, &b[0].album);
+        left.cmp(&right)
+    });
+    out
 }
 
 fn distinct(

@@ -31,6 +31,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
 | Skins | five palettes (MusicWasp Dark, Midnight, Forest, Mono, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
 | Settings | rebindable keyboard shortcuts with conflict detection, persisted to `settings.json` |
+| Library hygiene | find rows whose files vanished, detect duplicate artist/title/album groups, and remove entries from the library in bulk; audio files are never deleted |
 | Session restore | reopens the last view, search, selection, volume, play queue and window size/position; playback always starts stopped |
 | Portability | `MUSICWASP_DATA_DIR` for a portable library, data lives in the OS app-data dir by default |
 
@@ -129,6 +130,11 @@ entry uses the app icon.
     window size/position. Playback always starts stopped, with no track loaded; press `Space` to
     play the current queue entry from the beginning. Session state is written every few seconds and
     again on exit.
+15. The broom button in the toolbar opens **Library hygiene**. It lists rows whose files are gone
+    and groups tracks that share artist/title/album. Tick rows (or use **Select all** / **Select all
+    but the first in each group**) and confirm **Remove from library**. Only database entries are
+    deleted: audio files stay on disk, and playlist entries disappear with the removed rows. Files
+    can be re-imported at any time.
 
 ### Default shortcuts
 
@@ -161,6 +167,10 @@ Smart playlists are rules, evaluated live:
 ![Smart playlist](docs/smart-playlist.png)
 
 ![Settings](docs/settings.png)
+
+Finding missing files and duplicate rows without touching the audio:
+
+![Library hygiene](docs/library-hygiene.png)
 
 Batch editing several tracks at once:
 
@@ -253,6 +263,7 @@ MUSICWASP_SCREENSHOT=/tmp/plain.png MUSICWASP_AUTOPLAY=1 MUSICWASP_PLAIN=1 cargo
 MUSICWASP_SCREENSHOT=/tmp/tags.png MUSICWASP_EDITOR=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/rename.png MUSICWASP_RENAME=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/eq.png MUSICWASP_EQ=1 cargo run -p musicwasp-gui
+MUSICWASP_SCREENSHOT=/tmp/hygiene.png MUSICWASP_HYGIENE=1 cargo run -p musicwasp-gui
 ```
 
 `MUSICWASP_DATA_DIR=/some/dir` isolates a test library from your real one.

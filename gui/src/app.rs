@@ -253,6 +253,17 @@ pub struct AutoTagState {
     pub tx: Sender<AutoTagMsg>,
 }
 
+/// Results of a library hygiene scan: rows whose files vanished, and groups of
+/// tracks that share the same artist/title/album.
+pub struct HygieneState {
+    pub missing: Vec<Track>,
+    pub duplicate_groups: Vec<Vec<Track>>,
+    pub selected: BTreeSet<i64>,
+    /// Ids awaiting confirmation before they are removed from the database.
+    pub pending: Option<Vec<i64>>,
+    pub status: Option<String>,
+}
+
 impl AutoTagState {
     pub fn new(artist: String, album: String) -> Self {
         let (tx, rx) = mpsc::channel();
@@ -445,6 +456,25 @@ fn restore_queue(
     (restored, restored_pos)
 }
 
+/// Drop queue entries for tracks removed from the library and keep the current
+/// entry selected. Returns the new index and whether the current entry went
+/// away.
+fn remove_tracks_from_queue(
+    queue: &mut Vec<i64>,
+    pos: Option<usize>,
+    removed: &BTreeSet<i64>,
+) -> (Option<usize>, bool) {
+    let current = pos.and_then(|pos| queue.get(pos).copied());
+    let current_removed = current.is_some_and(|id| removed.contains(&id));
+    queue.retain(|id| !removed.contains(id));
+    let new_pos = if current_removed {
+        None
+    } else {
+        current.and_then(|id| queue.iter().position(|queued| *queued == id))
+    };
+    (new_pos, current_removed)
+}
+
 /// Reorder an upcoming queue entry, dropping it before `to`. The playing entry
 /// and anything before it are left alone. Returns true when the order changed.
 fn queue_reorder(queue: &mut Vec<i64>, pos: Option<usize>, from: usize, to: usize) -> bool {
@@ -575,6 +605,8 @@ pub struct App {
     pub playlist_dialog: Option<String>,
     pub picker: Option<FolderPicker>,
     pub autotag: Option<AutoTagState>,
+    pub show_hygiene: bool,
+    pub hygiene: Option<HygieneState>,
     dirty_browser: bool,
     dirty_tracks: bool,
 
@@ -680,6 +712,8 @@ impl App {
             playlist_dialog: None,
             picker: None,
             autotag: None,
+            show_hygiene: false,
+            hygiene: None,
             dirty_browser: true,
             dirty_tracks: true,
             settings,
@@ -1143,6 +1177,95 @@ impl App {
 
     pub fn mark_tracks_dirty(&mut self) {
         self.dirty_tracks = true;
+    }
+
+    // ---- library hygiene ----
+
+    /// Open the maintenance window and rescan, so entries deleted outside the
+    /// app show up immediately.
+    pub fn open_hygiene(&mut self) {
+        self.show_hygiene = true;
+        self.scan_hygiene();
+    }
+
+    /// Collect missing files and duplicate groups. Selections that no longer
+    /// appear in either list are dropped.
+    pub fn scan_hygiene(&mut self) {
+        let missing = match self.lib.missing_tracks() {
+            Ok(tracks) => tracks,
+            Err(e) => {
+                self.message = format!("could not check for missing files: {e}");
+                Vec::new()
+            }
+        };
+        let duplicate_groups = match self.lib.duplicate_groups() {
+            Ok(groups) => groups,
+            Err(e) => {
+                self.message = format!("could not check for duplicates: {e}");
+                Vec::new()
+            }
+        };
+
+        let present: BTreeSet<i64> = missing
+            .iter()
+            .chain(duplicate_groups.iter().flatten())
+            .map(|track| track.id)
+            .collect();
+        let mut selected = self
+            .hygiene
+            .as_ref()
+            .map(|state| state.selected.clone())
+            .unwrap_or_default();
+        selected.retain(|id| present.contains(id));
+
+        self.hygiene = Some(HygieneState {
+            missing,
+            duplicate_groups,
+            selected,
+            pending: None,
+            status: None,
+        });
+    }
+
+    /// Remove rows from the library only. Audio files are never deleted.
+    pub fn remove_from_library(&mut self, ids: &[i64]) {
+        if ids.is_empty() {
+            return;
+        }
+        let removed: BTreeSet<i64> = ids.iter().copied().collect();
+        match self.lib.remove_tracks(ids) {
+            Ok(count) => {
+                let (queue_pos, current_removed) =
+                    remove_tracks_from_queue(&mut self.queue, self.queue_pos, &removed);
+                self.queue_pos = queue_pos;
+                if current_removed {
+                    if let Some(player) = &self.player {
+                        player.stop();
+                    }
+                    self.playing_id = None;
+                    self.art = None;
+                    self.art_key = None;
+                }
+                self.selected.retain(|id| !removed.contains(id));
+                if self.anchor.is_some_and(|id| removed.contains(&id)) {
+                    self.anchor = None;
+                }
+
+                self.message =
+                    format!("removed {count} track(s) from the library; audio files were kept");
+                self.scan_hygiene();
+                if let Some(state) = &mut self.hygiene {
+                    state.status = Some(self.message.clone());
+                }
+                self.mark_browser_dirty();
+            }
+            Err(e) => {
+                self.message = format!("could not remove tracks from the library: {e}");
+                if let Some(state) = &mut self.hygiene {
+                    state.status = Some(self.message.clone());
+                }
+            }
+        }
     }
 
     // ---- playback ----
@@ -2131,6 +2254,7 @@ impl eframe::App for App {
         crate::ui::playlist_dialog(self, &ctx);
         crate::ui::smart_dialog(self, &ctx);
         crate::ui::settings_window(self, &ctx);
+        crate::ui::hygiene_window(self, &ctx);
         crate::ui::folder_picker(self, &ctx);
         crate::ui::autotag_window(self, &ctx);
         crate::ui::rename_window(self, &ctx);
@@ -2291,6 +2415,11 @@ impl App {
             self.show_equalizer = true;
         }
 
+        // Debug hook: MUSICWASP_HYGIENE=1 opens the library hygiene window.
+        if self.frames == 20 && std::env::var("MUSICWASP_HYGIENE").is_ok() {
+            self.open_hygiene();
+        }
+
         let shot_frame = std::env::var("MUSICWASP_SCREENSHOT_FRAME")
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
@@ -2353,7 +2482,7 @@ pub fn fmt_size(bytes: u64) -> String {
 mod tests {
     use super::{
         apply_click, best_release_track, clamp_seek, common_fields, list_subdirs,
-        queue_insert_next, queue_reorder, restore_queue, TrackField,
+        queue_insert_next, queue_reorder, remove_tracks_from_queue, restore_queue, TrackField,
     };
     use musicwasp_core::autotag::{Release, ReleaseTrack};
     use musicwasp_core::{TagEdit, Track};
@@ -2492,6 +2621,23 @@ mod tests {
         let (queue, pos) = restore_queue(&[9, 1, 9], Some(2), &valid);
         assert_eq!(queue, vec![9, 1, 9]);
         assert_eq!(pos, Some(2));
+    }
+
+    #[test]
+    fn removing_library_tracks_stops_only_if_the_current_entry_is_gone() {
+        let removed = selection(&[2]);
+
+        let mut queue = vec![1, 2, 3, 4];
+        let (pos, current_removed) = remove_tracks_from_queue(&mut queue, Some(2), &removed);
+        assert_eq!(queue, vec![1, 3, 4]);
+        assert_eq!(pos, Some(1));
+        assert!(!current_removed);
+
+        let mut queue = vec![1, 2, 4];
+        let (pos, current_removed) = remove_tracks_from_queue(&mut queue, Some(1), &removed);
+        assert_eq!(queue, vec![1, 4]);
+        assert_eq!(pos, None);
+        assert!(current_removed);
     }
 
     fn track(title: &str, artist: &str, album: &str, year: Option<i32>) -> Track {

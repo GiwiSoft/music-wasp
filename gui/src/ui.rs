@@ -4,7 +4,7 @@ use crate::theme as th;
 use egui::{Color32, RichText};
 use egui_extras::{Column, TableBuilder};
 use musicwasp_core::{SortKey, Track};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 
 /// True while files are being dragged from the OS and the pointer is over `rect`.
@@ -158,6 +158,15 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                 .clicked()
                 {
                     app.show_settings = !app.show_settings;
+                }
+                if icons::compact(
+                    ui,
+                    icons::BROOM,
+                    "Library hygiene: missing files, duplicates, prune",
+                )
+                .clicked()
+                {
+                    app.open_hygiene();
                 }
                 if icons::toggle(
                     ui,
@@ -2087,6 +2096,268 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
         app.commit_playlist_dialog();
     } else if cancel {
         app.playlist_dialog = None;
+    }
+}
+
+/// One selectable track row in the hygiene window: metadata on the first line,
+/// full path on the second.
+fn hygiene_row(ui: &mut egui::Ui, selected: &mut BTreeSet<i64>, track: &Track) {
+    ui.horizontal(|ui| {
+        let mut checked = selected.contains(&track.id);
+        if ui.checkbox(&mut checked, "").changed() {
+            if checked {
+                selected.insert(track.id);
+            } else {
+                selected.remove(&track.id);
+            }
+        }
+        let mut label = if track.title.is_empty() {
+            "(untitled)".to_string()
+        } else {
+            track.title.clone()
+        };
+        if !track.artist.is_empty() {
+            label.push_str("  -  ");
+            label.push_str(&track.artist);
+        }
+        ui.add(egui::Label::new(RichText::new(label).size(11.5).color(th::text())).truncate());
+    });
+    ui.horizontal(|ui| {
+        ui.add_space(22.0);
+        ui.add(
+            egui::Label::new(RichText::new(&track.path).size(9.5).color(th::text_dim())).truncate(),
+        )
+        .on_hover_text(&track.path);
+    });
+}
+
+pub fn hygiene_window(app: &mut App, ctx: &egui::Context) {
+    if !app.show_hygiene {
+        return;
+    }
+    let Some(state) = app.hygiene.as_mut() else {
+        app.show_hygiene = false;
+        return;
+    };
+
+    enum Act {
+        Rescan,
+        SelectMissing,
+        SelectDuplicates,
+        Clear,
+        Ask(Vec<i64>),
+        Confirm,
+        Cancel,
+    }
+    let mut act: Option<Act> = None;
+    let mut open = app.show_hygiene;
+    let duplicate_tracks: usize = state.duplicate_groups.iter().map(|group| group.len()).sum();
+
+    egui::Window::new("Library hygiene")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(true)
+        .default_width(720.0)
+        .min_width(520.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui
+                    .button(icons::with(icons::ARROWS_CLOCKWISE, "Rescan"))
+                    .clicked()
+                {
+                    act = Some(Act::Rescan);
+                }
+                ui.label(
+                    RichText::new(format!(
+                        "{} missing · {} duplicate group(s) · {} duplicate track(s)",
+                        state.missing.len(),
+                        state.duplicate_groups.len(),
+                        duplicate_tracks
+                    ))
+                    .size(11.0)
+                    .color(th::text_dim()),
+                );
+            });
+            ui.label(
+                RichText::new("Removing entries never deletes audio files from disk.")
+                    .size(10.5)
+                    .color(th::text_dim()),
+            );
+            ui.separator();
+
+            egui::ScrollArea::vertical()
+                .id_salt("hygiene_scroll")
+                .max_height(420.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    egui::CollapsingHeader::new(format!("Missing files ({})", state.missing.len()))
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            if state.missing.is_empty() {
+                                ui.label(
+                                    RichText::new("Every indexed file still exists.")
+                                        .size(11.0)
+                                        .color(th::text_dim()),
+                                );
+                            } else {
+                                ui.horizontal(|ui| {
+                                    if ui.small_button("Select all").clicked() {
+                                        act = Some(Act::SelectMissing);
+                                    }
+                                    if ui.small_button("Prune all").clicked() {
+                                        act = Some(Act::Ask(
+                                            state.missing.iter().map(|track| track.id).collect(),
+                                        ));
+                                    }
+                                });
+                                for track in &state.missing {
+                                    hygiene_row(ui, &mut state.selected, track);
+                                }
+                            }
+                        });
+
+                    ui.add_space(4.0);
+                    egui::CollapsingHeader::new(format!(
+                        "Duplicates ({} groups)",
+                        state.duplicate_groups.len()
+                    ))
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        if state.duplicate_groups.is_empty() {
+                            ui.label(
+                                RichText::new("No tracks share the same artist, title and album.")
+                                    .size(11.0)
+                                    .color(th::text_dim()),
+                            );
+                        } else {
+                            if ui
+                                .small_button("Select all but the first in each group")
+                                .clicked()
+                            {
+                                act = Some(Act::SelectDuplicates);
+                            }
+                            for group in &state.duplicate_groups {
+                                ui.add_space(6.0);
+                                let first = &group[0];
+                                let mut heading = format!(
+                                    "{}  -  {}",
+                                    if first.title.is_empty() {
+                                        "(untitled)"
+                                    } else {
+                                        first.title.as_str()
+                                    },
+                                    first.artist
+                                );
+                                if !first.album.is_empty() {
+                                    heading.push_str("  ·  ");
+                                    heading.push_str(&first.album);
+                                }
+                                ui.label(
+                                    RichText::new(heading).size(11.5).strong().color(th::text()),
+                                );
+                                for track in group {
+                                    hygiene_row(ui, &mut state.selected, track);
+                                }
+                            }
+                        }
+                    });
+                });
+
+            ui.separator();
+            if let Some(ids) = &state.pending {
+                let count = ids.len();
+                ui.label(
+                    RichText::new(format!("Remove {count} track(s) from the library?"))
+                        .size(12.0)
+                        .strong()
+                        .color(th::accent()),
+                );
+                ui.label(
+                    RichText::new("The audio files stay on disk and can be re-imported later.")
+                        .size(10.5)
+                        .color(th::text_dim()),
+                );
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(icons::with(icons::TRASH, "Remove from library"))
+                        .clicked()
+                    {
+                        act = Some(Act::Confirm);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        act = Some(Act::Cancel);
+                    }
+                });
+            } else {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!("{} selected", state.selected.len()))
+                            .size(11.0)
+                            .color(th::text_dim()),
+                    );
+                    let label = format!("Remove {} from library", state.selected.len());
+                    if ui
+                        .add_enabled(
+                            !state.selected.is_empty(),
+                            egui::Button::new(icons::with(icons::TRASH, &label)),
+                        )
+                        .on_hover_text("Deletes library entries only; files stay on disk")
+                        .clicked()
+                    {
+                        act = Some(Act::Ask(state.selected.iter().copied().collect()));
+                    }
+                    if ui.small_button("Clear selection").clicked() && !state.selected.is_empty() {
+                        act = Some(Act::Clear);
+                    }
+                });
+            }
+            if let Some(status) = &state.status {
+                ui.label(RichText::new(status).size(10.5).color(th::accent()));
+            }
+        });
+
+    app.show_hygiene = open;
+    match act {
+        Some(Act::Rescan) => app.scan_hygiene(),
+        Some(Act::SelectMissing) => {
+            if let Some(state) = &mut app.hygiene {
+                state.selected = state.missing.iter().map(|track| track.id).collect();
+            }
+        }
+        Some(Act::SelectDuplicates) => {
+            if let Some(state) = &mut app.hygiene {
+                for group in &state.duplicate_groups {
+                    state
+                        .selected
+                        .extend(group.iter().skip(1).map(|track| track.id));
+                }
+            }
+        }
+        Some(Act::Clear) => {
+            if let Some(state) = &mut app.hygiene {
+                state.selected.clear();
+            }
+        }
+        Some(Act::Ask(ids)) => {
+            if let Some(state) = &mut app.hygiene {
+                state.pending = Some(ids);
+            }
+        }
+        Some(Act::Confirm) => {
+            let ids = app
+                .hygiene
+                .as_mut()
+                .and_then(|state| state.pending.take())
+                .unwrap_or_default();
+            app.remove_from_library(&ids);
+        }
+        Some(Act::Cancel) => {
+            if let Some(state) = &mut app.hygiene {
+                state.pending = None;
+            }
+        }
+        None => {}
     }
 }
 
