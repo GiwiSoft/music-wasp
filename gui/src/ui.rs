@@ -14,6 +14,52 @@ fn os_files_over(ui: &egui::Ui, rect: egui::Rect) -> bool {
     })
 }
 
+/// Shorten `text` so it fits `width` pixels, ending with a hyphen when the text
+/// had to be cut. Used by the queue so long titles/artists crop instead of
+/// spilling out of the panel.
+fn crop_to_width(ui: &egui::Ui, text: &str, width: f32, size: f32) -> String {
+    let font = egui::FontId::proportional(size);
+    let measure = |value: &str| {
+        ui.painter()
+            .layout_no_wrap(value.to_owned(), font.clone(), Color32::PLACEHOLDER)
+            .size()
+            .x
+    };
+    crop_with_hyphen(text, width, measure("-"), &measure)
+}
+
+/// Width-measuring core of [`crop_to_width`], kept separate so it can be tested
+/// without an egui context.
+fn crop_with_hyphen(
+    text: &str,
+    width: f32,
+    hyphen_width: f32,
+    measure: &dyn Fn(&str) -> f32,
+) -> String {
+    if measure(text) <= width {
+        return text.to_owned();
+    }
+    // Binary search the longest prefix whose width still leaves room for the
+    // hyphen. Measures are memoised but still allocate, so avoid one per char.
+    let chars: Vec<char> = text.chars().collect();
+    let mut lo = 0;
+    let mut hi = chars.len();
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        let candidate: String = chars[..mid].iter().collect();
+        if measure(&candidate) + hyphen_width <= width {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    let mut cropped: String = chars[..lo].iter().collect();
+    let trimmed = cropped.trim_end().len();
+    cropped.truncate(trimmed);
+    cropped.push('-');
+    cropped
+}
+
 /// Small caret that folds a browser section. Returns true when clicked.
 fn fold_button(ui: &mut egui::Ui, folded: bool, tooltip: &str) -> bool {
     let icon = if folded {
@@ -1090,10 +1136,10 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                 let inner = rect.shrink2(egui::vec2(4.0, 0.0));
                                 let index_width = 22.0;
                                 let artist_width = (inner.width() * 0.34).clamp(52.0, 96.0);
-                                let dash_width = 10.0;
+                                let gap_width = 10.0;
                                 let title_left = inner.left() + index_width + 4.0;
                                 let title_width =
-                                    (inner.right() - artist_width - dash_width - 8.0 - title_left)
+                                    (inner.right() - artist_width - gap_width - title_left)
                                         .max(24.0);
 
                                 let index_rect = egui::Rect::from_min_size(
@@ -1124,6 +1170,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                     egui::pos2(title_left, inner.top()),
                                     egui::vec2(title_width, inner.height()),
                                 );
+                                let title_text = crop_to_width(ui, &track.title, title_width, 11.5);
                                 ui.scope_builder(
                                     egui::UiBuilder::new().max_rect(title_rect).layout(
                                         egui::Layout {
@@ -1134,7 +1181,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                     |ui| {
                                         ui.add(
                                             egui::Label::new(
-                                                RichText::new(&track.title)
+                                                RichText::new(&title_text)
                                                     .size(11.5)
                                                     .color(th::text()),
                                             )
@@ -1144,31 +1191,12 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                     },
                                 );
 
-                                let dash_rect = egui::Rect::from_min_size(
-                                    egui::pos2(title_rect.right() + 4.0, inner.top()),
-                                    egui::vec2(dash_width, inner.height()),
-                                );
-                                ui.scope_builder(
-                                    egui::UiBuilder::new().max_rect(dash_rect).layout(
-                                        egui::Layout {
-                                            main_align: egui::Align::Min,
-                                            ..egui::Layout::left_to_right(egui::Align::Center)
-                                        },
-                                    ),
-                                    |ui| {
-                                        ui.add(
-                                            egui::Label::new(
-                                                RichText::new("-").size(11.0).color(th::text_dim()),
-                                            )
-                                            .selectable(false),
-                                        );
-                                    },
-                                );
-
                                 let artist_rect = egui::Rect::from_min_size(
-                                    egui::pos2(dash_rect.right() + 4.0, inner.top()),
+                                    egui::pos2(title_rect.right() + gap_width, inner.top()),
                                     egui::vec2(artist_width, inner.height()),
                                 );
+                                let artist_text =
+                                    crop_to_width(ui, &track.artist, artist_width, 11.0);
                                 ui.scope_builder(
                                     egui::UiBuilder::new().max_rect(artist_rect).layout(
                                         egui::Layout {
@@ -1179,7 +1207,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                     |ui| {
                                         ui.add(
                                             egui::Label::new(
-                                                RichText::new(&track.artist)
+                                                RichText::new(&artist_text)
                                                     .size(11.0)
                                                     .color(th::text_dim()),
                                             )
@@ -2768,5 +2796,26 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
     }
     if !open {
         app.smart_dialog = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::crop_with_hyphen;
+
+    fn char_width(text: &str) -> f32 {
+        text.chars().count() as f32
+    }
+
+    #[test]
+    fn cropping_marks_the_cut_with_a_hyphen() {
+        let measure = |text: &str| char_width(text);
+        assert_eq!(crop_with_hyphen("Short", 10.0, 1.0, &measure), "Short");
+        assert_eq!(
+            crop_with_hyphen("A long title", 6.0, 1.0, &measure),
+            "A lon-"
+        );
+        // Trailing spaces are dropped before the hyphen.
+        assert_eq!(crop_with_hyphen("Two words", 4.0, 1.0, &measure), "Two-");
     }
 }
