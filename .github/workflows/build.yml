@@ -83,10 +83,39 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Verify downloaded artifacts
+        run: |
+          ls -l dist
+          test -n "$(find dist -maxdepth 1 -name '*-linux-x86_64.tar.gz' -print -quit)"
+          test -n "$(find dist -maxdepth 1 -name '*-windows-x86_64.zip' -print -quit)"
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           name: MusicWasp ${{ github.ref_name }}
           files: dist/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fail the job if the tag/release exists but the archives are not attached.
+      - name: Verify release assets are attached
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          assets=$(gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets[].name')
+          echo "$assets"
+          test -n "$(printf '%s\n' "$assets" | grep 'linux-x86_64.tar.gz')" || {
+            echo "Linux archive is not attached to the release" >&2
+            exit 1
+          }
+          test -n "$(printf '%s\n' "$assets" | grep 'windows-x86_64.zip')" || {
+            echo "Windows archive is not attached to the release" >&2
+            exit 1
+          }
