@@ -18,7 +18,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Browsing | MusicBee-inspired column browser (genre → artist → album) with foldable sections whose state is remembered, search, sortable table |
 | Selection | multi-select (`Ctrl`-click, `Shift`-click, `Ctrl+A`, `Esc`), drag tracks onto a playlist, right-click a row for play / rename / metadata / playlist actions |
 | Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle |
-| Play queue | right-hand Up Next panel: current track, click any entry to jump, drag to reorder, remove entries or clear everything after the current track; **Play next** / **Add to queue** from the track menu |
+| Play queue | right-hand Up Next panel: current track, click any entry to jump, drag to reorder, right-click to remove, or clear everything after the current track; **Play next** / **Add to queue** from the track menu |
 | Now playing | album art from embedded cover, accent-highlighted current row, live position |
 | Tag editing | edit title, artist, album, album artist, genre, year, track no, disc no and write them into the file; batch edit writes only the fields you fill in |
 | Plain view | one-click full-window now-playing view: large cover, transport, seek, volume and the next track |
@@ -97,10 +97,10 @@ entry uses the app icon.
    the folded state is saved like the rest of the settings. Type in **Search** to filter.
 3. Double-click a track, or select it and press `Enter`, to play. `Space` toggles pause. The
    **QUEUE** panel on the right shows the current track and **Up Next**: click an entry to jump to
-   it, drag rows to reorder, use the row `x` to remove one, or **Clear** everything after the
+   it, drag rows to reorder, right-click a row to remove it, or **Clear** everything after the
    current track. Toggle the panel from the queue icon in the toolbar.
 4. Select tracks with `Ctrl`-click / `Shift`-click / `Ctrl+A`. Drag a selection onto a playlist in
-   the sidebar to add it there, or use **Add to**.
+   the sidebar to add it there, or right-click a track and use **Add to playlist**.
 5. Right-click any track for **Play now**, **Play next**, **Add to queue**, **Rename**, **Edit tags**,
    **Find metadata**, **Remove from playlist** and **Add to playlist**. You can also drop audio files from your file manager onto a playlist,
    **All music**, or anywhere in an open playlist's track list to import and add them.

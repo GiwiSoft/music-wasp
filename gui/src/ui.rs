@@ -148,38 +148,6 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             }
 
             let selected = app.selected_in_view().len();
-            let can_edit = selected > 0;
-            let edit_hint = match selected {
-                0 => "Select one or more tracks first".to_string(),
-                1 => "Edit metadata for the selected track (Ctrl+F2)".to_string(),
-                n => format!("Batch edit {n} selected tracks (Ctrl+F2)"),
-            };
-            if icons::compact_enabled(ui, can_edit, icons::TAG, &edit_hint).clicked() {
-                app.open_editor();
-            }
-
-            if icons::compact_enabled(
-                ui,
-                can_edit,
-                icons::MAGIC_WAND,
-                "Look the album up on MusicBrainz and tag it",
-            )
-            .clicked()
-            {
-                app.open_autotag();
-            }
-
-            let playlists = app.playlists.clone();
-            ui.add_enabled_ui(can_edit && !playlists.is_empty(), |ui| {
-                ui.menu_button(icons::with(icons::PLUS, "Add to"), |ui| {
-                    for playlist in &playlists {
-                        if ui.button(&playlist.name).clicked() {
-                            app.add_to_playlist(playlist.id, &[]);
-                            ui.close();
-                        }
-                    }
-                });
-            });
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if icons::compact(
@@ -1120,8 +1088,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                             let mut move_to = None;
 
                             ui.horizontal(|ui| {
-                                let remove_width = 26.0;
-                                let width = (ui.available_width() - remove_width).max(40.0);
+                                let width = ui.available_width().max(40.0);
                                 let (rect, resp) = ui.allocate_exact_size(
                                     egui::vec2(width, 23.0),
                                     egui::Sense::click_and_drag(),
@@ -1138,9 +1105,8 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                 let artist_width = (inner.width() * 0.34).clamp(52.0, 96.0);
                                 let gap_width = 10.0;
                                 let title_left = inner.left() + index_width + 4.0;
-                                let title_width =
-                                    (inner.right() - artist_width - gap_width - title_left)
-                                        .max(24.0);
+                                let artist_left = inner.right() - artist_width;
+                                let title_width = (artist_left - gap_width - title_left).max(24.0);
 
                                 let index_rect = egui::Rect::from_min_size(
                                     inner.min,
@@ -1192,7 +1158,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                 );
 
                                 let artist_rect = egui::Rect::from_min_size(
-                                    egui::pos2(title_rect.right() + gap_width, inner.top()),
+                                    egui::pos2(artist_left, inner.top()),
                                     egui::vec2(artist_width, inner.height()),
                                 );
                                 let artist_text =
@@ -1200,7 +1166,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                 ui.scope_builder(
                                     egui::UiBuilder::new().max_rect(artist_rect).layout(
                                         egui::Layout {
-                                            main_align: egui::Align::Min,
+                                            main_align: egui::Align::Max,
                                             ..egui::Layout::left_to_right(egui::Align::Center)
                                         },
                                     ),
@@ -1222,6 +1188,19 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                     track.title,
                                     fmt_time(track.duration_secs as f64)
                                 ));
+                                resp.context_menu(|ui| {
+                                    if ui.button(icons::with(icons::PLAY, "Play now")).clicked() {
+                                        jump = true;
+                                        ui.close();
+                                    }
+                                    if ui
+                                        .button(icons::with(icons::X, "Remove from queue"))
+                                        .clicked()
+                                    {
+                                        remove = true;
+                                        ui.close();
+                                    }
+                                });
                                 if resp.clicked() {
                                     jump = true;
                                 }
@@ -1251,10 +1230,6 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                         0.0,
                                         th::accent(),
                                     );
-                                }
-
-                                if icons::compact(ui, icons::X, "Remove from the queue").clicked() {
-                                    remove = true;
                                 }
                             });
 
