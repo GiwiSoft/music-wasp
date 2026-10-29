@@ -282,12 +282,12 @@ Ordered by how much it would move the needle towards MusicBee parity:
 
 1. **AcoustID fingerprinting** on top of the existing auto-tag (needs a key + `fpcalc`).
 2. **Gapless playback and ReplayGain** (`symphonia` gapless info + EBU R128 analysis).
-3. **File watching** (`notify`) so new rips appear without a manual scan.
-4. **Editing existing smart playlists** (currently create/delete only) plus rating and play-count
+3. **Editing existing smart playlists** (currently create/delete only) plus rating and play-count
    fields to build rules on.
-5. **Device sync** (MTP / Android) and podcast + internet radio support.
+4. **Device sync** (MTP / Android) and podcast + internet radio support.
 
 ## License
 
-MIT. MusicBee itself is a separate freeware project by Steven Mayall; this is an independent
-implementation inspired by it, not affiliated with or endorsed by it.
+GPL-3.0-only. See [LICENSE](LICENSE). MusicBee itself is a separate freeware project by Steven
+Mayall; this is an independent implementation inspired by it, not affiliated with or endorsed by
+it.
