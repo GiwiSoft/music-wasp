@@ -31,7 +31,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
 | Skins | five palettes (MusicWasp Dark, Midnight, Forest, Mono, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
 | Settings | rebindable keyboard shortcuts with conflict detection, persisted to `settings.json` |
-| Session restore | reopens the last view, search, selection, volume, play queue and paused playback position, plus window size and position |
+| Session restore | reopens the last view, search, selection, volume, play queue and window size/position; playback always starts stopped |
 | Portability | `MUSICWASP_DATA_DIR` for a portable library, data lives in the OS app-data dir by default |
 
 Not there yet (see [Roadmap](#roadmap)): gapless playback, ReplayGain, device sync, podcasts/radio,
@@ -126,8 +126,9 @@ entry uses the app icon.
 13. Pick a **Skin** from the dropdown in **Settings**: MusicWasp Dark (default), Midnight, Forest,
     Mono, or MusicWasp Light. The choice, logo and window icon update instantly and are remembered.
 14. Close and reopen the app: it comes back to the same view, search, selection, volume, queue and
-    window size/position. The last track is loaded paused at the saved position; press `Space` to
-    continue. Session state is written every few seconds and again on exit.
+    window size/position. Playback always starts stopped, with no track loaded; press `Space` to
+    play the current queue entry from the beginning. Session state is written every few seconds and
+    again on exit.
 
 ### Default shortcuts
 

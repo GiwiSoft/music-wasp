@@ -79,8 +79,6 @@ mod audio_impl {
 
     enum Cmd {
         Load(PathBuf),
-        /// Load a track, pause it, then seek to the saved session position.
-        LoadPaused(PathBuf, f64),
         Resume,
         Pause,
         Stop,
@@ -123,14 +121,6 @@ mod audio_impl {
 
         pub fn load_and_play(&self, path: &Path) {
             let _ = self.tx.send(Cmd::Load(path.to_path_buf()));
-        }
-
-        /// Load a track without starting playback, positioned for a session
-        /// restore. The first `Space` resumes from `position`.
-        pub fn load_paused(&self, path: &Path, position: f64) {
-            let _ = self
-                .tx
-                .send(Cmd::LoadPaused(path.to_path_buf(), position.max(0.0)));
         }
 
         pub fn toggle_pause(&self) {
@@ -240,37 +230,6 @@ mod audio_impl {
                         }
                     }
                 }
-                Ok(Cmd::LoadPaused(path, position)) => {
-                    sink.stop();
-                    sink.set_volume(f32::from_bits(shared.volume.load(Ordering::Relaxed) as u32));
-                    match open_source(&path) {
-                        Ok((source, duration)) => {
-                            shared
-                                .duration_ms
-                                .store((duration.as_secs_f64() * 1000.0) as u64, Ordering::Relaxed);
-                            *shared.current.lock().unwrap() = Some(path);
-                            let source = DspSource::new(source, Arc::clone(&shared.eq));
-                            sink.append(source);
-                            sink.pause();
-                            if position > 0.0 {
-                                if let Err(e) = sink.try_seek(Duration::from_secs_f64(position)) {
-                                    tracing::warn!("restore seek failed: {e}");
-                                }
-                            }
-                            was_playing = false;
-                            shared
-                                .status
-                                .store(PlayerStatus::Paused.to_u8(), Ordering::Relaxed);
-                            shared.finished.store(false, Ordering::Relaxed);
-                        }
-                        Err(e) => {
-                            tracing::warn!("cannot restore {}: {e}", path.display());
-                            shared
-                                .status
-                                .store(PlayerStatus::Stopped.to_u8(), Ordering::Relaxed);
-                        }
-                    }
-                }
                 Ok(Cmd::Resume) => {
                     sink.play();
                     was_playing = true;
@@ -347,7 +306,6 @@ mod silent_impl {
             anyhow::bail!("built without audio support")
         }
         pub fn load_and_play(&self, _path: &Path) {}
-        pub fn load_paused(&self, _path: &Path, _position: f64) {}
         pub fn toggle_pause(&self) {}
         pub fn pause(&self) {}
         pub fn resume(&self) {}

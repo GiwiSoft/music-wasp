@@ -259,8 +259,6 @@ pub struct Session {
     pub volume: Option<f32>,
     pub queue: Vec<i64>,
     pub queue_pos: Option<usize>,
-    /// Seconds into the current queue entry.
-    pub position: f64,
     pub window: Option<WindowGeometry>,
 }
 
@@ -516,7 +514,6 @@ mod tests {
                 volume: Some(0.42),
                 queue: vec![3, 1, 2],
                 queue_pos: Some(1),
-                position: 91.5,
                 window: Some(WindowGeometry {
                     width: 1100.0,
                     height: 720.0,

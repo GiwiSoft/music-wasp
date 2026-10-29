@@ -827,8 +827,9 @@ impl App {
     }
 
     /// Revalidate ids loaded from `settings.json` and put the last queue entry
-    /// back at its saved position. Playback stays paused: restoring the session
-    /// should not start audio by surprise.
+    /// back at its saved position. Playback always starts stopped: restoring a
+    /// track used to make the play/pause icon flip while the audio thread
+    /// switched from playing to paused.
     fn restore_session(&mut self, session: &Session) {
         let valid_queue: BTreeSet<i64> = self
             .lib
@@ -853,27 +854,16 @@ impl App {
             self.anchor = self.selected.iter().next().copied();
         }
 
-        let Some(pos) = self.queue_pos else { return };
-        let Some(id) = self.queue.get(pos).copied() else {
-            return;
-        };
-        let Ok(Some(path)) = self.lib.path_for_id(id) else {
-            return;
-        };
+        // Always start with a stopped transport. The queue position and volume
+        // still come back, but no track is loaded until the user presses play.
+        self.playing_id = None;
         if let Some(player) = &self.player {
-            player.load_paused(&path, session.position);
+            player.stop();
         }
     }
 
     /// Snapshot what should come back on the next launch.
     fn capture_session(&self) -> Session {
-        let position = self
-            .player
-            .as_ref()
-            .map(|player| player.snapshot())
-            .filter(|snapshot| snapshot.current.is_some())
-            .map(|snapshot| snapshot.position)
-            .unwrap_or(0.0);
         Session {
             view: self.view.into(),
             search: self.search.clone(),
@@ -881,7 +871,6 @@ impl App {
             volume: Some(self.volume),
             queue: self.queue.clone(),
             queue_pos: self.queue_pos,
-            position,
             window: self.window_geometry,
         }
     }
