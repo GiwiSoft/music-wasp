@@ -73,6 +73,22 @@ cargo run --release -p musicwasp-cli -- stats
 
 Release binaries land in `target/release/` as `musicwasp` (GUI) and `musicwasp-cli` (CLI).
 
+### Desktop launcher (Linux)
+
+To add MusicWasp to the desktop application menu with its own icon, build the
+release binary and install a launcher entry:
+
+```bash
+cargo build --release
+./scripts/install-desktop.sh
+```
+
+The entry lives in `packaging/musicwasp.desktop` and is installed to
+`~/.local/share/applications/`, with `assets/ic_launcher-web.png` copied into the
+hicolor icon theme. Pass a binary path to override which executable it runs.
+The window itself keeps the MusicWasp logo as its window icon; only the launcher
+entry uses the app icon.
+
 ## Usage
 
 1. Start the GUI, pick a folder with the folder button (or type a path), press **Scan**.

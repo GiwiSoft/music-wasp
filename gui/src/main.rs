@@ -13,6 +13,9 @@ fn main() -> eframe::Result<()> {
         .with_inner_size([1280.0, 800.0])
         .with_min_inner_size([900.0, 560.0])
         .with_drag_and_drop(true)
+        // Match the `StartupWMClass` in `packaging/musicwasp.desktop`, so the
+        // desktop shows the launcher icon for a running window.
+        .with_app_id("musicwasp")
         .with_title("MusicWasp");
     if let Some(icon) = icons::icon_data(false) {
         viewport = viewport.with_icon(icon);

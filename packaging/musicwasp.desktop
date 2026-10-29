@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=MusicWasp
+GenericName=Music Player
+Comment=MusicBee-inspired music manager and player
+Exec=musicwasp %U
+Icon=musicwasp
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=music;player;audio;bee;
+StartupWMClass=musicwasp
