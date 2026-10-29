@@ -1,4 +1,4 @@
-use crate::settings::{Action, Settings, Shortcut};
+use crate::settings::{Action, Session, SessionView, Settings, Shortcut, WindowGeometry};
 use musicwasp_core::autotag::{self, Candidate, LocalTrack, Release};
 use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
@@ -13,6 +13,26 @@ pub enum View {
     Library,
     Playlist(i64),
     Smart(i64),
+}
+
+impl From<View> for SessionView {
+    fn from(view: View) -> Self {
+        match view {
+            View::Library => SessionView::Library,
+            View::Playlist(id) => SessionView::Playlist(id),
+            View::Smart(id) => SessionView::Smart(id),
+        }
+    }
+}
+
+impl From<SessionView> for View {
+    fn from(view: SessionView) -> Self {
+        match view {
+            SessionView::Library => View::Library,
+            SessionView::Playlist(id) => View::Playlist(id),
+            SessionView::Smart(id) => View::Smart(id),
+        }
+    }
 }
 
 /// Drag payload for track rows: the ids plus where the drag started, so a drop
@@ -404,6 +424,27 @@ fn queue_insert_next(queue: &mut Vec<i64>, pos: Option<usize>, ids: &[i64]) {
     }
 }
 
+/// Drop queue entries that no longer exist, keeping the current position on the
+/// same track when it survived.
+fn restore_queue(
+    queue: &[i64],
+    pos: Option<usize>,
+    valid: &BTreeSet<i64>,
+) -> (Vec<i64>, Option<usize>) {
+    let mut restored = Vec::with_capacity(queue.len());
+    let mut restored_pos = None;
+    for (index, id) in queue.iter().copied().enumerate() {
+        if !valid.contains(&id) {
+            continue;
+        }
+        if pos == Some(index) {
+            restored_pos = Some(restored.len());
+        }
+        restored.push(id);
+    }
+    (restored, restored_pos)
+}
+
 /// Reorder an upcoming queue entry, dropping it before `to`. The playing entry
 /// and anything before it are left alone. Returns true when the order changed.
 fn queue_reorder(queue: &mut Vec<i64>, pos: Option<usize>, from: usize, to: usize) -> bool {
@@ -540,6 +581,13 @@ pub struct App {
     // Settings
     pub settings: Settings,
     pub settings_path: PathBuf,
+    /// Last session written to disk, used to avoid rewriting settings each frame.
+    last_session: Session,
+    last_session_save: std::time::Instant,
+    /// Last known window geometry; restored at startup and written on exit.
+    window_geometry: Option<WindowGeometry>,
+    /// Screenshot runs must be deterministic, so they skip session restore/save.
+    session_enabled: bool,
     pub show_settings: bool,
     pub show_equalizer: bool,
     /// Equalizer state last pushed to the engine, so changes are cheap.
@@ -578,6 +626,17 @@ impl App {
 
         let eq_applied = settings.equalizer;
 
+        let shot_path = std::env::var("MUSICWASP_SCREENSHOT").ok();
+        let session_enabled = shot_path.is_none();
+        let session = if session_enabled {
+            settings.session.clone()
+        } else {
+            Session::default()
+        };
+        let volume = session.volume.unwrap_or(0.8).clamp(0.0, 1.5);
+        let window_geometry = session.window;
+        let anchor = session.selected.first().copied();
+
         let mut app = Self {
             lib,
             player,
@@ -591,15 +650,15 @@ impl App {
             tracks: Vec::new(),
             sort: SortKey::Artist,
             sort_asc: true,
-            search: String::new(),
-            selected: BTreeSet::new(),
-            anchor: None,
-            queue: Vec::new(),
-            queue_pos: None,
+            search: session.search.clone(),
+            selected: session.selected.iter().copied().collect(),
+            anchor,
+            queue: session.queue.clone(),
+            queue_pos: session.queue_pos,
             repeat: RepeatMode::Off,
             shuffle: false,
             seek_drag: None,
-            volume: 0.8,
+            volume,
             volume_sent: -1.0,
             scan_path,
             message: String::new(),
@@ -614,7 +673,7 @@ impl App {
             focus: Focus::default(),
             os_drop_zones: Vec::new(),
             os_drop_hover: None,
-            view: View::Library,
+            view: session.view.into(),
             playlists: Vec::new(),
             smart_playlists: Vec::new(),
             smart_dialog: None,
@@ -625,6 +684,10 @@ impl App {
             dirty_tracks: true,
             settings,
             settings_path,
+            last_session: Session::default(),
+            last_session_save: std::time::Instant::now(),
+            window_geometry,
+            session_enabled,
             show_settings: false,
             show_equalizer: false,
             eq_applied,
@@ -632,11 +695,15 @@ impl App {
             focus_search: false,
             captured_this_frame: false,
             frames: 0,
-            shot_path: std::env::var("MUSICWASP_SCREENSHOT").ok(),
+            shot_path,
             shot_requested: false,
         };
         app.refresh_browser();
         app.refresh_tracks();
+        if app.session_enabled {
+            app.restore_session(&session);
+        }
+        app.last_session = app.capture_session();
         app.refresh_brand_icon(&cc.egui_ctx);
         if let Some(player) = &app.player {
             player.set_equalizer(app.settings.equalizer);
@@ -757,6 +824,115 @@ impl App {
             Err(e) => self.message = format!("query failed: {e}"),
         }
         self.dirty_tracks = false;
+    }
+
+    /// Revalidate ids loaded from `settings.json` and put the last queue entry
+    /// back at its saved position. Playback stays paused: restoring the session
+    /// should not start audio by surprise.
+    fn restore_session(&mut self, session: &Session) {
+        let valid_queue: BTreeSet<i64> = self
+            .lib
+            .tracks_by_ids(&session.queue)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|track| track.id)
+            .collect();
+        let (queue, queue_pos) = restore_queue(&session.queue, session.queue_pos, &valid_queue);
+        self.queue = queue;
+        self.queue_pos = queue_pos;
+
+        let valid_selected: BTreeSet<i64> = self
+            .lib
+            .tracks_by_ids(&session.selected)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|track| track.id)
+            .collect();
+        self.selected.retain(|id| valid_selected.contains(id));
+        if self.anchor.is_none() {
+            self.anchor = self.selected.iter().next().copied();
+        }
+
+        let Some(pos) = self.queue_pos else { return };
+        let Some(id) = self.queue.get(pos).copied() else {
+            return;
+        };
+        let Ok(Some(path)) = self.lib.path_for_id(id) else {
+            return;
+        };
+        if let Some(player) = &self.player {
+            player.load_paused(&path, session.position);
+        }
+    }
+
+    /// Snapshot what should come back on the next launch.
+    fn capture_session(&self) -> Session {
+        let position = self
+            .player
+            .as_ref()
+            .map(|player| player.snapshot())
+            .filter(|snapshot| snapshot.current.is_some())
+            .map(|snapshot| snapshot.position)
+            .unwrap_or(0.0);
+        Session {
+            view: self.view.into(),
+            search: self.search.clone(),
+            selected: self.selected.iter().copied().collect(),
+            volume: Some(self.volume),
+            queue: self.queue.clone(),
+            queue_pos: self.queue_pos,
+            position,
+            window: self.window_geometry,
+        }
+    }
+
+    /// Store the window rect. Wayland reports no screen position, so only the
+    /// size is remembered there.
+    fn capture_window(&mut self, ctx: &egui::Context) {
+        let (inner, outer, viewport_rect) = ctx.input(|input| {
+            let viewport = input.viewport();
+            (
+                viewport.inner_rect,
+                viewport.outer_rect,
+                input.viewport_rect(),
+            )
+        });
+        let size = inner
+            .map(|rect| rect.size())
+            .unwrap_or_else(|| viewport_rect.size());
+        if size.x < 200.0 || size.y < 200.0 {
+            return; // minimized or not known yet
+        }
+        let (x, y) = outer
+            .map(|rect| (Some(rect.min.x), Some(rect.min.y)))
+            .unwrap_or((None, None));
+        self.window_geometry = Some(WindowGeometry {
+            width: size.x,
+            height: size.y,
+            x,
+            y,
+        });
+    }
+
+    /// Write the session when it changed, at most every few seconds so dragging
+    /// the volume or typing in search does not hammer the disk.
+    fn persist_session(&mut self, force: bool) {
+        if !self.session_enabled {
+            return;
+        }
+        let session = self.capture_session();
+        if !force {
+            if session == self.last_session {
+                return;
+            }
+            if self.last_session_save.elapsed() < std::time::Duration::from_secs(5) {
+                return;
+            }
+        }
+        self.settings.session = session.clone();
+        self.persist_settings();
+        self.last_session = session;
+        self.last_session_save = std::time::Instant::now();
     }
 
     pub fn view_title(&self) -> String {
@@ -1927,6 +2103,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
+        self.capture_window(&ctx);
         self.poll_autotag();
         self.handle_capture(&ctx);
         self.handle_shortcuts(&ctx);
@@ -1990,6 +2167,12 @@ impl eframe::App for App {
                 ctx.request_repaint_after(std::time::Duration::from_millis(200));
             }
         }
+
+        self.persist_session(false);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.persist_session(true);
     }
 }
 
@@ -2181,7 +2364,7 @@ pub fn fmt_size(bytes: u64) -> String {
 mod tests {
     use super::{
         apply_click, best_release_track, clamp_seek, common_fields, list_subdirs,
-        queue_insert_next, queue_reorder, TrackField,
+        queue_insert_next, queue_reorder, restore_queue, TrackField,
     };
     use musicwasp_core::autotag::{Release, ReleaseTrack};
     use musicwasp_core::{TagEdit, Track};
@@ -2302,6 +2485,24 @@ mod tests {
         assert!(!queue_reorder(&mut queue, Some(0), 0, 3));
         assert!(!queue_reorder(&mut queue, Some(2), 1, 4));
         assert_eq!(queue, vec![1, 3, 9, 2, 7, 8]);
+    }
+
+    #[test]
+    fn restored_queue_drops_deleted_tracks_and_keeps_the_playing_slot() {
+        let valid = selection(&[1, 3, 9]);
+        let (queue, pos) = restore_queue(&[1, 2, 3, 9, 1], Some(3), &valid);
+        assert_eq!(queue, vec![1, 3, 9, 1]);
+        assert_eq!(pos, Some(2), "the third entry is still the current one");
+
+        // If the current track was deleted, do not start some other track.
+        let (queue, pos) = restore_queue(&[1, 2, 3], Some(1), &valid);
+        assert_eq!(queue, vec![1, 3]);
+        assert_eq!(pos, None);
+
+        // Duplicate ids keep their position.
+        let (queue, pos) = restore_queue(&[9, 1, 9], Some(2), &valid);
+        assert_eq!(queue, vec![9, 1, 9]);
+        assert_eq!(pos, Some(2));
     }
 
     fn track(title: &str, artist: &str, album: &str, year: Option<i32>) -> Track {

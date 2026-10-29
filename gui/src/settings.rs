@@ -221,6 +221,47 @@ pub struct Settings {
     /// Show the play-queue panel on the right.
     #[serde(default = "default_queue_open")]
     pub queue_open: bool,
+    /// What the app looked and sounded like when it last closed.
+    #[serde(default)]
+    pub session: Session,
+}
+
+/// The view that was open when the app last closed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionView {
+    #[default]
+    Library,
+    Playlist(i64),
+    Smart(i64),
+}
+
+/// Window size and, where the platform reports it, screen position.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct WindowGeometry {
+    pub width: f32,
+    pub height: f32,
+    #[serde(default)]
+    pub x: Option<f32>,
+    #[serde(default)]
+    pub y: Option<f32>,
+}
+
+/// Restorable session state. Missing fields fall back to the defaults so old
+/// `settings.json` files keep working.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Session {
+    pub view: SessionView,
+    pub search: String,
+    pub selected: Vec<i64>,
+    /// `None` means the app has not saved a volume yet; use the built-in 0.8.
+    pub volume: Option<f32>,
+    pub queue: Vec<i64>,
+    pub queue_pos: Option<usize>,
+    /// Seconds into the current queue entry.
+    pub position: f64,
+    pub window: Option<WindowGeometry>,
 }
 
 fn default_queue_open() -> bool {
@@ -239,6 +280,7 @@ impl Default for Settings {
             skin: Skin::default(),
             folded: FoldedSections::default(),
             queue_open: default_queue_open(),
+            session: Session::default(),
         }
     }
 }
@@ -462,6 +504,35 @@ mod tests {
     }
 
     #[test]
+    fn session_survives_a_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+
+        let settings = Settings {
+            session: Session {
+                view: SessionView::Playlist(7),
+                search: "radio".to_string(),
+                selected: vec![4, 2],
+                volume: Some(0.42),
+                queue: vec![3, 1, 2],
+                queue_pos: Some(1),
+                position: 91.5,
+                window: Some(WindowGeometry {
+                    width: 1100.0,
+                    height: 720.0,
+                    x: Some(40.0),
+                    y: Some(25.0),
+                }),
+            },
+            ..Settings::default()
+        };
+        settings.save(&path).unwrap();
+
+        let loaded = Settings::load(&path);
+        assert_eq!(loaded.session, settings.session);
+    }
+
+    #[test]
     fn f2_moves_from_the_tag_editor_to_rename() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
@@ -490,5 +561,6 @@ mod tests {
         assert!(!loaded.equalizer.enabled);
         assert_eq!(loaded.skin, crate::theme::Skin::default());
         assert_eq!(loaded.shortcut(Action::PlayPause).unwrap().token(), "space");
+        assert_eq!(loaded.session, Session::default());
     }
 }

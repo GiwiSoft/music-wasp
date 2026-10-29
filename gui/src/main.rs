@@ -9,6 +9,16 @@ use app::App;
 
 fn main() -> eframe::Result<()> {
     prefer_x11_for_file_drop();
+    // Screenshot runs need a predictable canvas and must not inherit a session.
+    let screenshot = std::env::var_os("MUSICWASP_SCREENSHOT").is_some();
+    let saved_window = if screenshot {
+        None
+    } else {
+        crate::settings::Settings::load(&crate::settings::Settings::path())
+            .session
+            .window
+    };
+
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 800.0])
         .with_min_inner_size([900.0, 560.0])
@@ -17,6 +27,12 @@ fn main() -> eframe::Result<()> {
         // desktop shows the launcher icon for a running window.
         .with_app_id("musicwasp")
         .with_title("MusicWasp");
+    if let Some(window) = saved_window {
+        viewport = viewport.with_inner_size([window.width.max(900.0), window.height.max(560.0)]);
+        if let (Some(x), Some(y)) = (window.x, window.y) {
+            viewport = viewport.with_position([x, y]);
+        }
+    }
     if let Some(icon) = icons::icon_data(false) {
         viewport = viewport.with_icon(icon);
     }
