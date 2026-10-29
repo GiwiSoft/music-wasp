@@ -4,6 +4,7 @@ use crate::theme as th;
 use egui::{Color32, RichText};
 use egui_extras::{Column, TableBuilder};
 use musicwasp_core::{SortKey, Track};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// True while files are being dragged from the OS and the pointer is over `rect`.
@@ -157,6 +158,18 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                 .clicked()
                 {
                     app.plain_view = !app.plain_view;
+                }
+                if !app.plain_view
+                    && icons::toggle(
+                        ui,
+                        app.settings.queue_open,
+                        icons::QUEUE,
+                        "Play queue: show or hide Up Next",
+                    )
+                    .clicked()
+                {
+                    app.settings.queue_open = !app.settings.queue_open;
+                    app.persist_settings();
                 }
                 if icons::toggle(
                     ui,
@@ -878,6 +891,309 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
     }
 }
 
+/// Right-hand play queue: the current track and the editable Up Next list.
+pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
+    if !app.settings.queue_open {
+        return;
+    }
+    let ctx = ui.ctx().clone();
+
+    enum Act {
+        Jump(usize),
+        Remove(usize),
+        Move { from: usize, to: usize },
+        Clear,
+        Close,
+    }
+    let mut act: Option<Act> = None;
+
+    // Snapshot the queue so the UI can borrow tracks without holding a mutable
+    // borrow of the app.
+    let queue = app.queue.clone();
+    let pos = app.queue_pos;
+    let current_id = pos.and_then(|pos| queue.get(pos).copied());
+    let upcoming: Vec<(usize, i64)> = queue
+        .iter()
+        .copied()
+        .enumerate()
+        .skip(pos.map(|pos| pos + 1).unwrap_or(0))
+        .collect();
+
+    let can_clear = !upcoming.is_empty();
+
+    // Borrow the visible tracks only; missing ones are fetched in one small
+    // batch for the rows currently on screen.
+    {
+        let local: HashMap<i64, &Track> =
+            app.tracks.iter().map(|track| (track.id, track)).collect();
+        let current_track = current_id
+            .and_then(|id| local.get(&id).map(|track| (*track).clone()))
+            .or_else(|| {
+                current_id.and_then(|id| {
+                    app.lib
+                        .tracks_by_ids(&[id])
+                        .ok()
+                        .and_then(|mut tracks| tracks.pop())
+                })
+            });
+
+        egui::Panel::right("queue")
+            .resizable(true)
+            .default_size(286.0)
+            .min_size(220.0)
+            .max_size(440.0)
+            .show(ui, |ui| {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!("{} QUEUE", icons::QUEUE.as_str()))
+                            .size(10.0)
+                            .strong()
+                            .color(th::text_dim()),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if icons::compact(ui, icons::X, "Hide the play queue").clicked() {
+                            act = Some(Act::Close);
+                        }
+                        if icons::compact_enabled(
+                            ui,
+                            can_clear,
+                            icons::TRASH,
+                            "Clear everything after the current track",
+                        )
+                        .clicked()
+                        {
+                            act = Some(Act::Clear);
+                        }
+                    });
+                });
+                ui.separator();
+
+                if let Some(track) = &current_track {
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new("NOW PLAYING")
+                            .size(9.5)
+                            .strong()
+                            .color(th::accent()),
+                    );
+                    ui.add_space(2.0);
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(&track.title)
+                                .size(13.0)
+                                .strong()
+                                .color(th::text()),
+                        )
+                        .truncate(),
+                    );
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(format!("{}  ·  {}", track.artist, track.album))
+                                .size(10.5)
+                                .color(th::text_dim()),
+                        )
+                        .truncate(),
+                    );
+                    ui.add_space(6.0);
+                    ui.separator();
+                }
+
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("UP NEXT")
+                            .size(9.5)
+                            .strong()
+                            .color(th::text_dim()),
+                    );
+                    if !upcoming.is_empty() {
+                        ui.label(
+                            RichText::new(format!("{} track(s)", upcoming.len()))
+                                .size(9.5)
+                                .color(th::text_dim()),
+                        );
+                    }
+                });
+                ui.add_space(2.0);
+
+                if upcoming.is_empty() {
+                    ui.add_space(10.0);
+                    ui.label(
+                        RichText::new(format!("{} Nothing queued", icons::CHECK.as_str()))
+                            .size(11.0)
+                            .color(th::text_dim()),
+                    );
+                    ui.label(
+                        RichText::new("Right-click a track and choose Play next or Add to queue.")
+                            .size(10.0)
+                            .color(th::text_dim()),
+                    );
+                    return;
+                }
+
+                egui::ScrollArea::vertical()
+                    .id_salt("queue_list")
+                    .auto_shrink([false, false])
+                    .show_rows(ui, 26.0, upcoming.len(), |ui, range| {
+                        let missing_ids: Vec<i64> = range
+                            .clone()
+                            .map(|row| upcoming[row].1)
+                            .filter(|id| !local.contains_key(id))
+                            .collect();
+                        let fetched: HashMap<i64, Track> = if missing_ids.is_empty() {
+                            HashMap::new()
+                        } else {
+                            app.lib
+                                .tracks_by_ids(&missing_ids)
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|track| (track.id, track))
+                                .collect()
+                        };
+
+                        let range_end = range.end;
+                        for row in range {
+                            let (index, id) = upcoming[row];
+                            let display_row = row + 1;
+                            let track = local
+                                .get(&id)
+                                .map(|track| (*track).clone())
+                                .or_else(|| fetched.get(&id).cloned());
+                            let Some(track) = track else {
+                                ui.label(
+                                    RichText::new(format!("{:>2}  missing track", index + 1))
+                                        .size(10.5)
+                                        .color(th::text_dim()),
+                                );
+                                continue;
+                            };
+
+                            let mut jump = false;
+                            let mut remove = false;
+                            let mut move_to = None;
+
+                            ui.horizontal(|ui| {
+                                let remove_width = 26.0;
+                                let width = (ui.available_width() - remove_width).max(40.0);
+                                let label = format!(
+                                    "{:>2}  {}  ·  {}",
+                                    display_row, track.title, track.artist
+                                );
+                                let resp = ui
+                                    .add_sized(
+                                        [width, 23.0],
+                                        egui::Button::new(
+                                            RichText::new(label).size(11.5).color(th::text()),
+                                        )
+                                        .frame(false)
+                                        .sense(egui::Sense::click_and_drag())
+                                        .truncate(),
+                                    )
+                                    .on_hover_text(format!(
+                                        "Play now\n{}  ·  {}\nDrag to reorder",
+                                        track.title,
+                                        fmt_time(track.duration_secs as f64)
+                                    ));
+                                if resp.clicked() {
+                                    jump = true;
+                                }
+                                if resp.drag_started() {
+                                    egui::DragAndDrop::set_payload(
+                                        &ctx,
+                                        crate::app::QueueDrag { index },
+                                    );
+                                }
+                                if let Some(drag) =
+                                    resp.dnd_release_payload::<crate::app::QueueDrag>()
+                                {
+                                    move_to = Some(drag.index);
+                                } else if resp
+                                    .dnd_hover_payload::<crate::app::QueueDrag>()
+                                    .is_some()
+                                {
+                                    let painter = ctx.layer_painter(egui::LayerId::new(
+                                        egui::Order::Foreground,
+                                        egui::Id::new("queue_dnd_insert"),
+                                    ));
+                                    painter.rect_filled(
+                                        egui::Rect::from_min_max(
+                                            egui::pos2(resp.rect.left(), resp.rect.top()),
+                                            egui::pos2(resp.rect.right(), resp.rect.top() + 2.0),
+                                        ),
+                                        0.0,
+                                        th::accent(),
+                                    );
+                                }
+
+                                if icons::compact(ui, icons::X, "Remove from the queue").clicked() {
+                                    remove = true;
+                                }
+                            });
+
+                            if jump {
+                                act = Some(Act::Jump(index));
+                            }
+                            if remove {
+                                act = Some(Act::Remove(index));
+                            }
+                            if let Some(from) = move_to {
+                                act = Some(Act::Move { from, to: index });
+                            }
+                        }
+
+                        // Drop below the last row to move an entry to the end.
+                        if range_end == upcoming.len() {
+                            let (end_rect, end_resp) = ui.allocate_exact_size(
+                                egui::vec2(ui.available_width(), 18.0),
+                                egui::Sense::hover(),
+                            );
+                            if end_resp
+                                .dnd_hover_payload::<crate::app::QueueDrag>()
+                                .is_some()
+                            {
+                                let painter = ctx.layer_painter(egui::LayerId::new(
+                                    egui::Order::Foreground,
+                                    egui::Id::new("queue_dnd_end"),
+                                ));
+                                painter.rect_filled(
+                                    egui::Rect::from_min_max(
+                                        egui::pos2(end_rect.left(), end_rect.top()),
+                                        egui::pos2(end_rect.right(), end_rect.top() + 2.0),
+                                    ),
+                                    0.0,
+                                    th::accent(),
+                                );
+                            }
+                            if let Some(drag) =
+                                end_resp.dnd_release_payload::<crate::app::QueueDrag>()
+                            {
+                                act = Some(Act::Move {
+                                    from: drag.index,
+                                    to: queue.len(),
+                                });
+                            }
+                        }
+                    });
+            });
+    }
+
+    match act {
+        Some(Act::Jump(index)) => app.queue_jump(index),
+        Some(Act::Remove(index)) => app.queue_remove(index),
+        Some(Act::Move { from, to }) => app.queue_move(from, to),
+        Some(Act::Clear) => {
+            app.queue_clear_upcoming();
+            app.message = "cleared the play queue".to_string();
+        }
+        Some(Act::Close) => {
+            app.settings.queue_open = false;
+            app.persist_settings();
+        }
+        None => {}
+    }
+}
+
 pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     enum RowAct {
@@ -900,6 +1216,8 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
     }
     enum MenuAction {
         PlayNow(usize),
+        PlayNext(usize),
+        AddToQueue(usize),
         Rename(usize),
         EditTags(usize),
         FindMetadata(usize),
@@ -1185,6 +1503,21 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                             ui.close();
                         }
                         if ui
+                            .button(icons::with(icons::SKIP_FORWARD, "Play next"))
+                            .clicked()
+                        {
+                            menu_action = Some(MenuAction::PlayNext(idx));
+                            ui.close();
+                        }
+                        if ui
+                            .button(icons::with(icons::QUEUE, "Add to queue"))
+                            .clicked()
+                        {
+                            menu_action = Some(MenuAction::AddToQueue(idx));
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
                             .button(icons::with(icons::PENCIL_SIMPLE, "Rename"))
                             .clicked()
                         {
@@ -1342,6 +1675,14 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
             MenuAction::PlayNow(index) => {
                 app.select_row_for_action(index);
                 app.play_from_list(index);
+            }
+            MenuAction::PlayNext(index) => {
+                app.select_row_for_action(index);
+                app.queue_next_selected();
+            }
+            MenuAction::AddToQueue(index) => {
+                app.select_row_for_action(index);
+                app.queue_append_selected();
             }
             MenuAction::Rename(index) => {
                 app.select_only_row(index);

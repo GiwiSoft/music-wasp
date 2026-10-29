@@ -23,6 +23,12 @@ pub struct DragTracks {
     pub from_playlist: Option<i64>,
 }
 
+/// Drag payload for reordering the play queue.
+#[derive(Debug, Clone, Copy)]
+pub struct QueueDrag {
+    pub index: usize,
+}
+
 /// Editing state for a new smart playlist.
 pub struct SmartDraft {
     pub name: String,
@@ -386,6 +392,32 @@ fn best_release_track(local: &Track, release: &Release) -> usize {
         .min_by_key(|(_, delta)| *delta)
         .map(|(index, _)| index)
         .unwrap_or(0)
+}
+
+/// Insert `ids` right after `pos` (or at the end when idle).
+fn queue_insert_next(queue: &mut Vec<i64>, pos: Option<usize>, ids: &[i64]) {
+    let at = pos
+        .map(|pos| (pos + 1).min(queue.len()))
+        .unwrap_or(queue.len());
+    for (offset, id) in ids.iter().enumerate() {
+        queue.insert((at + offset).min(queue.len()), *id);
+    }
+}
+
+/// Reorder an upcoming queue entry, dropping it before `to`. The playing entry
+/// and anything before it are left alone. Returns true when the order changed.
+fn queue_reorder(queue: &mut Vec<i64>, pos: Option<usize>, from: usize, to: usize) -> bool {
+    let len = queue.len();
+    if from >= len || to > len || from == to {
+        return false;
+    }
+    if pos.is_some_and(|pos| from <= pos || to <= pos) {
+        return false;
+    }
+    let id = queue.remove(from);
+    let dest = if from < to { to - 1 } else { to };
+    queue.insert(dest.min(queue.len()), id);
+    true
 }
 
 pub fn common_fields(tracks: &[Track]) -> TagEdit {
@@ -975,10 +1007,93 @@ impl App {
         self.play_loaded();
     }
 
+    /// Add tracks to the end of the play queue.
+    pub fn queue_append(&mut self, ids: &[i64]) {
+        if ids.is_empty() {
+            return;
+        }
+        self.queue.extend_from_slice(ids);
+        if let Some(state) = self.queue_state() {
+            self.message = format!("added {} track(s) to the queue ({state})", ids.len());
+        }
+    }
+
+    /// Insert tracks right after the current one; appended when idle.
+    pub fn queue_next(&mut self, ids: &[i64]) {
+        if ids.is_empty() {
+            return;
+        }
+        queue_insert_next(&mut self.queue, self.queue_pos, ids);
+        self.message = format!(
+            "{} track(s) will play next{}",
+            ids.len(),
+            self.queue_state()
+                .map(|state| format!(" ({state})"))
+                .unwrap_or_default()
+        );
+    }
+
+    pub fn queue_append_selected(&mut self) {
+        let ids = self.selected_in_view();
+        self.queue_append(&ids);
+    }
+
+    pub fn queue_next_selected(&mut self) {
+        let ids = self.selected_in_view();
+        self.queue_next(&ids);
+    }
+
+    /// Play a specific queue entry.
+    pub fn queue_jump(&mut self, index: usize) {
+        if index >= self.queue.len() {
+            return;
+        }
+        self.queue_pos = Some(index);
+        self.play_loaded();
+    }
+
+    /// Remove an upcoming entry. The playing track is never removed here.
+    pub fn queue_remove(&mut self, index: usize) {
+        if index >= self.queue.len() {
+            return;
+        }
+        if self.queue_pos.is_some_and(|pos| index <= pos) {
+            return;
+        }
+        self.queue.remove(index);
+    }
+
+    /// Remove every upcoming entry, keeping the current track playing.
+    pub fn queue_clear_upcoming(&mut self) {
+        match self.queue_pos {
+            Some(pos) => self.queue.truncate(pos + 1),
+            None => self.queue.clear(),
+        }
+    }
+
+    /// Move an upcoming entry to a new position (drop before `to`).
+    pub fn queue_move(&mut self, from: usize, to: usize) {
+        queue_reorder(&mut self.queue, self.queue_pos, from, to);
+    }
+
+    fn queue_state(&self) -> Option<String> {
+        if self.queue.is_empty() {
+            return None;
+        }
+        Some(match self.queue_pos {
+            Some(pos) => format!("{} of {}", pos + 1, self.queue.len()),
+            None => format!("{} queued", self.queue.len()),
+        })
+    }
+
     pub fn toggle_pause(&mut self) {
         if let Some(p) = &self.player {
             if p.snapshot().status == musicwasp_core::PlayerStatus::Stopped {
-                if self.queue_pos.is_none() && !self.tracks.is_empty() {
+                if self.queue_pos.is_none() && !self.queue.is_empty() {
+                    // A queue built before playback starts: play its first entry.
+                    self.queue_pos = Some(0);
+                    self.play_loaded();
+                } else if self.queue_pos.is_none() && !self.tracks.is_empty() {
                     self.play_from_list(0);
                 } else {
                     self.play_loaded();
@@ -1840,6 +1955,7 @@ impl eframe::App for App {
         } else {
             crate::ui::browser(self, root);
             crate::ui::transport(self, root);
+            crate::ui::queue_panel(self, root);
             crate::ui::tracklist(self, root);
         }
         // Handle OS file drops after the browser has registered this frame's
@@ -2064,7 +2180,8 @@ pub fn fmt_size(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_click, best_release_track, clamp_seek, common_fields, list_subdirs, TrackField,
+        apply_click, best_release_track, clamp_seek, common_fields, list_subdirs,
+        queue_insert_next, queue_reorder, TrackField,
     };
     use musicwasp_core::autotag::{Release, ReleaseTrack};
     use musicwasp_core::{TagEdit, Track};
@@ -2161,6 +2278,30 @@ mod tests {
         let mut anchor = Some(10);
         apply_click(&mut selected, &mut anchor, &view, 7, false, false);
         assert_eq!(selected, selection(&[10]));
+    }
+
+    #[test]
+    fn queue_inserts_after_the_current_track_and_reorders_only_up_next() {
+        let mut queue = vec![1, 2, 3];
+        queue_insert_next(&mut queue, Some(0), &[8, 9]);
+        assert_eq!(queue, vec![1, 8, 9, 2, 3]);
+
+        queue_insert_next(&mut queue, None, &[7]);
+        assert_eq!(queue, vec![1, 8, 9, 2, 3, 7]);
+
+        // Reorder upcoming entries.
+        assert!(queue_reorder(&mut queue, Some(0), 4, 1));
+        assert_eq!(queue, vec![1, 3, 8, 9, 2, 7]);
+
+        // Move to the very end.
+        let end = queue.len();
+        assert!(queue_reorder(&mut queue, Some(0), 2, end));
+        assert_eq!(queue, vec![1, 3, 9, 2, 7, 8]);
+
+        // Never move the playing entry or anything before it.
+        assert!(!queue_reorder(&mut queue, Some(0), 0, 3));
+        assert!(!queue_reorder(&mut queue, Some(2), 1, 4));
+        assert_eq!(queue, vec![1, 3, 9, 2, 7, 8]);
     }
 
     fn track(title: &str, artist: &str, album: &str, year: Option<i32>) -> Track {

@@ -218,6 +218,13 @@ pub struct Settings {
     /// Collapsed state of the left browser sections.
     #[serde(default)]
     pub folded: FoldedSections,
+    /// Show the play-queue panel on the right.
+    #[serde(default = "default_queue_open")]
+    pub queue_open: bool,
+}
+
+fn default_queue_open() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -231,6 +238,7 @@ impl Default for Settings {
             equalizer: Equalizer::default(),
             skin: Skin::default(),
             folded: FoldedSections::default(),
+            queue_open: default_queue_open(),
         }
     }
 }
@@ -436,17 +444,21 @@ mod tests {
         let mut settings = Settings::default();
         settings.folded.genre = true;
         settings.folded.playlists = true;
+        settings.queue_open = false;
         settings.save(&path).unwrap();
 
         let loaded = Settings::load(&path);
         assert!(loaded.folded.genre);
         assert!(!loaded.folded.artist);
         assert!(loaded.folded.playlists);
+        assert!(!loaded.queue_open);
 
-        // Files written before the feature existed start fully expanded.
+        // Files written before the feature existed start fully expanded, with
+        // the queue panel visible.
         std::fs::write(&path, r#"{"shortcuts":{"play_pause":"space"}}"#).unwrap();
         let old = Settings::load(&path);
         assert_eq!(old.folded, FoldedSections::default());
+        assert!(old.queue_open);
     }
 
     #[test]

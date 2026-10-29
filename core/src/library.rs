@@ -47,6 +47,11 @@ impl Library {
         path_for_id(&self.conn, id)
     }
 
+    /// Tracks for a set of ids, in the order requested. Missing ids are skipped.
+    pub fn tracks_by_ids(&self, ids: &[i64]) -> Result<Vec<Track>> {
+        tracks_by_ids(&self.conn, ids)
+    }
+
     pub fn track_by_path(&self, path: &Path) -> Result<Option<Track>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {TRACK_COLUMNS} FROM tracks WHERE path = ?1"
