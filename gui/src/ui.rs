@@ -1076,25 +1076,124 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                             ui.horizontal(|ui| {
                                 let remove_width = 26.0;
                                 let width = (ui.available_width() - remove_width).max(40.0);
-                                let label = format!(
-                                    "{:>2}  {}  ·  {}",
-                                    display_row, track.title, track.artist
+                                let (rect, resp) = ui.allocate_exact_size(
+                                    egui::vec2(width, 23.0),
+                                    egui::Sense::click_and_drag(),
                                 );
-                                let resp = ui
-                                    .add_sized(
-                                        [width, 23.0],
-                                        egui::Button::new(
-                                            RichText::new(label).size(11.5).color(th::text()),
-                                        )
-                                        .frame(false)
-                                        .sense(egui::Sense::click_and_drag())
-                                        .truncate(),
-                                    )
-                                    .on_hover_text(format!(
-                                        "Play now\n{}  ·  {}\nDrag to reorder",
-                                        track.title,
-                                        fmt_time(track.duration_secs as f64)
-                                    ));
+
+                                if resp.hovered() {
+                                    ui.painter().rect_filled(rect, 3.0, th::bg_row_alt());
+                                }
+
+                                // Fixed grid columns keep every title and artist at the
+                                // same x, whatever the index width or text length.
+                                let inner = rect.shrink2(egui::vec2(4.0, 0.0));
+                                let index_width = 22.0;
+                                let artist_width = (inner.width() * 0.34).clamp(52.0, 96.0);
+                                let dash_width = 10.0;
+                                let title_left = inner.left() + index_width + 4.0;
+                                let title_width =
+                                    (inner.right() - artist_width - dash_width - 8.0 - title_left)
+                                        .max(24.0);
+
+                                let index_rect = egui::Rect::from_min_size(
+                                    inner.min,
+                                    egui::vec2(index_width, inner.height()),
+                                );
+                                ui.scope_builder(
+                                    egui::UiBuilder::new().max_rect(index_rect).layout(
+                                        egui::Layout {
+                                            main_align: egui::Align::Max,
+                                            ..egui::Layout::left_to_right(egui::Align::Center)
+                                        },
+                                    ),
+                                    |ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(display_row.to_string())
+                                                    .monospace()
+                                                    .size(10.5)
+                                                    .color(th::text_dim()),
+                                            )
+                                            .selectable(false),
+                                        );
+                                    },
+                                );
+
+                                let title_rect = egui::Rect::from_min_size(
+                                    egui::pos2(title_left, inner.top()),
+                                    egui::vec2(title_width, inner.height()),
+                                );
+                                ui.scope_builder(
+                                    egui::UiBuilder::new().max_rect(title_rect).layout(
+                                        egui::Layout {
+                                            main_align: egui::Align::Min,
+                                            ..egui::Layout::left_to_right(egui::Align::Center)
+                                        },
+                                    ),
+                                    |ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(&track.title)
+                                                    .size(11.5)
+                                                    .color(th::text()),
+                                            )
+                                            .truncate()
+                                            .selectable(false),
+                                        );
+                                    },
+                                );
+
+                                let dash_rect = egui::Rect::from_min_size(
+                                    egui::pos2(title_rect.right() + 4.0, inner.top()),
+                                    egui::vec2(dash_width, inner.height()),
+                                );
+                                ui.scope_builder(
+                                    egui::UiBuilder::new().max_rect(dash_rect).layout(
+                                        egui::Layout {
+                                            main_align: egui::Align::Min,
+                                            ..egui::Layout::left_to_right(egui::Align::Center)
+                                        },
+                                    ),
+                                    |ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new("-").size(11.0).color(th::text_dim()),
+                                            )
+                                            .selectable(false),
+                                        );
+                                    },
+                                );
+
+                                let artist_rect = egui::Rect::from_min_size(
+                                    egui::pos2(dash_rect.right() + 4.0, inner.top()),
+                                    egui::vec2(artist_width, inner.height()),
+                                );
+                                ui.scope_builder(
+                                    egui::UiBuilder::new().max_rect(artist_rect).layout(
+                                        egui::Layout {
+                                            main_align: egui::Align::Min,
+                                            ..egui::Layout::left_to_right(egui::Align::Center)
+                                        },
+                                    ),
+                                    |ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(&track.artist)
+                                                    .size(11.0)
+                                                    .color(th::text_dim()),
+                                            )
+                                            .truncate()
+                                            .selectable(false),
+                                        );
+                                    },
+                                );
+
+                                let resp = resp.on_hover_text(format!(
+                                    "Play now\n{} - {}\nDrag to reorder",
+                                    track.title,
+                                    fmt_time(track.duration_secs as f64)
+                                ));
                                 if resp.clicked() {
                                     jump = true;
                                 }
