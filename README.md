@@ -30,7 +30,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Smart playlists | rule-based (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
 | Skins | five palettes (MusicWasp Dark, Midnight, Forest, Mono, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
-| Settings | rebindable keyboard shortcuts with conflict detection, persisted to `settings.json` |
+| Settings | tabbed panel: General (skins, folder watching), Keybindings, About; shortcuts persist to `settings.json` |
 | Library hygiene | find rows whose files vanished, detect duplicate artist/title/album groups, and remove entries from the library in bulk; audio files are never deleted |
 | Folder watching | scanned folders are watched with `notify`: new audio is imported automatically and external tag edits refresh existing rows; manual **Scan** still works |
 | Session restore | reopens the last view, search, selection, volume, play queue and window size/position; playback always starts stopped |
@@ -121,8 +121,10 @@ entry uses the app icon.
    transport, seek, volume and the next track. Press it again to return to the library.
 10. Click a track cell (title, artist, album, genre, year, track no) and press `F2` to rename that
    field in place. Click a playlist first and `F2` renames the playlist itself.
-11. **Settings** (`Ctrl+,`) rebinds every shortcut: click a binding, press the new combination.
-   `Delete` clears a binding, `Escape` cancels, conflicts are shown in red.
+11. **Settings** (`Ctrl+,`) has three tabs: **General** for skins and folder watching,
+    **Keybindings** for shortcuts, and **About** with the project link and copyright. In
+    **Keybindings**, click a binding and press the new combination; `Delete` clears it, `Escape`
+    cancels, and conflicts are shown in red.
 12. **EQ** (`Ctrl+E`) opens the 10-band equalizer. Pick a preset or move the sliders; the curve and
    the running track update immediately. Changes are saved to `settings.json` automatically.
 13. Pick a **Skin** from the dropdown in **Settings**: MusicWasp Dark (default), Midnight, Forest,
@@ -267,6 +269,7 @@ MUSICWASP_SCREENSHOT=/tmp/plain.png MUSICWASP_AUTOPLAY=1 MUSICWASP_PLAIN=1 cargo
 MUSICWASP_SCREENSHOT=/tmp/tags.png MUSICWASP_EDITOR=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/rename.png MUSICWASP_RENAME=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/eq.png MUSICWASP_EQ=1 cargo run -p musicwasp-gui
+MUSICWASP_SCREENSHOT=/tmp/settings.png MUSICWASP_SETTINGS=1 MUSICWASP_SETTINGS_TAB=about cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/hygiene.png MUSICWASP_HYGIENE=1 cargo run -p musicwasp-gui
 ```
 

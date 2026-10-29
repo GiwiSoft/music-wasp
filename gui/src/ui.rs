@@ -1,4 +1,4 @@
-use crate::app::{fmt_size, fmt_time, App, Focus, RenameTarget, TrackField};
+use crate::app::{fmt_size, fmt_time, App, Focus, RenameTarget, SettingsTab, TrackField};
 use crate::icons;
 use crate::theme as th;
 use egui::{Color32, RichText};
@@ -2372,181 +2372,255 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     let mut rebind: Option<crate::settings::Action> = None;
     let mut chosen_skin: Option<crate::theme::Skin> = None;
     let conflicts = app.settings.conflicts();
+    let mut tab = app.settings_tab;
 
     egui::Window::new("Settings")
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
-        .default_width(430.0)
+        .default_width(460.0)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
-            ui.label(
-                RichText::new("SKIN")
-                    .size(10.0)
-                    .strong()
-                    .color(th::text_dim()),
-            );
-            ui.add_space(4.0);
-            egui::ComboBox::from_id_salt("skin_select")
-                .selected_text(RichText::new(app.settings.skin.label()).size(12.0))
-                .width(220.0)
-                .show_ui(ui, |ui| {
-                    for skin in crate::theme::Skin::ALL {
-                        if ui
-                            .selectable_label(app.settings.skin == skin, skin.label())
-                            .clicked()
-                        {
-                            chosen_skin = Some(skin);
-                        }
-                    }
-                });
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new("Skins apply immediately and are remembered in settings.json.")
-                    .size(10.5)
-                    .color(th::text_dim()),
-            );
-
-            ui.add_space(8.0);
-            let mut watching = app.settings.watch_enabled;
-            if ui
-                .checkbox(
-                    &mut watching,
-                    RichText::new("Watch scanned folders for new or changed files").size(11.5),
-                )
-                .on_hover_text(
-                    "New audio files are imported automatically and tag edits refresh existing \
-                     rows. Manual Scan still works.",
-                )
-                .changed()
-            {
-                app.set_watch_enabled(watching);
-            }
-            if app.settings.watch_folders.is_empty() {
-                ui.label(
-                    RichText::new("Scan a folder once to start watching it.")
-                        .size(10.0)
-                        .color(th::text_dim()),
-                );
-            } else {
-                let folders = app.settings.watch_folders.join("\n");
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(format!(
-                            "{} watched folder(s)",
-                            app.settings.watch_folders.len()
-                        ))
-                        .size(10.0)
-                        .color(th::text_dim()),
-                    )
-                    .on_hover_text(folders);
-                    if ui
-                        .small_button("Forget")
-                        .on_hover_text("Stop watching these folders")
-                        .clicked()
-                    {
-                        app.forget_watch_folders();
-                    }
-                });
-            }
-
-            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut tab, SettingsTab::General, "General");
+                ui.selectable_value(&mut tab, SettingsTab::Keybindings, "Keybindings");
+                ui.selectable_value(&mut tab, SettingsTab::About, "About");
+            });
             ui.separator();
             ui.add_space(4.0);
 
-            ui.label(
-                RichText::new("KEYBOARD SHORTCUTS")
-                    .size(10.0)
-                    .strong()
-                    .color(th::text_dim()),
-            );
-            ui.add_space(2.0);
-            ui.label(
-                RichText::new(
-                    "Click a binding, then press the new key combination. \
-                     Delete clears it, Escape cancels.",
-                )
-                .size(11.0)
-                .color(th::text_dim()),
-            );
-            ui.add_space(8.0);
-
-            egui::Grid::new("shortcut_grid")
-                .num_columns(2)
-                .spacing([16.0, 6.0])
-                .show(ui, |ui| {
-                    for action in crate::settings::Action::ALL {
-                        ui.label(RichText::new(action.label()).size(12.0));
-
-                        let capturing = app.capture == Some(action);
-                        let bound = app.settings.shortcut(action);
-                        let text = if capturing {
-                            "press a key…".to_string()
-                        } else {
-                            bound
-                                .map(|s| s.label())
-                                .unwrap_or_else(|| "unbound".to_string())
-                        };
-
-                        let conflict = conflicts.contains(&action);
-                        let mut button =
-                            egui::Button::new(RichText::new(text).size(12.0).color(if capturing {
-                                th::accent()
-                            } else if conflict {
-                                Color32::from_rgb(230, 120, 120)
-                            } else {
-                                th::text()
-                            }));
-                        if capturing {
-                            button = button.fill(th::bg_selected());
-                        }
-
-                        ui.horizontal(|ui| {
+            if tab == SettingsTab::General {
+                ui.label(
+                    RichText::new("SKIN")
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                egui::ComboBox::from_id_salt("skin_select")
+                    .selected_text(RichText::new(app.settings.skin.label()).size(12.0))
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for skin in crate::theme::Skin::ALL {
                             if ui
-                                .add_sized([190.0, 22.0], button)
-                                .on_hover_text(if conflict {
-                                    "This combination is also used by another action"
-                                } else {
-                                    "Click to rebind"
-                                })
+                                .selectable_label(app.settings.skin == skin, skin.label())
                                 .clicked()
                             {
-                                rebind = Some(action);
+                                chosen_skin = Some(skin);
                             }
-                            if bound.is_some()
-                                && ui
-                                    .small_button("x")
-                                    .on_hover_text("Clear this binding")
-                                    .clicked()
-                            {
-                                unbind = Some(action);
-                            }
-                        });
-                        ui.end_row();
-                    }
-                });
-
-            if !conflicts.is_empty() {
-                ui.add_space(6.0);
+                        }
+                    });
+                ui.add_space(4.0);
                 ui.label(
-                    RichText::new("Conflicting bindings are shown in red.")
-                        .size(10.0)
-                        .color(Color32::from_rgb(230, 120, 120)),
+                    RichText::new("Skins apply immediately and are remembered in settings.json.")
+                        .size(10.5)
+                        .color(th::text_dim()),
                 );
+
+                ui.add_space(8.0);
+                let mut watching = app.settings.watch_enabled;
+                if ui
+                    .checkbox(
+                        &mut watching,
+                        RichText::new("Watch scanned folders for new or changed files").size(11.5),
+                    )
+                    .on_hover_text(
+                        "New audio files are imported automatically and tag edits refresh \
+                         existing rows. Manual Scan still works.",
+                    )
+                    .changed()
+                {
+                    app.set_watch_enabled(watching);
+                }
+                if app.settings.watch_folders.is_empty() {
+                    ui.label(
+                        RichText::new("Scan a folder once to start watching it.")
+                            .size(10.0)
+                            .color(th::text_dim()),
+                    );
+                } else {
+                    let folders = app.settings.watch_folders.join("\n");
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!(
+                                "{} watched folder(s)",
+                                app.settings.watch_folders.len()
+                            ))
+                            .size(10.0)
+                            .color(th::text_dim()),
+                        )
+                        .on_hover_text(folders);
+                        if ui
+                            .small_button("Forget")
+                            .on_hover_text("Stop watching these folders")
+                            .clicked()
+                        {
+                            app.forget_watch_folders();
+                        }
+                    });
+                }
             }
 
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                if ui.button("Reset to defaults").clicked() {
-                    reset = true;
+            if tab == SettingsTab::Keybindings {
+                ui.label(
+                    RichText::new("KEYBOARD SHORTCUTS")
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(2.0);
+                ui.label(
+                    RichText::new(
+                        "Click a binding, then press the new key combination. \
+                         Delete clears it, Escape cancels.",
+                    )
+                    .size(11.0)
+                    .color(th::text_dim()),
+                );
+                ui.add_space(8.0);
+
+                egui::Grid::new("shortcut_grid")
+                    .num_columns(2)
+                    .spacing([16.0, 6.0])
+                    .show(ui, |ui| {
+                        for action in crate::settings::Action::ALL {
+                            ui.label(RichText::new(action.label()).size(12.0));
+
+                            let capturing = app.capture == Some(action);
+                            let bound = app.settings.shortcut(action);
+                            let text = if capturing {
+                                "press a key…".to_string()
+                            } else {
+                                bound
+                                    .map(|s| s.label())
+                                    .unwrap_or_else(|| "unbound".to_string())
+                            };
+
+                            let conflict = conflicts.contains(&action);
+                            let mut button = egui::Button::new(
+                                RichText::new(text).size(12.0).color(if capturing {
+                                    th::accent()
+                                } else if conflict {
+                                    Color32::from_rgb(230, 120, 120)
+                                } else {
+                                    th::text()
+                                }),
+                            );
+                            if capturing {
+                                button = button.fill(th::bg_selected());
+                            }
+
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add_sized([190.0, 22.0], button)
+                                    .on_hover_text(if conflict {
+                                        "This combination is also used by another action"
+                                    } else {
+                                        "Click to rebind"
+                                    })
+                                    .clicked()
+                                {
+                                    rebind = Some(action);
+                                }
+                                if bound.is_some()
+                                    && ui
+                                        .small_button("x")
+                                        .on_hover_text("Clear this binding")
+                                        .clicked()
+                                {
+                                    unbind = Some(action);
+                                }
+                            });
+                            ui.end_row();
+                        }
+                    });
+
+                if !conflicts.is_empty() {
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new("Conflicting bindings are shown in red.")
+                            .size(10.0)
+                            .color(Color32::from_rgb(230, 120, 120)),
+                    );
                 }
+            }
+
+            if tab == SettingsTab::About {
+                ui.label(
+                    RichText::new("MusicWasp")
+                        .size(20.0)
+                        .strong()
+                        .color(th::accent()),
+                );
+                ui.label(
+                    RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                        .size(11.0)
+                        .color(th::text_dim()),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(
+                        "A MusicBee-inspired music library and player for Linux and Windows.",
+                    )
+                    .size(12.0),
+                );
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Website").size(11.0).color(th::text_dim()));
+                    ui.hyperlink_to("https://giwi.fr", "https://giwi.fr");
+                });
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new("Copyright © 2026 giwi.fr")
+                        .size(11.5)
+                        .color(th::text()),
+                );
+                ui.label(
+                    RichText::new("Released under the GNU General Public License v3.")
+                        .size(11.0)
+                        .color(th::text_dim()),
+                );
+                ui.hyperlink_to(
+                    "GPL-3.0-only license text",
+                    "https://www.gnu.org/licenses/gpl-3.0.html",
+                );
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("Settings file")
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
                 ui.label(
                     RichText::new(app.settings_path.display().to_string())
                         .size(10.0)
                         .color(th::text_dim()),
                 );
-            });
+            }
+
+            if tab == SettingsTab::General {
+                ui.add_space(10.0);
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.button("Reset to defaults").clicked() {
+                        reset = true;
+                    }
+                    ui.label(
+                        RichText::new("Themes, watching, shortcuts and session are reset.")
+                            .size(10.0)
+                            .color(th::text_dim()),
+                    );
+                });
+            }
         });
+
+    app.settings_tab = tab;
 
     if app.captured_this_frame {
         rebind = None;
@@ -2565,9 +2639,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
         app.persist_settings();
     }
     if reset {
-        app.settings.reset_defaults();
-        app.capture = None;
-        app.persist_settings();
+        app.reset_settings(ctx);
     }
     if !open {
         app.show_settings = false;

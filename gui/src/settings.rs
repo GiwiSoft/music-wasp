@@ -361,10 +361,6 @@ impl Settings {
         self.shortcuts.insert(action, String::new());
     }
 
-    pub fn reset_defaults(&mut self) {
-        *self = Settings::default();
-    }
-
     /// Actions sharing a binding with another action.
     pub fn conflicts(&self) -> Vec<Action> {
         let mut seen: BTreeMap<String, Vec<Action>> = BTreeMap::new();

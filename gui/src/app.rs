@@ -36,6 +36,14 @@ impl From<SessionView> for View {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsTab {
+    #[default]
+    General,
+    Keybindings,
+    About,
+}
+
 /// Drag payload for track rows: the ids plus where the drag started, so a drop
 /// on another playlist can move instead of copy.
 #[derive(Debug, Clone)]
@@ -629,6 +637,7 @@ pub struct App {
     /// Screenshot runs must be deterministic, so they skip session restore/save.
     session_enabled: bool,
     pub show_settings: bool,
+    pub settings_tab: SettingsTab,
     pub show_equalizer: bool,
     /// Equalizer state last pushed to the engine, so changes are cheap.
     pub eq_applied: Equalizer,
@@ -737,6 +746,7 @@ impl App {
             window_geometry,
             session_enabled,
             show_settings: false,
+            settings_tab: SettingsTab::default(),
             show_equalizer: false,
             eq_applied,
             capture: None,
@@ -1758,6 +1768,17 @@ impl App {
         }
     }
 
+    /// Restore every setting to its default and apply the ones that are live
+    /// (theme, window icon, folder watcher).
+    pub fn reset_settings(&mut self, ctx: &egui::Context) {
+        self.settings = Settings::default();
+        self.capture = None;
+        self.watch_dirty = true;
+        crate::theme::apply(ctx, self.settings.skin);
+        self.refresh_brand_icon(ctx);
+        self.persist_settings();
+    }
+
     /// Switch skins immediately and remember the choice.
     pub fn set_skin(&mut self, ctx: &egui::Context, skin: crate::theme::Skin) {
         if self.settings.skin != skin {
@@ -2503,9 +2524,15 @@ impl App {
             self.play_from_list(0);
         }
 
-        // Debug hook: MUSICWASP_SETTINGS=1 opens the settings panel.
+        // Debug hook: MUSICWASP_SETTINGS=1 opens the settings panel;
+        // MUSICWASP_SETTINGS_TAB=keybindings|about picks a tab.
         if self.frames == 20 && std::env::var("MUSICWASP_SETTINGS").is_ok() {
             self.show_settings = true;
+            self.settings_tab = match std::env::var("MUSICWASP_SETTINGS_TAB").as_deref() {
+                Ok("keybindings") => SettingsTab::Keybindings,
+                Ok("about") => SettingsTab::About,
+                _ => SettingsTab::General,
+            };
         }
 
         // Debug hook: MUSICWASP_EDITOR=1 opens the tag editor for the first
