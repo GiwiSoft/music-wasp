@@ -1,0 +1,8 @@
+# Local, no-root fallback for the ALSA headers.
+#
+# `scripts/dev-env.sh` unpacks the distro's ALSA dev package into `.sysroot/`
+# when the user cannot install packages. If that directory does not exist (the
+# normal case, or on Windows), these paths are simply ignored by pkg-config and
+# by `core/build.rs`, so a regular toolchain build is unaffected.
+[env]
+PKG_CONFIG_PATH = { value = ".sysroot/usr/lib/x86_64-linux-gnu/pkgconfig", relative = true, force = false }

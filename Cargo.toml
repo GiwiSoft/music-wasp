@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = ["core", "cli", "gui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+lofty = "0.21"
+walkdir = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+dirs = "5"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
