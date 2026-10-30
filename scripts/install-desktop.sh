@@ -13,6 +13,7 @@ bin="${1:-${MUSICWASP_BIN:-}}"
 
 if [ -z "$bin" ]; then
     for candidate in \
+        "$root/musicwasp" \
         "$root/target/release/musicwasp" \
         "$root/target/debug/musicwasp" \
         "$(command -v musicwasp || true)"

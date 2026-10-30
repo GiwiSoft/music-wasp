@@ -93,6 +93,12 @@ hicolor icon theme. Pass a binary path to override which executable it runs.
 The window itself keeps the MusicWasp logo as its window icon; only the launcher
 entry uses the app icon.
 
+Tagged Linux archives already contain the binaries, `packaging/musicwasp.desktop`,
+`assets/ic_launcher-web.png` and `scripts/install-desktop.sh`; extract the archive and run
+`./scripts/install-desktop.sh` (it finds the adjacent `musicwasp` binary). Windows builds embed
+`assets/musicwasp.ico` into `musicwasp.exe`, so Explorer, shortcuts and the taskbar show the app
+icon before the app starts.
+
 ## Usage
 
 1. Start the GUI, pick a folder with the folder button (or type a path), press **Scan**.

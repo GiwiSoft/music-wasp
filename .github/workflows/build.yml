@@ -48,8 +48,12 @@ jobs:
         run: |
           mkdir -p dist
           tar -czf "dist/musicwasp-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
+            --transform "s,^,musicwasp-${GITHUB_REF_NAME}/," \
             -C target/release musicwasp musicwasp-cli \
-            -C "$GITHUB_WORKSPACE" LICENSE README.md
+            -C "$GITHUB_WORKSPACE" LICENSE README.md \
+              packaging/musicwasp.desktop \
+              assets/ic_launcher-web.png \
+              scripts/install-desktop.sh
 
       - name: Package (Windows)
         if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
@@ -57,7 +61,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Compress-Archive `
-            -Path target/release/musicwasp.exe,target/release/musicwasp-cli.exe,LICENSE,README.md `
+            -Path target/release/musicwasp.exe,target/release/musicwasp-cli.exe,LICENSE,README.md,assets/musicwasp.ico `
             -DestinationPath "dist/musicwasp-$env:GITHUB_REF_NAME-windows-x86_64.zip"
 
       - name: Upload release artifacts
@@ -88,6 +92,8 @@ jobs:
           ls -l dist
           test -n "$(find dist -maxdepth 1 -name '*-linux-x86_64.tar.gz' -print -quit)"
           test -n "$(find dist -maxdepth 1 -name '*-windows-x86_64.zip' -print -quit)"
+          tar -tzf dist/*-linux-x86_64.tar.gz | grep -q 'assets/ic_launcher-web.png'
+          unzip -l dist/*-windows-x86_64.zip | grep -q 'musicwasp.ico'
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
