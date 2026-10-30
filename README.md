@@ -19,7 +19,8 @@ This is an early but working clone, not a finished product. What runs today:
 | Selection | multi-select (`Ctrl`-click, `Shift`-click, `Ctrl+A`, `Esc`), drag tracks onto a playlist, right-click a row for play / rename / metadata / playlist actions |
 | Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle |
 | Play queue | right-hand Up Next panel: current track, click any entry to jump, drag to reorder, right-click to remove, or clear everything after the current track; **Play next** / **Add to queue** from the track menu |
-| Now playing | album art from embedded cover, accent-highlighted current row, live position |
+| Now playing | album art from embedded cover or folder sidecar, accent-highlighted current row, live position |
+| Cover tools | album grid view with artwork, fetch missing covers from the Cover Art Archive, replace a cover from an image file, and save it as a `cover.jpg` sidecar |
 | Tag editing | edit title, artist, album, album artist, genre, year, track no, disc no and write them into the file; batch edit writes only the fields you fill in |
 | Plain view | one-click full-window now-playing view: large cover, transport, seek, volume and the next track |
 | Renaming | `F2` renames the clicked track field (title, artist, album, genre, year, track no) or the open playlist / smart playlist |
@@ -156,6 +157,10 @@ icon before the app starts.
     media keys, GNOME/KDE media controls, the lock screen, `playerctl` and Bluetooth headset
     buttons control playback; track, position, volume, shuffle and repeat are published. Try
     `playerctl --player=musicwasp play-pause`.
+18. The grid button in the toolbar switches the track table to an **album grid**. Click a tile to
+    open that album, or right-click it for **Fetch missing cover** (Cover Art Archive), **Replace
+    cover…** (image picker, embedded into every track in the album) and **Save cover.jpg** beside
+    the files. Sidecar covers are used automatically when a file has no embedded art.
 
 ### Default shortcuts
 
@@ -192,6 +197,10 @@ Smart playlists are rules, evaluated live:
 Finding missing files and duplicate rows without touching the audio:
 
 ![Library hygiene](docs/library-hygiene.png)
+
+Album grid with cover tools:
+
+![Album grid](docs/album-grid.png)
 
 Batch editing several tracks at once:
 
@@ -286,6 +295,7 @@ MUSICWASP_SCREENSHOT=/tmp/rename.png MUSICWASP_RENAME=1 cargo run -p musicwasp-g
 MUSICWASP_SCREENSHOT=/tmp/eq.png MUSICWASP_EQ=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/settings.png MUSICWASP_SETTINGS=1 MUSICWASP_SETTINGS_TAB=about cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/hygiene.png MUSICWASP_HYGIENE=1 cargo run -p musicwasp-gui
+MUSICWASP_SCREENSHOT=/tmp/grid.png MUSICWASP_ALBUM_GRID=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/undo.png MUSICWASP_UNDO=1 cargo run -p musicwasp-gui
 ```
 

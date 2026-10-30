@@ -1,9 +1,13 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use lofty::config::WriteOptions;
 use lofty::file::TaggedFileExt;
+use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::{Accessor, AudioFile, ItemKey};
 use lofty::probe::Probe;
+use lofty::tag::{Tag, TagExt};
 use rusqlite::{params, params_from_iter, Connection};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
@@ -70,6 +74,16 @@ impl Library {
     /// Tracks whose files are no longer on disk.
     pub fn missing_tracks(&self) -> Result<Vec<Track>> {
         missing_tracks(&self.conn)
+    }
+
+    /// Albums for the cover grid, grouped by album and album artist.
+    pub fn album_groups(&self) -> Result<Vec<AlbumGroup>> {
+        album_groups(&self.conn)
+    }
+
+    /// All tracks of one album, used by the cover tools.
+    pub fn album_tracks(&self, album: &str, artist: &str) -> Result<Vec<Track>> {
+        album_tracks(&self.conn, album, artist)
     }
 
     /// Groups of tracks sharing normalized artist, title and album.
@@ -223,6 +237,16 @@ pub struct Track {
     pub sample_rate: u32,
     pub bitrate: u32,
     pub format: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AlbumGroup {
+    pub album: String,
+    pub artist: String,
+    pub track_count: usize,
+    /// Lowest track id, used to load the album's cover art.
+    pub representative_id: i64,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -380,6 +404,160 @@ fn normalize_tag(value: &str) -> String {
         .to_lowercase()
 }
 
+pub fn album_groups(conn: &Connection) -> Result<Vec<AlbumGroup>> {
+    let mut groups: BTreeMap<(String, String), AlbumGroup> = BTreeMap::new();
+    for track in list(conn, None)? {
+        if track.album.trim().is_empty() {
+            continue;
+        }
+        let artist = album_artist_of(&track);
+        let key = (track.album.to_lowercase(), artist.to_lowercase());
+        let entry = groups.entry(key).or_insert_with(|| AlbumGroup {
+            album: track.album.clone(),
+            artist: artist.clone(),
+            track_count: 0,
+            representative_id: track.id,
+            path: track.path.clone(),
+        });
+        entry.track_count += 1;
+        if track.id < entry.representative_id {
+            entry.representative_id = track.id;
+            entry.path = track.path.clone();
+        }
+    }
+
+    let mut out: Vec<AlbumGroup> = groups.into_values().collect();
+    out.sort_by(|a, b| {
+        (a.album.to_lowercase(), a.artist.to_lowercase())
+            .cmp(&(b.album.to_lowercase(), b.artist.to_lowercase()))
+    });
+    Ok(out)
+}
+
+fn album_artist_of(track: &Track) -> String {
+    if track.album_artist.trim().is_empty() {
+        track.artist.clone()
+    } else {
+        track.album_artist.clone()
+    }
+}
+
+pub fn album_tracks(conn: &Connection, album: &str, artist: &str) -> Result<Vec<Track>> {
+    let album = album.to_lowercase();
+    let artist = artist.to_lowercase();
+    Ok(list(conn, None)?
+        .into_iter()
+        .filter(|track| {
+            track.album.to_lowercase() == album && album_artist_of(track).to_lowercase() == artist
+        })
+        .collect())
+}
+
+/// Common sidecar cover names, in preference order.
+const SIDECAR_NAMES: [&str; 9] = [
+    "cover.jpg",
+    "cover.jpeg",
+    "cover.png",
+    "folder.jpg",
+    "folder.jpeg",
+    "folder.png",
+    "front.jpg",
+    "front.jpeg",
+    "front.png",
+];
+
+/// A `cover.jpg`/`folder.png` image sitting next to the audio file.
+pub fn sidecar_cover(path: &Path) -> Option<PathBuf> {
+    let dir = path.parent()?;
+    for name in SIDECAR_NAMES {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    // Match names case-insensitively for libraries coming from other OSes.
+    let wanted: Vec<String> = SIDECAR_NAMES.iter().map(|name| name.to_string()).collect();
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path.file_name()?.to_string_lossy().to_lowercase();
+        if wanted.contains(&name) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Embedded front cover, falling back to a sidecar image next to the file.
+pub fn cover_art(path: &Path) -> Option<Vec<u8>> {
+    let embedded = Probe::open(path)
+        .ok()
+        .and_then(|probe| probe.read().ok())
+        .and_then(|tagged| {
+            let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
+            Some(tag.pictures().first()?.data().to_vec())
+        });
+    embedded.or_else(|| sidecar_cover(path).and_then(|cover| std::fs::read(cover).ok()))
+}
+
+fn mime_for(value: &str) -> Option<MimeType> {
+    match value
+        .split(';')
+        .next()
+        .unwrap_or(value)
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "image/jpeg" | "image/jpg" => Some(MimeType::Jpeg),
+        "image/png" => Some(MimeType::Png),
+        "image/gif" => Some(MimeType::Gif),
+        "image/bmp" => Some(MimeType::Bmp),
+        "image/tiff" => Some(MimeType::Tiff),
+        "image/webp" => Some(MimeType::Unknown("image/webp".to_string())),
+        _ => None,
+    }
+}
+
+/// Replace the front cover embedded in a track. Other pictures are preserved.
+pub fn embed_cover(path: &Path, data: &[u8], mime: &str) -> Result<()> {
+    let mut tagged = Probe::open(path)
+        .with_context(|| format!("cannot open {}", path.display()))?
+        .read()?;
+    if tagged.primary_tag().is_none() {
+        let tag_type = tagged.primary_tag_type();
+        tagged.insert_tag(Tag::new(tag_type));
+    }
+    let tag = tagged
+        .primary_tag_mut()
+        .context("file has no writable tag")?;
+    let picture =
+        Picture::new_unchecked(PictureType::CoverFront, mime_for(mime), None, data.to_vec());
+    if tag.pictures().is_empty() {
+        tag.push_picture(picture);
+    } else {
+        tag.set_picture(0, picture);
+    }
+    tag.save_to_path(path, WriteOptions::default())
+        .with_context(|| format!("cannot write cover to {}", path.display()))?;
+    Ok(())
+}
+
+/// Write JPEG bytes as `cover.jpg` beside the audio file.
+pub fn save_cover_sidecar(path: &Path, jpeg: &[u8]) -> Result<PathBuf> {
+    let dir = path
+        .parent()
+        .with_context(|| format!("{} has no parent directory", path.display()))?;
+    let target = dir.join("cover.jpg");
+    let tmp = dir.join("cover.jpg.tmp");
+    std::fs::write(&tmp, jpeg)?;
+    std::fs::rename(&tmp, &target)?;
+    Ok(target)
+}
+
 pub fn find_duplicate_groups(tracks: Vec<Track>) -> Vec<Vec<Track>> {
     use std::collections::BTreeMap;
 
@@ -486,14 +664,6 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
         total_secs,
         total_bytes,
     })
-}
-
-/// Embedded front-cover picture bytes for a track, if any.
-pub fn cover_art(path: &Path) -> Option<Vec<u8>> {
-    let tagged = Probe::open(path).ok()?.read().ok()?;
-    let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
-    let pic = tag.pictures().first()?;
-    Some(pic.data().to_vec())
 }
 
 /// Walk `root`, read tags with lofty, upsert into SQLite.

@@ -9,7 +9,7 @@ pub mod playlist;
 pub mod smart;
 pub mod tags;
 
-pub use library::{Filter, Library, SortKey, Stats, Track};
+pub use library::{AlbumGroup, Filter, Library, SortKey, Stats, Track};
 pub use player::{Player, PlayerSnapshot, PlayerStatus};
 pub use playlist::Playlist;
 pub use smart::{Definition, Field, Op, Rule, SmartPlaylist, SortBy};

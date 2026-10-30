@@ -208,6 +208,24 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                 }
                 if icons::toggle(
                     ui,
+                    app.album_view,
+                    if app.album_view {
+                        icons::LIST
+                    } else {
+                        icons::GRID_FOUR
+                    },
+                    if app.album_view {
+                        "Back to the track list"
+                    } else {
+                        "Album grid view"
+                    },
+                )
+                .clicked()
+                {
+                    app.toggle_album_view();
+                }
+                if icons::toggle(
+                    ui,
                     app.show_equalizer,
                     icons::SLIDERS,
                     "Equalizer / DSP (Ctrl+E)",
@@ -1314,6 +1332,293 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
             app.persist_settings();
         }
         None => {}
+    }
+}
+
+/// Album grid with cover tiles. Right-click a tile for the cover tools.
+pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
+    let groups = app.album_groups.clone();
+    if groups.is_empty() {
+        ui.centered_and_justified(|ui| {
+            ui.label(
+                RichText::new("No albums yet. Scan a music folder first.")
+                    .size(13.0)
+                    .color(th::text_dim()),
+            );
+        });
+        return;
+    }
+
+    enum Act {
+        Open(String),
+        Fetch(String, String),
+        Replace(String, String, PathBuf),
+        Sidecar(String, String),
+    }
+    let mut act: Option<Act> = None;
+    let ctx = ui.ctx().clone();
+
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(format!("{} album(s)", groups.len()))
+                .size(10.5)
+                .color(th::text_dim()),
+        );
+        ui.label(
+            RichText::new("Click to open · right-click for cover tools")
+                .size(10.0)
+                .color(th::text_dim()),
+        );
+    });
+
+    let gap = 8.0;
+    let tile_width = 170.0;
+    let tile_height = 212.0;
+    let columns = (((ui.available_width() + gap) / (tile_width + gap)).floor() as usize).max(1);
+    let rows = groups.len().div_ceil(columns);
+
+    egui::ScrollArea::vertical()
+        .id_salt("album_grid")
+        .auto_shrink([false, false])
+        .show_rows(ui, tile_height + gap, rows, |ui, range| {
+            for row in range {
+                ui.horizontal(|ui| {
+                    for column in 0..columns {
+                        let Some(group) = groups.get(row * columns + column) else {
+                            continue;
+                        };
+                        let (rect, response) = ui.allocate_exact_size(
+                            egui::vec2(tile_width, tile_height),
+                            egui::Sense::click(),
+                        );
+                        if response.hovered() {
+                            ui.painter().rect_filled(rect, 4.0, th::bg_row_alt());
+                        }
+
+                        let cover = egui::Rect::from_min_size(
+                            rect.min + egui::vec2(10.0, 8.0),
+                            egui::vec2(tile_width - 20.0, tile_width - 20.0),
+                        );
+                        if let Some(texture) = app.album_cover_texture(&ctx, group) {
+                            ui.painter().image(
+                                texture.id(),
+                                cover,
+                                egui::Rect::from_min_max(
+                                    egui::pos2(0.0, 0.0),
+                                    egui::pos2(1.0, 1.0),
+                                ),
+                                Color32::WHITE,
+                            );
+                        } else {
+                            ui.painter().rect_filled(cover, 3.0, th::bg_row_alt());
+                            ui.painter().text(
+                                cover.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "NO COVER",
+                                egui::FontId::proportional(11.0),
+                                th::text_dim(),
+                            );
+                        }
+
+                        let mut labels = ui.new_child(
+                            egui::UiBuilder::new()
+                                .max_rect(rect.shrink2(egui::vec2(10.0, 0.0)))
+                                .layout(egui::Layout::top_down(egui::Align::Min)),
+                        );
+                        labels.add_space(tile_width - 10.0);
+                        labels.add(
+                            egui::Label::new(
+                                RichText::new(&group.album)
+                                    .size(12.0)
+                                    .strong()
+                                    .color(th::text()),
+                            )
+                            .truncate()
+                            .selectable(false),
+                        );
+                        labels.add(
+                            egui::Label::new(
+                                RichText::new(&group.artist)
+                                    .size(10.5)
+                                    .color(th::text_dim()),
+                            )
+                            .truncate()
+                            .selectable(false),
+                        );
+                        labels.add(
+                            egui::Label::new(
+                                RichText::new(format!("{} track(s)", group.track_count))
+                                    .size(9.5)
+                                    .color(th::text_dim()),
+                            )
+                            .selectable(false),
+                        );
+
+                        if response.clicked() {
+                            act = Some(Act::Open(group.album.clone()));
+                        }
+                        response.context_menu(|ui| {
+                            if ui.button("Open album").clicked() {
+                                act = Some(Act::Open(group.album.clone()));
+                                ui.close();
+                            }
+                            if ui.button("Fetch missing cover").clicked() {
+                                act = Some(Act::Fetch(group.album.clone(), group.artist.clone()));
+                                ui.close();
+                            }
+                            if ui.button("Replace cover…").clicked() {
+                                let start = PathBuf::from(&group.path)
+                                    .parent()
+                                    .map(PathBuf::from)
+                                    .unwrap_or_else(|| {
+                                        dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
+                                    });
+                                act = Some(Act::Replace(
+                                    group.album.clone(),
+                                    group.artist.clone(),
+                                    start,
+                                ));
+                                ui.close();
+                            }
+                            if ui.button("Save cover.jpg").clicked() {
+                                act = Some(Act::Sidecar(group.album.clone(), group.artist.clone()));
+                                ui.close();
+                            }
+                        });
+                    }
+                });
+                ui.add_space(gap);
+            }
+        });
+
+    match act {
+        Some(Act::Open(album)) => app.open_album(&album),
+        Some(Act::Fetch(album, artist)) => app.fetch_album_cover(&ctx, &album, &artist),
+        Some(Act::Replace(album, artist, start)) => {
+            app.open_cover_picker(&album, &artist, start);
+        }
+        Some(Act::Sidecar(album, artist)) => app.save_album_sidecar(&album, &artist),
+        None => {}
+    }
+}
+
+pub fn cover_picker(app: &mut App, ctx: &egui::Context) {
+    let Some(picker) = &mut app.cover_picker else {
+        return;
+    };
+
+    let album = picker.album.clone();
+    let artist = picker.artist.clone();
+    let mut open = true;
+    let mut navigate: Option<PathBuf> = None;
+    let mut choose: Option<PathBuf> = None;
+    let mut cancel = false;
+
+    egui::Window::new("Choose cover image")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(true)
+        .default_width(540.0)
+        .default_height(420.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Up").clicked() {
+                    if let Some(parent) = picker.current.parent().map(PathBuf::from) {
+                        navigate = Some(parent);
+                    }
+                }
+                if ui.button("Home").clicked() {
+                    if let Some(home) = dirs::home_dir() {
+                        navigate = Some(home);
+                    }
+                }
+                ui.label(
+                    RichText::new(format!("Cover for {}", picker.album))
+                        .size(11.0)
+                        .color(th::text_dim()),
+                );
+            });
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(picker.current.display().to_string())
+                    .monospace()
+                    .size(11.0)
+                    .color(th::text_dim()),
+            );
+            ui.separator();
+
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .max_height(280.0)
+                .show(ui, |ui| {
+                    for dir in &picker.dirs {
+                        let name = dir
+                            .file_name()
+                            .map(|name| name.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        if ui.selectable_label(false, format!("📁 {name}")).clicked() {
+                            navigate = Some(dir.clone());
+                        }
+                    }
+                    for image in &picker.images {
+                        let name = image
+                            .file_name()
+                            .map(|name| name.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let selected = picker.selected.as_deref() == Some(image.as_path());
+                        let response = ui.selectable_label(selected, format!("🖼 {name}"));
+                        if response.clicked() {
+                            picker.selected = Some(image.clone());
+                        }
+                        if response.double_clicked() {
+                            choose = Some(image.clone());
+                        }
+                    }
+                    if picker.dirs.is_empty() && picker.images.is_empty() {
+                        ui.label(
+                            RichText::new("No sub-folders or images here.")
+                                .size(11.0)
+                                .color(th::text_dim()),
+                        );
+                    }
+                    if let Some(error) = &picker.error {
+                        ui.label(
+                            RichText::new(error)
+                                .size(10.5)
+                                .color(Color32::from_rgb(220, 110, 110)),
+                        );
+                    }
+                });
+
+            ui.separator();
+            ui.horizontal(|ui| {
+                let enabled = picker.selected.is_some();
+                if ui
+                    .add_enabled(enabled, egui::Button::new("Use this image"))
+                    .clicked()
+                {
+                    choose = picker.selected.clone();
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+
+    if let Some(dir) = navigate {
+        if let Some(picker) = &mut app.cover_picker {
+            if dir.is_dir() {
+                picker.current = dir;
+                picker.selected = None;
+                picker.reload();
+            }
+        }
+    } else if let Some(path) = choose {
+        app.apply_cover_path(&album, &artist, &path);
+    } else if cancel || !open {
+        app.cover_picker = None;
     }
 }
 

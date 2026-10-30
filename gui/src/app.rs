@@ -1,12 +1,11 @@
 use crate::settings::{Action, Session, SessionView, Settings, Shortcut, WindowGeometry};
-use musicwasp_core::autotag::{self, Candidate, LocalTrack, Release};
+use musicwasp_core::autotag::{self, Candidate, Cover, LocalTrack, Release};
 use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
 use musicwasp_core::tags::TagSnapshot;
-use musicwasp_core::Playlist;
-use musicwasp_core::{Filter, Library, Player, SortKey, TagEdit, Track};
+use musicwasp_core::{AlbumGroup, Filter, Library, Player, Playlist, SortKey, TagEdit, Track};
 use notify::Watcher as _;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 
@@ -415,6 +414,75 @@ impl FolderPicker {
     }
 }
 
+/// Small in-app image chooser for replacing album covers.
+pub struct CoverPickerState {
+    pub album: String,
+    pub artist: String,
+    pub current: PathBuf,
+    pub dirs: Vec<PathBuf>,
+    pub images: Vec<PathBuf>,
+    pub selected: Option<PathBuf>,
+    pub error: Option<String>,
+}
+
+impl CoverPickerState {
+    pub fn new(album: String, artist: String, start: PathBuf) -> Self {
+        let mut picker = Self {
+            album,
+            artist,
+            current: start,
+            dirs: Vec::new(),
+            images: Vec::new(),
+            selected: None,
+            error: None,
+        };
+        if !picker.current.is_dir() {
+            picker.current = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+        }
+        picker.reload();
+        picker
+    }
+
+    pub fn reload(&mut self) {
+        self.dirs.clear();
+        self.images.clear();
+        self.error = None;
+        match std::fs::read_dir(&self.current) {
+            Ok(entries) => {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        self.dirs.push(path);
+                    } else if is_image_path(&path) {
+                        self.images.push(path);
+                    }
+                }
+                self.dirs.sort();
+                self.images.sort();
+            }
+            Err(e) => self.error = Some(e.to_string()),
+        }
+    }
+}
+
+fn is_image_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "jpg" | "jpeg" | "png" | "webp" | "bmp" | "gif" | "tif" | "tiff"
+            )
+        })
+}
+
+/// Result of a background Cover Art Archive lookup.
+struct CoverMsg {
+    album: String,
+    artist: String,
+    result: Result<Option<Cover>, String>,
+}
+
 /// Selection rules shared by the table and the tests.
 ///
 /// Plain click selects one row, Ctrl/Cmd toggles a row, Shift selects the range
@@ -462,6 +530,22 @@ pub fn apply_click(
 /// edit leaves them alone.
 /// Best release track for one local file: exact disc/track, then title, then
 /// the closest duration, finally the first track.
+fn album_key(album: &str, artist: &str) -> String {
+    format!("{}\u{1f}{}", album.to_lowercase(), artist.to_lowercase())
+}
+
+fn image_mime(data: &[u8]) -> Option<&'static str> {
+    match image::guess_format(data).ok()? {
+        image::ImageFormat::Jpeg => Some("image/jpeg"),
+        image::ImageFormat::Png => Some("image/png"),
+        image::ImageFormat::Gif => Some("image/gif"),
+        image::ImageFormat::Bmp => Some("image/bmp"),
+        image::ImageFormat::Tiff => Some("image/tiff"),
+        image::ImageFormat::WebP => Some("image/webp"),
+        _ => None,
+    }
+}
+
 /// Build the default mapping preview for the current targets.
 fn suggested_mappings(targets: &[Track], release: &Release) -> Vec<AutoTagMapping> {
     let local: Vec<LocalTrack> = targets
@@ -735,6 +819,13 @@ pub struct App {
     pub autotag: Option<AutoTagState>,
     pub show_hygiene: bool,
     pub hygiene: Option<HygieneState>,
+    /// Album grid mode and its cached covers.
+    pub album_view: bool,
+    pub album_groups: Vec<AlbumGroup>,
+    album_covers: HashMap<String, Option<egui::TextureHandle>>,
+    albums_dirty: bool,
+    cover_rx: Option<Receiver<CoverMsg>>,
+    pub cover_picker: Option<CoverPickerState>,
     /// OS watcher for scanned folders; `None` when disabled or idle.
     watcher: Option<notify::RecommendedWatcher>,
     watch_rx: Option<Receiver<PathBuf>>,
@@ -868,6 +959,12 @@ impl App {
             autotag: None,
             show_hygiene: false,
             hygiene: None,
+            album_view: false,
+            album_groups: Vec::new(),
+            album_covers: HashMap::new(),
+            albums_dirty: true,
+            cover_rx: None,
+            cover_picker: None,
             watcher: None,
             watch_rx: None,
             watch_pending: BTreeSet::new(),
@@ -1343,6 +1440,7 @@ impl App {
 
     pub fn mark_browser_dirty(&mut self) {
         self.dirty_browser = true;
+        self.albums_dirty = true;
     }
 
     pub fn mark_tracks_dirty(&mut self) {
@@ -1435,6 +1533,236 @@ impl App {
                     state.status = Some(self.message.clone());
                 }
             }
+        }
+    }
+
+    // ---- album grid and cover tools ----
+
+    fn refresh_album_groups(&mut self) {
+        match self.lib.album_groups() {
+            Ok(groups) => {
+                self.album_groups = groups;
+                self.album_covers.clear();
+                self.albums_dirty = false;
+            }
+            Err(e) => self.message = format!("could not load albums: {e}"),
+        }
+    }
+
+    /// Cached cover texture for one album tile.
+    pub fn album_cover_texture(
+        &mut self,
+        ctx: &egui::Context,
+        group: &AlbumGroup,
+    ) -> Option<egui::TextureHandle> {
+        let key = album_key(&group.album, &group.artist);
+        if let Some(cached) = self.album_covers.get(&key) {
+            return cached.clone();
+        }
+
+        let texture = musicwasp_core::library::cover_art(Path::new(&group.path))
+            .and_then(|bytes| image::load_from_memory(&bytes).ok())
+            .map(|image| {
+                let image = image.resize(180, 180, image::imageops::FilterType::Triangle);
+                let rgba = image.to_rgba8();
+                let size = [rgba.width() as usize, rgba.height() as usize];
+                let color = egui::ColorImage::from_rgba_unmultiplied(size, &rgba.into_raw());
+                ctx.load_texture(
+                    format!("album-cover-{key}"),
+                    color,
+                    egui::TextureOptions::LINEAR,
+                )
+            });
+        self.album_covers.insert(key, texture.clone());
+        texture
+    }
+
+    pub fn toggle_album_view(&mut self) {
+        self.album_view = !self.album_view;
+        if self.album_view {
+            self.albums_dirty = true;
+        }
+    }
+
+    /// Leave grid mode and show the tracks of one album.
+    pub fn open_album(&mut self, album: &str) {
+        self.album_view = false;
+        self.sel_genre = None;
+        self.sel_artist = None;
+        self.sel_album = Some(album.to_string());
+        self.search.clear();
+        self.mark_browser_dirty();
+    }
+
+    pub fn open_cover_picker(&mut self, album: &str, artist: &str, start: PathBuf) {
+        self.cover_picker = Some(CoverPickerState::new(
+            album.to_string(),
+            artist.to_string(),
+            start,
+        ));
+    }
+
+    pub fn apply_cover_path(&mut self, album: &str, artist: &str, path: &Path) {
+        let data = match std::fs::read(path) {
+            Ok(data) => data,
+            Err(e) => {
+                self.message = format!("could not read {}: {e}", path.display());
+                return;
+            }
+        };
+        let Some(mime) = image_mime(&data) else {
+            self.message = format!("not a supported image: {}", path.display());
+            return;
+        };
+        self.cover_picker = None;
+        self.apply_album_cover(album, artist, &data, mime);
+    }
+
+    /// Write a cover into every track of an album, keeping an undo snapshot.
+    fn apply_album_cover(&mut self, album: &str, artist: &str, data: &[u8], mime: &str) {
+        let tracks = match self.lib.album_tracks(album, artist) {
+            Ok(tracks) => tracks,
+            Err(e) => {
+                self.message = format!("could not load album tracks: {e}");
+                return;
+            }
+        };
+        if tracks.is_empty() {
+            self.message = "album has no tracks".to_string();
+            return;
+        }
+        let paths: Vec<PathBuf> = tracks
+            .iter()
+            .map(|track| PathBuf::from(&track.path))
+            .collect();
+        if let Err(e) = self.store_tag_undo(&paths) {
+            self.message = format!("cover not written: {e}");
+            return;
+        }
+
+        let mut written = 0usize;
+        let mut errors = Vec::new();
+        for path in &paths {
+            match musicwasp_core::library::embed_cover(path, data, mime) {
+                Ok(()) => written += 1,
+                Err(e) => errors.push(format!("{}: {e:#}", path.display())),
+            }
+        }
+
+        self.album_covers.remove(&album_key(album, artist));
+        self.art_key = None;
+        self.mark_browser_dirty();
+        let mut summary = format!("wrote cover to {written} track(s)");
+        if !errors.is_empty() {
+            summary.push_str(&format!(", {} failed ({})", errors.len(), errors[0]));
+        }
+        self.message = summary;
+    }
+
+    /// Search MusicBrainz/Cover Art Archive for a front cover in the background.
+    pub fn fetch_album_cover(&mut self, ctx: &egui::Context, album: &str, artist: &str) {
+        if self.cover_rx.is_some() {
+            self.message = "a cover lookup is already running".to_string();
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        let repaint = ctx.clone();
+        let album_name = album.to_string();
+        let album_artist = artist.to_string();
+        self.cover_rx = Some(rx);
+        self.message = format!("looking for a cover for {album}…");
+
+        std::thread::spawn(move || {
+            let result = (|| -> anyhow::Result<Option<Cover>> {
+                let candidates = autotag::search(&album_artist, &album_name)?;
+                for candidate in candidates.iter().take(3) {
+                    if let Some(cover) = autotag::front_cover(&candidate.release_id)? {
+                        return Ok(Some(cover));
+                    }
+                }
+                Ok(None)
+            })()
+            .map_err(|e| format!("{e:#}"));
+            let _ = tx.send(CoverMsg {
+                album: album_name,
+                artist: album_artist,
+                result,
+            });
+            repaint.request_repaint();
+        });
+    }
+
+    fn poll_cover_fetch(&mut self) {
+        let Some(rx) = &self.cover_rx else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(message) => {
+                self.cover_rx = None;
+                match message.result {
+                    Ok(Some(cover)) => self.apply_album_cover(
+                        &message.album,
+                        &message.artist,
+                        &cover.data,
+                        &cover.mime,
+                    ),
+                    Ok(None) => {
+                        self.message = format!("no cover found for {}", message.album);
+                    }
+                    Err(e) => self.message = format!("cover lookup failed: {e}"),
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.cover_rx = None,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+        }
+    }
+
+    /// Encode the current cover as `cover.jpg` next to the album's files.
+    pub fn save_album_sidecar(&mut self, album: &str, artist: &str) {
+        let tracks = match self.lib.album_tracks(album, artist) {
+            Ok(tracks) => tracks,
+            Err(e) => {
+                self.message = format!("could not load album tracks: {e}");
+                return;
+            }
+        };
+        let Some(track) = tracks.first() else {
+            self.message = "album has no tracks".to_string();
+            return;
+        };
+        let path = PathBuf::from(&track.path);
+        let Some(data) = musicwasp_core::library::cover_art(&path) else {
+            self.message = "album has no cover to save".to_string();
+            return;
+        };
+        let image = match image::load_from_memory(&data) {
+            Ok(image) => image,
+            Err(e) => {
+                self.message = format!("could not decode cover: {e}");
+                return;
+            }
+        };
+        let rgb = image.to_rgb8();
+        let mut jpeg = Vec::new();
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 92);
+        if let Err(e) = encoder.encode(
+            &rgb,
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        ) {
+            self.message = format!("could not encode cover.jpg: {e}");
+            return;
+        }
+
+        match musicwasp_core::library::save_cover_sidecar(&path, &jpeg) {
+            Ok(saved) => {
+                self.album_covers.remove(&album_key(album, artist));
+                self.art_key = None;
+                self.mark_browser_dirty();
+                self.message = format!("saved {}", saved.display());
+            }
+            Err(e) => self.message = format!("could not save cover.jpg: {e:#}"),
         }
     }
 
@@ -2772,6 +3100,7 @@ impl eframe::App for App {
         self.poll_watcher(&ctx);
         #[cfg(target_os = "linux")]
         self.poll_mpris(&ctx);
+        self.poll_cover_fetch();
         self.poll_autotag();
         self.handle_capture(&ctx);
         self.handle_shortcuts(&ctx);
@@ -2792,6 +3121,9 @@ impl eframe::App for App {
         if self.dirty_tracks {
             self.refresh_tracks();
         }
+        if self.album_view && self.albums_dirty {
+            self.refresh_album_groups();
+        }
 
         crate::ui::toolbar(self, root);
         if self.plain_view {
@@ -2801,7 +3133,11 @@ impl eframe::App for App {
             crate::ui::browser(self, root);
             crate::ui::transport(self, root);
             crate::ui::queue_panel(self, root);
-            crate::ui::tracklist(self, root);
+            if self.album_view {
+                crate::ui::album_grid(self, root);
+            } else {
+                crate::ui::tracklist(self, root);
+            }
         }
         // Handle OS file drops after the browser has registered this frame's
         // playlist rows, so the pointer maps to the row under it.
@@ -2811,6 +3147,7 @@ impl eframe::App for App {
         crate::ui::smart_dialog(self, &ctx);
         crate::ui::settings_window(self, &ctx);
         crate::ui::hygiene_window(self, &ctx);
+        crate::ui::cover_picker(self, &ctx);
         crate::ui::folder_picker(self, &ctx);
         crate::ui::autotag_window(self, &ctx);
         crate::ui::rename_window(self, &ctx);
@@ -2985,6 +3322,12 @@ impl App {
         // Debug hook: MUSICWASP_UNDO=1 restores the last tag snapshot.
         if self.frames == 20 && std::env::var("MUSICWASP_UNDO").is_ok() {
             self.undo_last_tag_write();
+        }
+
+        // Debug hook: MUSICWASP_ALBUM_GRID=1 opens the cover grid.
+        if self.frames == 20 && std::env::var("MUSICWASP_ALBUM_GRID").is_ok() {
+            self.album_view = true;
+            self.albums_dirty = true;
         }
 
         // Debug hook: MUSICWASP_HYGIENE=1 opens the library hygiene window.
