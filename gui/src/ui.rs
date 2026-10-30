@@ -106,7 +106,11 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                     .strong()
                     .color(th::accent()),
             );
-            ui.label(RichText::new("v0.1").size(10.0).color(th::text_dim()));
+            ui.label(
+                RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                    .size(10.0)
+                    .color(th::text_dim()),
+            );
             ui.separator();
             let mut view_label = app.view_title();
             if view_label.chars().count() > 26 {
@@ -3225,51 +3229,68 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                 }
                             }
 
-                            egui::ScrollArea::vertical()
+                            egui_extras::TableBuilder::new(ui)
                                 .id_salt("autotag_mapping")
-                                .max_height(280.0)
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    egui::Grid::new("autotag_mapping_grid")
-                                        .num_columns(3)
-                                        .spacing([12.0, 6.0])
-                                        .striped(true)
-                                        .show(ui, |ui| {
-                                            ui.label(
-                                                RichText::new("File")
-                                                    .size(10.0)
-                                                    .strong()
-                                                    .color(th::text_dim()),
-                                            );
-                                            ui.label(
-                                                RichText::new("Release track")
-                                                    .size(10.0)
-                                                    .strong()
-                                                    .color(th::text_dim()),
-                                            );
-                                            ui.label(
-                                                RichText::new("Changes")
-                                                    .size(10.0)
-                                                    .strong()
-                                                    .color(th::text_dim()),
-                                            );
-                                            ui.end_row();
-
-                                            for mapping in &mut state.mappings {
-                                                let file_label = if mapping.track.title.is_empty()
-                                                {
-                                                    PathBuf::from(&mapping.track.path)
-                                                        .file_name()
-                                                        .map(|name| name.to_string_lossy().to_string())
-                                                        .unwrap_or_else(|| mapping.track.path.clone())
-                                                } else {
-                                                    format!(
-                                                        "{:02}. {}  -  {}",
-                                                        mapping.track.track_no.unwrap_or(0),
-                                                        mapping.track.title,
-                                                        mapping.track.artist
-                                                    )
-                                                };
+                                .striped(true)
+                                .resizable(false)
+                                .max_scroll_height(280.0)
+                                .column(
+                                    Column::initial(360.0).at_least(180.0).clip(true),
+                                )
+                                .column(
+                                    Column::initial(300.0).at_least(220.0).clip(true),
+                                )
+                                .column(
+                                    Column::remainder().at_least(180.0).clip(true),
+                                )
+                                .header(20.0, |mut header| {
+                                    header.col(|ui| {
+                                        ui.label(
+                                            RichText::new("File")
+                                                .size(10.0)
+                                                .strong()
+                                                .color(th::text_dim()),
+                                        );
+                                    });
+                                    header.col(|ui| {
+                                        ui.label(
+                                            RichText::new("Release track")
+                                                .size(10.0)
+                                                .strong()
+                                                .color(th::text_dim()),
+                                        );
+                                    });
+                                    header.col(|ui| {
+                                        ui.label(
+                                            RichText::new("Changes")
+                                                .size(10.0)
+                                                .strong()
+                                                .color(th::text_dim()),
+                                        );
+                                    });
+                                })
+                                .body(|mut body| {
+                                    for mapping in &mut state.mappings {
+                                        body.row(24.0, |mut row| {
+                                            row.col(|ui| {
+                                                let file_label =
+                                                    if mapping.track.title.is_empty() {
+                                                        PathBuf::from(&mapping.track.path)
+                                                            .file_name()
+                                                            .map(|name| {
+                                                                name.to_string_lossy().to_string()
+                                                            })
+                                                            .unwrap_or_else(|| {
+                                                                mapping.track.path.clone()
+                                                            })
+                                                    } else {
+                                                        format!(
+                                                            "{:02}. {}  -  {}",
+                                                            mapping.track.track_no.unwrap_or(0),
+                                                            mapping.track.title,
+                                                            mapping.track.artist
+                                                        )
+                                                    };
                                                 ui.add(
                                                     egui::Label::new(
                                                         RichText::new(file_label)
@@ -3279,23 +3300,33 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                                     .truncate(),
                                                 )
                                                 .on_hover_text(&mapping.track.path);
+                                            });
 
+                                            row.col(|ui| {
                                                 let selected = mapping
                                                     .release_index
-                                                    .and_then(|index| release.tracks.get(index))
+                                                    .and_then(|index| {
+                                                        release.tracks.get(index)
+                                                    })
                                                     .map(|track| {
                                                         format!(
                                                             "{}.{:02}  {}",
-                                                            track.disc, track.number, track.title
+                                                            track.disc,
+                                                            track.number,
+                                                            track.title
                                                         )
                                                     })
-                                                    .unwrap_or_else(|| "— skip —".to_string());
+                                                    .unwrap_or_else(|| {
+                                                        "— skip —".to_string()
+                                                    });
                                                 egui::ComboBox::from_id_salt((
                                                     "autotag_map",
                                                     mapping.track.id,
                                                 ))
-                                                .selected_text(RichText::new(selected).size(11.0))
-                                                .width(240.0)
+                                                .selected_text(
+                                                    RichText::new(selected).size(11.0),
+                                                )
+                                                .width((ui.available_width() - 4.0).max(80.0))
                                                 .show_ui(ui, |ui| {
                                                     ui.selectable_value(
                                                         &mut mapping.release_index,
@@ -3318,7 +3349,9 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                                         );
                                                     }
                                                 });
+                                            });
 
+                                            row.col(|ui| {
                                                 let changes = mapping.changes(&release);
                                                 let summary = if changes.is_empty() {
                                                     "no changes".to_string()
@@ -3333,13 +3366,13 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                                 };
                                                 ui.add(
                                                     egui::Label::new(
-                                                        RichText::new(summary).size(10.5).color(
-                                                            if changes.is_empty() {
+                                                        RichText::new(summary)
+                                                            .size(10.5)
+                                                            .color(if changes.is_empty() {
                                                                 th::text_dim()
                                                             } else {
                                                                 th::accent()
-                                                            },
-                                                        ),
+                                                            }),
                                                     )
                                                     .truncate(),
                                                 )
@@ -3352,9 +3385,9 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                                         .collect::<Vec<_>>()
                                                         .join("\n"),
                                                 );
-                                                ui.end_row();
-                                            }
+                                            });
                                         });
+                                    }
                                 });
 
                             let skipped = state
