@@ -24,7 +24,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Plain view | one-click full-window now-playing view: large cover, transport, seek, volume and the next track |
 | Renaming | `F2` renames the clicked track field (title, artist, album, genre, year, track no) or the open playlist / smart playlist |
 | Folder selection | in-app folder chooser (up/home, hidden folders, recursive scan) plus a path field |
-| Auto-tagging | search MusicBrainz by artist + album; preview a file-to-release-track table with per-row overrides and tag diffs; match by disc/track/title/duration, write title/artist/album/album artist/year/genre/track/disc and embed the front cover |
+| Auto-tagging | search MusicBrainz by artist + album; preview a file-to-release-track table with per-row overrides and tag diffs; match by disc/track/title/duration, write title/artist/album/album artist/year/genre/track/disc and embed the front cover; every write keeps a pre-write snapshot for Undo |
 | File drops | drop audio files or folders from the OS file manager onto a playlist, **All music**, or an open playlist’s track list to import and add them |
 | Playlists | save the current view or selection as a playlist, reorder by drag or Up/Down, remove tracks, drag rows onto another playlist to move them |
 | Smart playlists | rule-based (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
@@ -118,7 +118,9 @@ icon before the app starts.
    file, the suggested release track and the tag changes. Override any row with the track dropdown,
    or pick **skip** to leave that file untouched. Matching scores disc/track numbers, titles and
    durations before falling back to file order. **Apply to N track(s)** writes only the mapped rows
-   and embeds the front cover by default.
+   and embeds the front cover by default. Before writing, the previous tags and embedded pictures
+   are saved; use **Undo last tag write** in the dialog or the counter-clockwise toolbar button to
+   restore them. The same undo snapshot is kept for editor and `F2` writes.
 7. Select one track and press **Edit tags** (`Ctrl+F2`) to fix metadata; saved straight into the file.
    Select several and the editor becomes a batch editor: shared values are pre-filled, empty
    fields are left untouched in every file.
@@ -284,6 +286,7 @@ MUSICWASP_SCREENSHOT=/tmp/rename.png MUSICWASP_RENAME=1 cargo run -p musicwasp-g
 MUSICWASP_SCREENSHOT=/tmp/eq.png MUSICWASP_EQ=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/settings.png MUSICWASP_SETTINGS=1 MUSICWASP_SETTINGS_TAB=about cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/hygiene.png MUSICWASP_HYGIENE=1 cargo run -p musicwasp-gui
+MUSICWASP_SCREENSHOT=/tmp/undo.png MUSICWASP_UNDO=1 cargo run -p musicwasp-gui
 ```
 
 `MUSICWASP_DATA_DIR=/some/dir` isolates a test library from your real one.

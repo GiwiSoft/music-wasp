@@ -2,6 +2,7 @@ use crate::settings::{Action, Session, SessionView, Settings, Shortcut, WindowGe
 use musicwasp_core::autotag::{self, Candidate, LocalTrack, Release};
 use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
+use musicwasp_core::tags::TagSnapshot;
 use musicwasp_core::Playlist;
 use musicwasp_core::{Filter, Library, Player, SortKey, TagEdit, Track};
 use notify::Watcher as _;
@@ -233,6 +234,7 @@ pub enum AutoTagMsg {
         cover: bool,
         cover_requested: bool,
     },
+    Failed(String),
 }
 
 pub enum AutoTagStage {
@@ -751,6 +753,9 @@ pub struct App {
     // Settings
     pub settings: Settings,
     pub settings_path: PathBuf,
+    /// Snapshot of the tags overwritten by the last write, for Undo.
+    pub tag_undo: Option<Vec<TagSnapshot>>,
+    tag_undo_path: PathBuf,
     /// Last session written to disk, used to avoid rewriting settings each frame.
     last_session: Session,
     last_session_save: std::time::Instant,
@@ -780,6 +785,10 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let settings_path = Settings::path();
         let mut settings = Settings::load(&settings_path);
+        let tag_undo_path = settings_path.with_file_name("tag-undo.json");
+        let tag_undo = musicwasp_core::tags::load_undo(&tag_undo_path)
+            .ok()
+            .flatten();
         settings.equalizer = settings.equalizer.clamped();
         crate::icons::install(&cc.egui_ctx);
         crate::theme::apply(&cc.egui_ctx, settings.skin);
@@ -873,6 +882,8 @@ impl App {
             dirty_tracks: true,
             settings,
             settings_path,
+            tag_undo,
+            tag_undo_path,
             last_session: Session::default(),
             last_session_save: std::time::Instant::now(),
             window_geometry,
@@ -2144,6 +2155,59 @@ impl App {
         });
     }
 
+    /// Snapshot files immediately before a tag write, so it can be undone.
+    fn store_tag_undo(&mut self, paths: &[PathBuf]) -> Result<(), String> {
+        let snapshots = musicwasp_core::tags::snapshot_paths(paths)
+            .map_err(|e| format!("cannot snapshot tags: {e:#}"))?;
+        musicwasp_core::tags::save_undo(&self.tag_undo_path, &snapshots)
+            .map_err(|e| format!("cannot store undo snapshot: {e:#}"))?;
+        self.tag_undo = Some(snapshots);
+        Ok(())
+    }
+
+    /// Restore the tags captured before the most recent write.
+    pub fn undo_last_tag_write(&mut self) {
+        let Some(snapshots) = self.tag_undo.clone() else {
+            return;
+        };
+
+        let mut restored = 0usize;
+        let mut failed = Vec::new();
+        let mut errors = Vec::new();
+        for snapshot in snapshots {
+            match musicwasp_core::tags::restore(&snapshot) {
+                Ok(()) => {
+                    restored += 1;
+                    if let Err(e) = self.lib.refresh_file(&snapshot.path) {
+                        errors.push(format!("{}: reindex failed: {e}", snapshot.path.display()));
+                    }
+                }
+                Err(e) => {
+                    errors.push(format!("{}: {e:#}", snapshot.path.display()));
+                    failed.push(snapshot);
+                }
+            }
+        }
+
+        if failed.is_empty() {
+            musicwasp_core::tags::clear_undo(&self.tag_undo_path);
+            self.tag_undo = None;
+        } else {
+            let _ = musicwasp_core::tags::save_undo(&self.tag_undo_path, &failed);
+            self.tag_undo = Some(failed);
+        }
+
+        self.art_key = None;
+        self.mark_browser_dirty();
+        self.mark_tracks_dirty();
+
+        let mut summary = format!("restored tags for {restored} file(s)");
+        if !errors.is_empty() {
+            summary.push_str(&format!(", {} failed ({} first)", errors.len(), errors[0]));
+        }
+        self.message = summary;
+    }
+
     /// Persist the open editor(s) and re-read the files into the library.
     pub fn save_editor(&mut self) {
         let Some(state) = &mut self.editing else {
@@ -2154,6 +2218,16 @@ impl App {
             state.status = Some("nothing to change: fill at least one field".to_string());
             return;
         }
+        let paths = state.paths.clone();
+        if let Err(e) = self.store_tag_undo(&paths) {
+            if let Some(state) = &mut self.editing {
+                state.status = Some(format!("nothing written: {e}"));
+            }
+            return;
+        }
+        let Some(state) = &mut self.editing else {
+            return;
+        };
 
         let mut saved = 0usize;
         let mut failures: Vec<String> = Vec::new();
@@ -2360,17 +2434,17 @@ impl App {
                         Err("the new value cannot be empty".to_string())
                     }
                     Some(track) => {
-                        let mut edit = TagEdit::from_track(&track);
-                        field.apply(&mut edit, &text).and_then(|()| {
-                            let path = PathBuf::from(&track.path);
-                            musicwasp_core::tags::write(&path, &edit)
-                                .map_err(|e| e.to_string())
-                                .and_then(|()| {
-                                    self.lib
-                                        .refresh_file(&path)
-                                        .map_err(|e| format!("reindex failed: {e}"))
-                                })
-                        })
+                        let path = PathBuf::from(&track.path);
+                        self.store_tag_undo(std::slice::from_ref(&path))
+                            .and_then(|()| {
+                                let mut edit = TagEdit::from_track(&track);
+                                field.apply(&mut edit, &text)?;
+                                musicwasp_core::tags::write(&path, &edit)
+                                    .map_err(|e| e.to_string())?;
+                                self.lib
+                                    .refresh_file(&path)
+                                    .map_err(|e| format!("reindex failed: {e}"))
+                            })
                     }
                 }
             }
@@ -2528,25 +2602,40 @@ impl App {
 
         let embed_art = state.embed_art;
         let tx = state.tx.clone();
+        let undo_path = self.tag_undo_path.clone();
         if let Some(state) = &mut self.autotag {
             state.stage = AutoTagStage::Applying;
         }
 
         std::thread::spawn(move || {
-            let cover = if embed_art {
-                autotag::front_cover(&candidate.release_id).ok().flatten()
-            } else {
-                None
+            let outcome = (|| -> anyhow::Result<(usize, Vec<String>, Vec<PathBuf>, bool)> {
+                // Capture and persist the old tags before touching anything. If
+                // this fails, do not write: a failed rollback is worse than no
+                // auto-tag.
+                let paths: Vec<PathBuf> = matches.iter().map(|m| m.path.clone()).collect();
+                let snapshots = musicwasp_core::tags::snapshot_paths(&paths)?;
+                musicwasp_core::tags::save_undo(&undo_path, &snapshots)?;
+
+                let cover = if embed_art {
+                    autotag::front_cover(&candidate.release_id).ok().flatten()
+                } else {
+                    None
+                };
+                let (written, errors) = autotag::apply(&release, &matches, cover.as_ref());
+                Ok((written, errors, paths, cover.is_some()))
+            })();
+
+            let message = match outcome {
+                Ok((written, errors, paths, cover)) => AutoTagMsg::Applied {
+                    written,
+                    errors,
+                    paths,
+                    cover,
+                    cover_requested: embed_art,
+                },
+                Err(e) => AutoTagMsg::Failed(format!("{e:#}")),
             };
-            let (written, errors) = autotag::apply(&release, &matches, cover.as_ref());
-            let paths = matches.iter().map(|m| m.path.clone()).collect();
-            let _ = tx.send(AutoTagMsg::Applied {
-                written,
-                errors,
-                paths,
-                cover: cover.is_some(),
-                cover_requested: embed_art,
-            });
+            let _ = tx.send(message);
         });
     }
 
@@ -2612,6 +2701,9 @@ impl App {
                     cover,
                     cover_requested,
                 } => {
+                    self.tag_undo = musicwasp_core::tags::load_undo(&self.tag_undo_path)
+                        .ok()
+                        .flatten();
                     for path in &paths {
                         if let Err(e) = self.lib.refresh_file(path) {
                             self.message = format!("reindex failed: {e}");
@@ -2635,6 +2727,13 @@ impl App {
                             summary.push_str(&format!(" ({first})"));
                         }
                     }
+                    if let Some(state) = &mut self.autotag {
+                        state.stage = AutoTagStage::Done(summary.clone());
+                    }
+                    self.message = summary;
+                }
+                AutoTagMsg::Failed(e) => {
+                    let summary = format!("failed: {e}");
                     if let Some(state) = &mut self.autotag {
                         state.stage = AutoTagStage::Done(summary.clone());
                     }
@@ -2881,6 +2980,11 @@ impl App {
         // Debug hook: MUSICWASP_EQ=1 opens the equalizer.
         if self.frames == 20 && std::env::var("MUSICWASP_EQ").is_ok() {
             self.show_equalizer = true;
+        }
+
+        // Debug hook: MUSICWASP_UNDO=1 restores the last tag snapshot.
+        if self.frames == 20 && std::env::var("MUSICWASP_UNDO").is_ok() {
+            self.undo_last_tag_write();
         }
 
         // Debug hook: MUSICWASP_HYGIENE=1 opens the library hygiene window.

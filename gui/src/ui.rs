@@ -168,6 +168,18 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                 {
                     app.open_hygiene();
                 }
+                if app.tag_undo.is_some() {
+                    let count = app.tag_undo.as_ref().map_or(0, Vec::len);
+                    if icons::compact(
+                        ui,
+                        icons::ARROW_COUNTER_CLOCKWISE,
+                        &format!("Undo the last tag write ({count} file(s))"),
+                    )
+                    .clicked()
+                    {
+                        app.undo_last_tag_write();
+                    }
+                }
                 if icons::toggle(
                     ui,
                     app.plain_view,
@@ -2770,6 +2782,7 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
 pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
     use crate::app::AutoTagStage;
 
+    let undo_available = app.tag_undo.is_some();
     let Some(state) = &mut app.autotag else {
         return;
     };
@@ -2778,6 +2791,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
     let mut open = true;
     let mut search = false;
     let mut apply = false;
+    let mut undo = false;
     let mut reload_release = false;
 
     egui::Window::new("Auto-tag by album")
@@ -3117,6 +3131,16 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                     if ui.button("Search again").clicked() {
                         search = true;
                     }
+                    if undo_available
+                        && ui
+                            .button(icons::with(
+                                icons::ARROW_COUNTER_CLOCKWISE,
+                                "Undo last tag write",
+                            ))
+                            .clicked()
+                    {
+                        undo = true;
+                    }
                 }
             }
         });
@@ -3129,6 +3153,9 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
     }
     if apply {
         app.start_autotag_apply();
+    }
+    if undo {
+        app.undo_last_tag_write();
     }
     if !open {
         app.autotag = None;
