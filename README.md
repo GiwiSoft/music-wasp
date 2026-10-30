@@ -24,7 +24,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Plain view | one-click full-window now-playing view: large cover, transport, seek, volume and the next track |
 | Renaming | `F2` renames the clicked track field (title, artist, album, genre, year, track no) or the open playlist / smart playlist |
 | Folder selection | in-app folder chooser (up/home, hidden folders, recursive scan) plus a path field |
-| Auto-tagging | search MusicBrainz by artist + album, match the release to your files by disc/track, pick the exact song when tagging a single file, write title/artist/album/album artist/year/genre/track/disc, embed the front cover from the Cover Art Archive |
+| Auto-tagging | search MusicBrainz by artist + album; preview a file-to-release-track table with per-row overrides and tag diffs; match by disc/track/title/duration, write title/artist/album/album artist/year/genre/track/disc and embed the front cover |
 | File drops | drop audio files or folders from the OS file manager onto a playlist, **All music**, or an open playlist’s track list to import and add them |
 | Playlists | save the current view or selection as a playlist, reorder by drag or Up/Down, remove tracks, drag rows onto another playlist to move them |
 | Smart playlists | rule-based (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
@@ -113,10 +113,12 @@ icon before the app starts.
 5. Right-click any track for **Play now**, **Play next**, **Add to queue**, **Rename**, **Edit tags**,
    **Find metadata**, **Remove from playlist** and **Add to playlist**. You can also drop audio files from your file manager onto a playlist,
    **All music**, or anywhere in an open playlist's track list to import and add them.
-6. Select a whole album and press **Auto-tag**: search MusicBrainz, pick the right pressing, then
-   **Apply to N track(s)**. When tagging one file, the dialog lists the release tracks so you can
-   pick the right title. Album matching uses disc/track numbers (falling back to file order) and
-   the front cover is embedded into each file by default.
+6. Select a whole album and press **Auto-tag**: search MusicBrainz and pick the right pressing.
+   Before anything is written, review the **file-to-release-track** table: each row shows the local
+   file, the suggested release track and the tag changes. Override any row with the track dropdown,
+   or pick **skip** to leave that file untouched. Matching scores disc/track numbers, titles and
+   durations before falling back to file order. **Apply to N track(s)** writes only the mapped rows
+   and embeds the front cover by default.
 7. Select one track and press **Edit tags** (`Ctrl+F2`) to fix metadata; saved straight into the file.
    Select several and the editor becomes a batch editor: shared values are pre-filled, empty
    fields are left untouched in every file.
@@ -245,9 +247,9 @@ cli/    musicwasp-cli    headless library tool
   positions dense so reordering is a single ordered rewrite.
 - **`core::smart`** stores a JSON rule set and compiles it to one parameterised SELECT, with the
   field/operator names coming from enums rather than user text.
-- **`core::autotag`** is split into pure steps (`search`, `fetch`, `plan`, `apply`) so matching and
-  tag writing are unit-tested without network; only `search`/`fetch`/`front_cover` do I/O, from a
-  worker thread so the UI never blocks.
+- **`core::autotag`** is split into pure steps (`search`, `fetch`, `suggest`, `apply`) so matching
+  and tag writing are unit-tested without network; only `search`/`fetch`/`front_cover` do I/O, from
+  a worker thread so the UI never blocks.
 - **`gui::settings`** maps actions to a normalised token (`ctrl+right`, `space`), stores them as
   JSON, and reports conflicts; the app dispatches keys from that table instead of hardcoding them.
   It also persists the equalizer state and the selected skin.

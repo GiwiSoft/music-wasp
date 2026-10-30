@@ -2770,10 +2770,10 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
 pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
     use crate::app::AutoTagStage;
 
-    let targets = app.autotag_targets().len();
     let Some(state) = &mut app.autotag else {
         return;
     };
+    let targets = state.targets.len();
 
     let mut open = true;
     let mut search = false;
@@ -2784,7 +2784,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
         .open(&mut open)
         .collapsible(false)
         .resizable(true)
-        .default_width(620.0)
+        .default_width(960.0)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -2844,7 +2844,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
 
                         egui::ScrollArea::vertical()
                             .id_salt("autotag_results")
-                            .max_height(260.0)
+                            .max_height(200.0)
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
                                 for (index, candidate) in candidates.iter().enumerate() {
@@ -2864,93 +2864,231 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                 }
                             });
 
-                        if targets == 1 {
-                            ui.add_space(6.0);
-                            ui.separator();
-                            ui.add_space(4.0);
-                            if state.loading_release {
-                                ui.horizontal(|ui| {
-                                    ui.spinner();
-                                    ui.label(
-                                        RichText::new("Loading the release's track list…")
-                                            .size(11.0)
-                                            .color(th::text_dim()),
-                                    );
-                                });
-                            } else if let Some(error) = &state.release_error {
+                        ui.add_space(6.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                        if state.loading_release {
+                            ui.horizontal(|ui| {
+                                ui.spinner();
                                 ui.label(
-                                    RichText::new(format!(
-                                        "{} could not load track list: {error}",
-                                        icons::WARNING.as_str()
-                                    ))
-                                    .size(10.5)
-                                    .color(Color32::from_rgb(230, 120, 120)),
+                                    RichText::new("Loading the release's track list…")
+                                        .size(11.0)
+                                        .color(th::text_dim()),
                                 );
-                            } else if let Some(release) = state.release.clone() {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        RichText::new("Title")
-                                            .size(12.0)
-                                            .color(th::text_dim()),
-                                    );
-                                    let current = release
-                                        .tracks
-                                        .get(state.track_choice)
-                                        .map(|t| {
-                                            format!("{:02}. {}", t.number, t.title)
-                                        })
-                                        .unwrap_or_else(|| "choose a track".to_string());
-                                    egui::ComboBox::from_id_salt("autotag_track")
-                                        .selected_text(RichText::new(current).size(12.0))
-                                        .width(380.0)
-                                        .show_ui(ui, |ui| {
-                                            for (index, track) in
-                                                release.tracks.iter().enumerate()
-                                            {
-                                                let mut label = format!(
-                                                    "{:02}. {}",
-                                                    track.number, track.title
+                            });
+                        } else if let Some(error) = &state.release_error {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} could not load track list: {error}",
+                                    icons::WARNING.as_str()
+                                ))
+                                .size(10.5)
+                                .color(Color32::from_rgb(230, 120, 120)),
+                            );
+                        } else if let Some(release) = state.release.clone() {
+                            ui.label(
+                                RichText::new(
+                                    "Review the file-to-release mapping before writing. \
+                                     Pick another track in any row to override it.",
+                                )
+                                .size(10.5)
+                                .color(th::text_dim()),
+                            );
+                            ui.add_space(4.0);
+
+                            let mut seen = BTreeSet::new();
+                            let mut duplicates = 0usize;
+                            for mapping in &state.mappings {
+                                if let Some(index) = mapping.release_index {
+                                    if !seen.insert(index) {
+                                        duplicates += 1;
+                                    }
+                                }
+                            }
+
+                            egui::ScrollArea::vertical()
+                                .id_salt("autotag_mapping")
+                                .max_height(280.0)
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    egui::Grid::new("autotag_mapping_grid")
+                                        .num_columns(3)
+                                        .spacing([12.0, 6.0])
+                                        .striped(true)
+                                        .show(ui, |ui| {
+                                            ui.label(
+                                                RichText::new("File")
+                                                    .size(10.0)
+                                                    .strong()
+                                                    .color(th::text_dim()),
+                                            );
+                                            ui.label(
+                                                RichText::new("Release track")
+                                                    .size(10.0)
+                                                    .strong()
+                                                    .color(th::text_dim()),
+                                            );
+                                            ui.label(
+                                                RichText::new("Changes")
+                                                    .size(10.0)
+                                                    .strong()
+                                                    .color(th::text_dim()),
+                                            );
+                                            ui.end_row();
+
+                                            for mapping in &mut state.mappings {
+                                                let file_label = if mapping.track.title.is_empty()
+                                                {
+                                                    PathBuf::from(&mapping.track.path)
+                                                        .file_name()
+                                                        .map(|name| name.to_string_lossy().to_string())
+                                                        .unwrap_or_else(|| mapping.track.path.clone())
+                                                } else {
+                                                    format!(
+                                                        "{:02}. {}  -  {}",
+                                                        mapping.track.track_no.unwrap_or(0),
+                                                        mapping.track.title,
+                                                        mapping.track.artist
+                                                    )
+                                                };
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        RichText::new(file_label)
+                                                            .size(11.0)
+                                                            .color(th::text()),
+                                                    )
+                                                    .truncate(),
+                                                )
+                                                .on_hover_text(&mapping.track.path);
+
+                                                let selected = mapping
+                                                    .release_index
+                                                    .and_then(|index| release.tracks.get(index))
+                                                    .map(|track| {
+                                                        format!(
+                                                            "{}.{:02}  {}",
+                                                            track.disc, track.number, track.title
+                                                        )
+                                                    })
+                                                    .unwrap_or_else(|| "— skip —".to_string());
+                                                egui::ComboBox::from_id_salt((
+                                                    "autotag_map",
+                                                    mapping.track.id,
+                                                ))
+                                                .selected_text(RichText::new(selected).size(11.0))
+                                                .width(240.0)
+                                                .show_ui(ui, |ui| {
+                                                    ui.selectable_value(
+                                                        &mut mapping.release_index,
+                                                        None,
+                                                        "— skip —",
+                                                    );
+                                                    for (index, track) in
+                                                        release.tracks.iter().enumerate()
+                                                    {
+                                                        let label = format!(
+                                                            "{}.{:02}  {}",
+                                                            track.disc,
+                                                            track.number,
+                                                            track.title
+                                                        );
+                                                        ui.selectable_value(
+                                                            &mut mapping.release_index,
+                                                            Some(index),
+                                                            label,
+                                                        );
+                                                    }
+                                                });
+
+                                                let changes = mapping.changes(&release);
+                                                let summary = if changes.is_empty() {
+                                                    "no changes".to_string()
+                                                } else {
+                                                    changes
+                                                        .iter()
+                                                        .map(|(field, old, new)| {
+                                                            format!("{field}: {old} → {new}")
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                        .join(" · ")
+                                                };
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        RichText::new(summary).size(10.5).color(
+                                                            if changes.is_empty() {
+                                                                th::text_dim()
+                                                            } else {
+                                                                th::accent()
+                                                            },
+                                                        ),
+                                                    )
+                                                    .truncate(),
+                                                )
+                                                .on_hover_text(
+                                                    changes
+                                                        .iter()
+                                                        .map(|(field, old, new)| {
+                                                            format!("{field}: {old} → {new}")
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                        .join("\n"),
                                                 );
-                                                if let Some(ms) = track.length_ms {
-                                                    let secs = ms / 1000;
-                                                    label.push_str(&format!(
-                                                        "  ·  {}:{:02}",
-                                                        secs / 60,
-                                                        secs % 60
-                                                    ));
-                                                }
-                                                ui.selectable_value(
-                                                    &mut state.track_choice,
-                                                    index,
-                                                    label,
-                                                );
+                                                ui.end_row();
                                             }
                                         });
                                 });
+
+                            let skipped = state
+                                .mappings
+                                .iter()
+                                .filter(|mapping| mapping.release_index.is_none())
+                                .count();
+                            if duplicates > 0 {
                                 ui.label(
                                     RichText::new(format!(
-                                        "Album: {}  ·  {}",
-                                        release.title, release.album_artist
+                                        "{} row(s) use the same release track.",
+                                        duplicates
                                     ))
-                                    .size(10.0)
+                                    .size(10.5)
+                                    .color(Color32::from_rgb(230, 150, 90)),
+                                );
+                            }
+                            if skipped > 0 {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{skipped} file(s) will be skipped."
+                                    ))
+                                    .size(10.5)
                                     .color(th::text_dim()),
                                 );
                             }
+                            ui.label(
+                                RichText::new(format!(
+                                    "Album: {}  ·  {}",
+                                    release.title, release.album_artist
+                                ))
+                                .size(10.0)
+                                .color(th::text_dim()),
+                            );
                         }
 
                         ui.add_space(4.0);
+                        let mapped = state
+                            .mappings
+                            .iter()
+                            .filter(|mapping| mapping.release_index.is_some())
+                            .count();
                         ui.horizontal(|ui| {
                             ui.checkbox(&mut state.embed_art, "Embed front cover");
-                            let can_apply = targets != 1
-                                || (state.release.as_ref().is_some_and(|r| !r.tracks.is_empty())
-                                    && !state.loading_release);
-                            let button = egui::Button::new(format!(
-                                "Apply to {targets} track(s)"
-                            ));
+                            let can_apply =
+                                mapped > 0 && state.release.is_some() && !state.loading_release;
                             let response = ui
-                                .add_enabled(can_apply, button)
+                                .add_enabled(
+                                    can_apply,
+                                    egui::Button::new(format!("Apply to {mapped} track(s)")),
+                                )
                                 .on_disabled_hover_text(
-                                    "Wait for the release track list, then pick the right title",
+                                    "Wait for the release track list and map at least one file",
                                 );
                             if response.clicked() {
                                 apply = true;

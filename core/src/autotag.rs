@@ -398,6 +398,114 @@ fn fetch_cover(url: &str) -> Result<Option<Cover>> {
 
 // ---------------------------------------------------------------- matching
 
+fn normalize(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn match_score(local: &LocalTrack, release: &ReleaseTrack) -> i32 {
+    let mut score = 0;
+    let local_title = normalize(&local.title);
+    let release_title = normalize(&release.title);
+    if !local_title.is_empty() && local_title == release_title {
+        score += 70;
+    } else if !local_title.is_empty()
+        && !release_title.is_empty()
+        && (local_title.contains(&release_title) || release_title.contains(&local_title))
+    {
+        score += 30;
+    }
+
+    let local_disc = local.disc_no.unwrap_or(1);
+    if local.track_no == Some(release.number as i32) {
+        score += if local_disc == release.disc as i32 {
+            80
+        } else {
+            25
+        };
+    }
+
+    if let Some(length_ms) = release.length_ms {
+        let difference = (length_ms as i64 - local.duration_secs as i64 * 1000).abs();
+        if difference <= 1_500 {
+            score += 35;
+        } else if difference <= 4_000 {
+            score += 15;
+        }
+    }
+    score
+}
+
+/// Suggest one release track per local file.
+///
+/// Unlike the old order-only pairing, exact disc/track numbers, titles and
+/// durations are scored first. Files that still have no convincing match are
+/// filled in disc/track/path order, which keeps untagged album folders usable.
+/// `Some(index)` refers to `release.tracks`; `None` means no track was left.
+pub fn suggest(local: &[LocalTrack], release: &Release) -> Vec<Option<usize>> {
+    let mut result = vec![None; local.len()];
+    let mut used = vec![false; release.tracks.len()];
+
+    let mut pairs: Vec<(i32, usize, usize)> = Vec::new();
+    for (local_index, item) in local.iter().enumerate() {
+        for (release_index, track) in release.tracks.iter().enumerate() {
+            let score = match_score(item, track);
+            if score > 0 {
+                pairs.push((score, local_index, release_index));
+            }
+        }
+    }
+    pairs.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    for (score, local_index, release_index) in pairs {
+        if score < 40 {
+            break;
+        }
+        if result[local_index].is_some() || used[release_index] {
+            continue;
+        }
+        result[local_index] = Some(release_index);
+        used[release_index] = true;
+    }
+
+    // Fill the rest in the old, predictable order. This mostly matters for
+    // files without track numbers or recognizable titles.
+    let mut local_order: Vec<usize> = (0..local.len()).collect();
+    local_order.sort_by(|&a, &b| {
+        (
+            local[a].disc_no.unwrap_or(1),
+            local[a].track_no.unwrap_or(i32::MAX),
+            &local[a].path,
+        )
+            .cmp(&(
+                local[b].disc_no.unwrap_or(1),
+                local[b].track_no.unwrap_or(i32::MAX),
+                &local[b].path,
+            ))
+    });
+    let mut release_order: Vec<usize> = (0..release.tracks.len()).collect();
+    release_order.sort_by_key(|&index| (release.tracks[index].disc, release.tracks[index].number));
+
+    let mut cursor = 0;
+    for local_index in local_order {
+        if result[local_index].is_some() {
+            continue;
+        }
+        while cursor < release_order.len() && used[release_order[cursor]] {
+            cursor += 1;
+        }
+        if let Some(&release_index) = release_order.get(cursor) {
+            result[local_index] = Some(release_index);
+            used[release_index] = true;
+            cursor += 1;
+        }
+    }
+
+    result
+}
+
 /// Pair local files with release tracks.
 ///
 /// Order is the contract: local tracks are sorted by disc/track number and
@@ -732,6 +840,34 @@ mod tests {
         let matches = plan(&local, &release);
         assert_eq!(matches.len(), 1, "extra release tracks are ignored");
         assert_eq!(matches[0].track.title, "One");
+    }
+
+    #[test]
+    fn suggest_matches_track_numbers_instead_of_input_order() {
+        let local = vec![local("two", 1, 2), local("one", 1, 1)];
+        let release = release_with(vec![rt(1, 1, "One"), rt(1, 2, "Two")]);
+        assert_eq!(suggest(&local, &release), vec![Some(1), Some(0)]);
+    }
+
+    #[test]
+    fn suggest_falls_back_to_path_order_for_untagged_files() {
+        let mut second = local("zzz", 1, 1);
+        second.track_no = None;
+        second.path = PathBuf::from("/music/02 second.mp3");
+        let mut first = local("yyy", 1, 1);
+        first.track_no = None;
+        first.path = PathBuf::from("/music/01 first.mp3");
+
+        let release = release_with(vec![rt(1, 1, "One"), rt(1, 2, "Two")]);
+        let mapping = suggest(&[second, first], &release);
+        assert_eq!(mapping, vec![Some(1), Some(0)]);
+    }
+
+    #[test]
+    fn suggest_leaves_extra_local_files_unmapped() {
+        let local = vec![local("one", 1, 1), local("extra", 1, 2)];
+        let release = release_with(vec![rt(1, 1, "One")]);
+        assert_eq!(suggest(&local, &release), vec![Some(0), None]);
     }
 
     #[test]

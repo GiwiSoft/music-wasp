@@ -233,7 +233,6 @@ pub enum AutoTagMsg {
         cover: bool,
         cover_requested: bool,
     },
-    Failed(String),
 }
 
 pub enum AutoTagStage {
@@ -250,16 +249,92 @@ pub struct AutoTagState {
     pub stage: AutoTagStage,
     pub selected: usize,
     pub embed_art: bool,
-    /// Release details for the selected candidate, used to pick a track when
-    /// tagging a single file.
+    /// Files included when the dialog was opened. Keeping the snapshot means
+    /// changing the library selection cannot silently change the preview.
+    pub targets: Vec<Track>,
+    /// File-to-release-track preview, rebuilt when a release finishes loading.
+    pub mappings: Vec<AutoTagMapping>,
+    /// Release details for the selected candidate.
     pub release: Option<Release>,
     pub release_id: Option<String>,
     pub loading_release: bool,
     pub release_error: Option<String>,
-    /// Release track chosen for a single-file tag.
-    pub track_choice: usize,
     pub rx: Receiver<AutoTagMsg>,
     pub tx: Sender<AutoTagMsg>,
+}
+
+/// One preview row: local file and the release track it will become.
+pub struct AutoTagMapping {
+    pub track: Track,
+    pub release_index: Option<usize>,
+}
+
+impl AutoTagMapping {
+    /// Diff against the release track, for the preview column.
+    pub fn changes<'a>(&'a self, release: &'a Release) -> Vec<(&'static str, String, String)> {
+        let Some(track) = self
+            .release_index
+            .and_then(|index| release.tracks.get(index))
+        else {
+            return Vec::new();
+        };
+        let mut changes = Vec::new();
+        let mut compare = |field: &'static str, old: String, new: String| {
+            if old != new {
+                changes.push((field, old, new));
+            }
+        };
+        compare("Title", self.track.title.clone(), track.title.clone());
+        compare(
+            "Artist",
+            self.track.artist.clone(),
+            if track.artist.is_empty() {
+                self.track.artist.clone()
+            } else {
+                track.artist.clone()
+            },
+        );
+        compare("Album", self.track.album.clone(), release.title.clone());
+        compare(
+            "Album artist",
+            self.track.album_artist.clone(),
+            release.album_artist.clone(),
+        );
+        compare(
+            "Year",
+            self.track.year.map(|y| y.to_string()).unwrap_or_default(),
+            release
+                .year
+                .map(|y| y.to_string())
+                .or_else(|| self.track.year.map(|y| y.to_string()))
+                .unwrap_or_default(),
+        );
+        compare(
+            "Genre",
+            self.track.genre.clone(),
+            release
+                .genre
+                .clone()
+                .unwrap_or_else(|| self.track.genre.clone()),
+        );
+        compare(
+            "Track",
+            self.track
+                .track_no
+                .map(|n| n.to_string())
+                .unwrap_or_default(),
+            track.number.to_string(),
+        );
+        compare(
+            "Disc",
+            self.track
+                .disc_no
+                .map(|n| n.to_string())
+                .unwrap_or_default(),
+            track.disc.to_string(),
+        );
+        changes
+    }
 }
 
 /// Results of a library hygiene scan: rows whose files vanished, and groups of
@@ -274,7 +349,7 @@ pub struct HygieneState {
 }
 
 impl AutoTagState {
-    pub fn new(artist: String, album: String) -> Self {
+    pub fn new(artist: String, album: String, targets: Vec<Track>) -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
             artist,
@@ -282,11 +357,12 @@ impl AutoTagState {
             stage: AutoTagStage::Editing,
             selected: 0,
             embed_art: true,
+            targets,
+            mappings: Vec::new(),
             release: None,
             release_id: None,
             loading_release: false,
             release_error: None,
-            track_choice: 0,
             rx,
             tx,
         }
@@ -384,6 +460,47 @@ pub fn apply_click(
 /// edit leaves them alone.
 /// Best release track for one local file: exact disc/track, then title, then
 /// the closest duration, finally the first track.
+/// Build the default mapping preview for the current targets.
+fn suggested_mappings(targets: &[Track], release: &Release) -> Vec<AutoTagMapping> {
+    let local: Vec<LocalTrack> = targets
+        .iter()
+        .map(|track| LocalTrack {
+            path: PathBuf::from(&track.path),
+            disc_no: track.disc_no,
+            track_no: track.track_no,
+            title: track.title.clone(),
+            duration_secs: track.duration_secs,
+        })
+        .collect();
+    let suggested = autotag::suggest(&local, release);
+    targets
+        .iter()
+        .cloned()
+        .zip(suggested)
+        .map(|(track, release_index)| AutoTagMapping {
+            track,
+            release_index,
+        })
+        .collect()
+}
+
+/// Turn the preview rows into the matches that will actually be written.
+fn mapping_matches(mappings: &[AutoTagMapping], release: &Release) -> Vec<autotag::Match> {
+    mappings
+        .iter()
+        .filter_map(|mapping| {
+            let track = mapping
+                .release_index
+                .and_then(|index| release.tracks.get(index))?;
+            Some(autotag::Match {
+                path: PathBuf::from(&mapping.track.path),
+                track: track.clone(),
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
 fn best_release_track(local: &Track, release: &Release) -> usize {
     let disc = local.disc_no.unwrap_or(1);
     if let Some(number) = local.track_no {
@@ -2323,7 +2440,11 @@ impl App {
             return;
         }
         let first = &targets[0];
-        self.autotag = Some(AutoTagState::new(first.artist.clone(), first.album.clone()));
+        self.autotag = Some(AutoTagState::new(
+            first.artist.clone(),
+            first.album.clone(),
+            targets,
+        ));
     }
 
     pub fn start_autotag_search(&mut self) {
@@ -2392,68 +2513,40 @@ impl App {
         let Some(candidate) = candidates.get(state.selected).cloned() else {
             return;
         };
+        let Some(release) = state
+            .release
+            .clone()
+            .filter(|release| release.id == candidate.release_id)
+        else {
+            return;
+        };
 
-        let local: Vec<LocalTrack> = self
-            .autotag_targets()
-            .iter()
-            .map(|t| LocalTrack {
-                path: PathBuf::from(&t.path),
-                disc_no: t.disc_no,
-                track_no: t.track_no,
-                title: t.title.clone(),
-                duration_secs: t.duration_secs,
-            })
-            .collect();
-        if local.is_empty() {
+        let matches = mapping_matches(&state.mappings, &release);
+        if matches.is_empty() {
             return;
         }
 
         let embed_art = state.embed_art;
-        let cached_release = state.release.clone();
-        let track_choice = state.track_choice;
         let tx = state.tx.clone();
         if let Some(state) = &mut self.autotag {
             state.stage = AutoTagStage::Applying;
         }
 
         std::thread::spawn(move || {
-            let outcome = (|| -> anyhow::Result<(usize, Vec<String>, Vec<PathBuf>, bool)> {
-                let release = match cached_release {
-                    Some(release) if release.id == candidate.release_id => release,
-                    _ => autotag::fetch(&candidate.release_id)?,
-                };
-                let matches = if local.len() == 1 && track_choice < release.tracks.len() {
-                    vec![autotag::Match {
-                        path: local[0].path.clone(),
-                        track: release.tracks[track_choice].clone(),
-                    }]
-                } else {
-                    autotag::plan(&local, &release)
-                };
-                if matches.is_empty() {
-                    anyhow::bail!("no local track matched the release");
-                }
-                let cover = if embed_art {
-                    autotag::front_cover(&candidate.release_id).ok().flatten()
-                } else {
-                    None
-                };
-                let (written, errors) = autotag::apply(&release, &matches, cover.as_ref());
-                let paths = matches.iter().map(|m| m.path.clone()).collect();
-                Ok((written, errors, paths, cover.is_some()))
-            })();
-
-            let message = match outcome {
-                Ok((written, errors, paths, cover)) => AutoTagMsg::Applied {
-                    written,
-                    errors,
-                    paths,
-                    cover,
-                    cover_requested: embed_art,
-                },
-                Err(e) => AutoTagMsg::Failed(format!("{e:#}")),
+            let cover = if embed_art {
+                autotag::front_cover(&candidate.release_id).ok().flatten()
+            } else {
+                None
             };
-            let _ = tx.send(message);
+            let (written, errors) = autotag::apply(&release, &matches, cover.as_ref());
+            let paths = matches.iter().map(|m| m.path.clone()).collect();
+            let _ = tx.send(AutoTagMsg::Applied {
+                written,
+                errors,
+                paths,
+                cover: cover.is_some(),
+                cover_requested: embed_art,
+            });
         });
     }
 
@@ -2481,7 +2574,7 @@ impl App {
                         state.release_id = None;
                         state.release_error = None;
                         state.loading_release = false;
-                        state.track_choice = 0;
+                        state.mappings.clear();
                     }
                     // Load the top candidate's tracks so a single-file tag can
                     // show a song picker right away.
@@ -2493,7 +2586,6 @@ impl App {
                     }
                 }
                 AutoTagMsg::ReleaseLoaded { release_id, result } => {
-                    let first_local = self.autotag_targets().into_iter().next();
                     if let Some(state) = &mut self.autotag {
                         if state.release_id.as_deref() != Some(release_id.as_str()) {
                             continue;
@@ -2501,15 +2593,13 @@ impl App {
                         state.loading_release = false;
                         match result {
                             Ok(release) => {
-                                state.track_choice = first_local
-                                    .as_ref()
-                                    .map(|track| best_release_track(track, &release))
-                                    .unwrap_or(0);
+                                state.mappings = suggested_mappings(&state.targets, &release);
                                 state.release_error = None;
                                 state.release = Some(release);
                             }
                             Err(e) => {
                                 state.release = None;
+                                state.mappings.clear();
                                 state.release_error = Some(e);
                             }
                         }
@@ -2549,11 +2639,6 @@ impl App {
                         state.stage = AutoTagStage::Done(summary.clone());
                     }
                     self.message = summary;
-                }
-                AutoTagMsg::Failed(e) => {
-                    if let Some(state) = &mut self.autotag {
-                        state.stage = AutoTagStage::Done(format!("failed: {e}"));
-                    }
                 }
             }
         }
@@ -2638,10 +2723,12 @@ impl eframe::App for App {
         }
 
         if let Some(state) = &self.autotag {
-            if matches!(
-                state.stage,
-                AutoTagStage::Searching | AutoTagStage::Applying
-            ) {
+            if state.loading_release
+                || matches!(
+                    state.stage,
+                    AutoTagStage::Searching | AutoTagStage::Applying
+                )
+            {
                 ctx.request_repaint_after(std::time::Duration::from_millis(150));
             }
         }
@@ -2862,8 +2949,9 @@ pub fn fmt_size(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_click, best_release_track, clamp_seek, common_fields, list_subdirs,
-        queue_insert_next, queue_reorder, remove_tracks_from_queue, restore_queue, TrackField,
+        apply_click, best_release_track, clamp_seek, common_fields, list_subdirs, mapping_matches,
+        queue_insert_next, queue_reorder, remove_tracks_from_queue, restore_queue,
+        suggested_mappings, TrackField,
     };
     use musicwasp_core::autotag::{Release, ReleaseTrack};
     use musicwasp_core::{TagEdit, Track};
@@ -3080,6 +3168,44 @@ mod tests {
         // Nothing matches: closest duration, here all equal, so the first.
         local.title = "Unknown".into();
         assert_eq!(best_release_track(&local, &release), 0);
+    }
+
+    #[test]
+    fn album_preview_maps_by_track_number_and_exposes_diffs() {
+        let release = Release {
+            id: "r".into(),
+            title: "Album".into(),
+            artist: "Artist".into(),
+            album_artist: "Artist".into(),
+            year: Some(2000),
+            genre: None,
+            tracks: vec![
+                release_track(1, 1, "First Song"),
+                release_track(1, 2, "Second Song"),
+            ],
+            has_front_cover: false,
+        };
+
+        let mut second = track("Wrong two", "Artist", "Album", None);
+        second.track_no = Some(2);
+        let mut first = track("Wrong one", "Artist", "Album", None);
+        first.track_no = Some(1);
+
+        let mut mappings = suggested_mappings(&[second, first], &release);
+        assert_eq!(mappings[0].release_index, Some(1));
+        assert_eq!(mappings[1].release_index, Some(0));
+
+        let changes = mappings[1].changes(&release);
+        assert!(changes
+            .iter()
+            .any(|(field, _, new)| *field == "Title" && new == "First Song"));
+
+        // A manual override changes what gets written; skip removes the row.
+        mappings[0].release_index = Some(0);
+        mappings[1].release_index = None;
+        let matches = mapping_matches(&mappings, &release);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].track.title, "First Song");
     }
 
     #[test]

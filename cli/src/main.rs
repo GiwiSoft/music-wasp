@@ -177,7 +177,18 @@ fn main() -> anyhow::Result<()> {
                 .collect();
 
             let release = musicwasp_core::autotag::fetch(&release_id)?;
-            let matches = musicwasp_core::autotag::plan(&local, &release);
+            let suggestions = musicwasp_core::autotag::suggest(&local, &release);
+            let matches: Vec<musicwasp_core::autotag::Match> = suggestions
+                .iter()
+                .enumerate()
+                .filter_map(|(index, choice)| {
+                    let track = choice.and_then(|choice| release.tracks.get(choice))?;
+                    Some(musicwasp_core::autotag::Match {
+                        path: local[index].path.clone(),
+                        track: track.clone(),
+                    })
+                })
+                .collect();
             println!(
                 "\n{}: {} of {} local tracks matched ({} on the release)",
                 release.title,
