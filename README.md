@@ -40,6 +40,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Library hygiene | find rows whose files vanished, detect duplicate artist/title/album groups, and remove entries from the library in bulk; audio files are never deleted |
 | Folder watching | scanned folders are watched with `notify`: new audio is imported automatically and external tag edits refresh existing rows; manual **Scan** still works |
 | Linux desktop | MPRIS2 service: desktop media keys, GNOME/KDE controls, lock screen, `playerctl` and Bluetooth headset buttons; publishes track, position, volume, shuffle and repeat |
+| Scrobbling | optional ListenBrainz now-playing and completed-listen submissions; one toggle plus a user token, no developer API key |
 | Session restore | reopens the last view, search, selection, volume, play queue and window size/position; playback always starts stopped |
 | Portability | `MUSICWASP_DATA_DIR` for a portable library, data lives in the OS app-data dir by default |
 
@@ -169,6 +170,9 @@ icon before the app starts.
     open that album, or right-click it for **Fetch missing cover** (Cover Art Archive), **Replace
     cover…** (image picker, embedded into every track in the album) and **Save cover.jpg** beside
     the files. Sidecar covers are used automatically when a file has no embedded art.
+19. **Scrobbling** uses ListenBrainz: enable it in **Settings → General** and paste a user token
+    from your ListenBrainz profile. MusicWasp sends *playing now* when a track starts and a single
+    listen after 50% or four minutes. No developer API key or Last.fm app registration is needed.
 
 ### Default shortcuts
 

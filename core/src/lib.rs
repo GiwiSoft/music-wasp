@@ -6,6 +6,7 @@ pub mod dsp;
 pub mod library;
 pub mod player;
 pub mod playlist;
+pub mod scrobble;
 pub mod smart;
 pub mod tags;
 

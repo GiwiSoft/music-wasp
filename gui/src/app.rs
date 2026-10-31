@@ -601,6 +601,14 @@ struct CoverMsg {
     result: Result<Option<Cover>, String>,
 }
 
+/// A play currently being considered for ListenBrainz submission.
+struct ScrobbleState {
+    track: Track,
+    started_at: i64,
+    submitted: bool,
+    last_position: f64,
+}
+
 /// Selection rules shared by the table and the tests.
 ///
 /// Plain click selects one row, Ctrl/Cmd toggles a row, Shift selects the range
@@ -939,6 +947,9 @@ pub struct App {
     pub volume_sent: f32,
     /// Track id for which the next gapless source has been queued.
     gapless_for: Option<i64>,
+    scrobble: Option<ScrobbleState>,
+    scrobble_tx: Sender<String>,
+    scrobble_rx: Receiver<String>,
 
     // Misc
     pub scan_path: String,
@@ -1053,6 +1064,7 @@ impl App {
             Err(e) => (None, Some(e.to_string())),
         };
         let output_devices = musicwasp_core::player::output_devices();
+        let (scrobble_tx, scrobble_rx) = mpsc::channel();
 
         let scan_path = dirs::audio_dir()
             .or_else(dirs::home_dir)
@@ -1103,6 +1115,9 @@ impl App {
             volume,
             volume_sent: -1.0,
             gapless_for: None,
+            scrobble: None,
+            scrobble_tx,
+            scrobble_rx,
             scan_path,
             message: String::new(),
             art: None,
@@ -2332,6 +2347,7 @@ impl App {
         let Ok(Some(path)) = self.lib.path_for_id(id) else {
             return;
         };
+        self.finish_scrobble();
         if let Some(p) = &self.player {
             p.load_and_play(&path);
         }
@@ -2448,6 +2464,7 @@ impl App {
     }
 
     pub fn stop(&mut self) {
+        self.finish_scrobble();
         if let Some(p) = &self.player {
             p.stop();
         }
@@ -2562,6 +2579,7 @@ impl App {
         }
 
         for path in advanced {
+            self.finish_scrobble();
             if let Ok(Some(track)) = self.lib.track_by_path(&path) {
                 if let Some(position) = self.queue.iter().position(|id| *id == track.id) {
                     self.queue_pos = Some(position);
@@ -2578,6 +2596,118 @@ impl App {
             .is_some_and(|player| player.take_finished())
         {
             self.on_track_finished();
+        }
+    }
+
+    /// Send one ListenBrainz listen on a worker thread.
+    fn send_scrobble(&self, listen: &musicwasp_core::scrobble::Listen, now_playing: bool) {
+        let token = self.settings.listenbrainz_token.trim().to_string();
+        if token.is_empty() {
+            return;
+        }
+        let listen = listen.clone();
+        let tx = self.scrobble_tx.clone();
+        std::thread::spawn(move || {
+            let result = if now_playing {
+                musicwasp_core::scrobble::submit_now_playing(&token, &listen)
+            } else {
+                musicwasp_core::scrobble::submit_single(&token, &listen)
+            };
+            if let Err(e) = result {
+                let _ = tx.send(format!("ListenBrainz: {e:#}"));
+            }
+        });
+    }
+
+    fn scrobble_listen(track: &Track, started_at: i64) -> musicwasp_core::scrobble::Listen {
+        musicwasp_core::scrobble::Listen {
+            artist: track.artist.clone(),
+            title: track.title.clone(),
+            release: track.album.clone(),
+            duration_secs: track.duration_secs,
+            started_at,
+        }
+    }
+
+    /// Submit the previous listen if it crossed the ListenBrainz threshold.
+    fn finish_scrobble(&mut self) {
+        let Some(state) = self.scrobble.take() else {
+            return;
+        };
+        if state.submitted {
+            return;
+        }
+        let duration = state.track.duration_secs as f64;
+        let threshold = (duration * 0.5).clamp(1.0, 240.0);
+        if state.last_position >= threshold {
+            let listen = Self::scrobble_listen(&state.track, state.started_at);
+            self.send_scrobble(&listen, false);
+        }
+    }
+
+    /// Track now-playing and completed listens for ListenBrainz.
+    fn update_scrobbling(&mut self) {
+        while let Ok(error) = self.scrobble_rx.try_recv() {
+            self.message = error;
+        }
+        if !self.settings.scrobble_listenbrainz
+            || self.settings.listenbrainz_token.trim().is_empty()
+        {
+            self.scrobble = None;
+            return;
+        }
+        let Some(player) = &self.player else {
+            self.scrobble = None;
+            return;
+        };
+        let snapshot = player.snapshot();
+        let current = self
+            .queue_pos
+            .and_then(|pos| self.queue.get(pos).copied())
+            .and_then(|id| self.lib.tracks_by_ids(&[id]).ok())
+            .and_then(|mut tracks| tracks.pop());
+        let Some(track) = current else {
+            self.finish_scrobble();
+            return;
+        };
+        if snapshot.status == musicwasp_core::PlayerStatus::Stopped {
+            self.finish_scrobble();
+            return;
+        }
+
+        let changed = self
+            .scrobble
+            .as_ref()
+            .is_none_or(|state| state.track.id != track.id);
+        if changed {
+            self.finish_scrobble();
+            if track.title.trim().is_empty() || track.artist.trim().is_empty() {
+                return;
+            }
+            let started_at = musicwasp_core::scrobble::now();
+            let listen = Self::scrobble_listen(&track, started_at);
+            self.scrobble = Some(ScrobbleState {
+                track,
+                started_at,
+                submitted: false,
+                last_position: snapshot.position,
+            });
+            self.send_scrobble(&listen, true);
+            return;
+        }
+
+        let mut completed = None;
+        if let Some(state) = &mut self.scrobble {
+            state.last_position = snapshot.position;
+            let duration = state.track.duration_secs as f64;
+            let threshold = (duration * 0.5).clamp(1.0, 240.0);
+            if !state.submitted && snapshot.position >= threshold {
+                state.submitted = true;
+                completed = Some(Self::scrobble_listen(&state.track, state.started_at));
+            }
+        }
+        if let Some(listen) = completed {
+            self.send_scrobble(&listen, false);
         }
     }
 
@@ -3549,6 +3679,7 @@ impl eframe::App for App {
         self.handle_screenshot_capture(&ctx);
 
         self.poll_player_events();
+        self.update_scrobbling();
         self.maybe_prime_gapless();
         self.sync_volume();
         self.sync_equalizer();

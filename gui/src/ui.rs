@@ -2764,6 +2764,8 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     let mut rebind: Option<crate::settings::Action> = None;
     let mut chosen_skin: Option<crate::theme::Skin> = None;
     let mut chosen_device: Option<Option<String>> = None;
+    let mut scrobble_enabled = app.settings.scrobble_listenbrainz;
+    let mut scrobble_token = app.settings.listenbrainz_token.clone();
     let mut crossfade_value: Option<f32> = None;
     let conflicts = app.settings.conflicts();
     let mut tab = app.settings_tab;
@@ -2924,6 +2926,27 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     .changed()
                 {
                     crossfade_value = Some(crossfade);
+                }
+
+                ui.add_space(8.0);
+                ui.checkbox(
+                    &mut scrobble_enabled,
+                    RichText::new("Scrobble to ListenBrainz").size(11.5),
+                );
+                if scrobble_enabled {
+                    ui.add_sized(
+                        [300.0, 22.0],
+                        egui::TextEdit::singleline(&mut scrobble_token)
+                            .password(true)
+                            .hint_text("ListenBrainz user token"),
+                    );
+                    ui.label(
+                        RichText::new(
+                            "No developer API key: paste a token from your ListenBrainz profile.",
+                        )
+                        .size(9.5)
+                        .color(th::text_dim()),
+                    );
                 }
             }
 
@@ -3098,6 +3121,13 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     }
     if let Some(secs) = crossfade_value {
         app.set_crossfade(secs);
+    }
+    if scrobble_enabled != app.settings.scrobble_listenbrainz
+        || scrobble_token != app.settings.listenbrainz_token
+    {
+        app.settings.scrobble_listenbrainz = scrobble_enabled;
+        app.settings.listenbrainz_token = scrobble_token;
+        app.persist_settings();
     }
     if let Some(skin) = chosen_skin {
         app.set_skin(ctx, skin);

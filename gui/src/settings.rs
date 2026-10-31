@@ -236,6 +236,12 @@ pub struct Settings {
     /// Overlap length between tracks in seconds; 0 keeps gapless joining.
     #[serde(default)]
     pub crossfade_secs: f32,
+    /// Submit listens to ListenBrainz.
+    #[serde(default)]
+    pub scrobble_listenbrainz: bool,
+    /// ListenBrainz user token. Empty means scrobbling is off.
+    #[serde(default)]
+    pub listenbrainz_token: String,
     /// Folders handed to the OS watcher. Added by a successful scan.
     #[serde(default)]
     pub watch_folders: Vec<String>,
@@ -309,6 +315,8 @@ impl Default for Settings {
             replaygain_album: false,
             output_device: None,
             crossfade_secs: 0.0,
+            scrobble_listenbrainz: false,
+            listenbrainz_token: String::new(),
             watch_folders: Vec::new(),
             session: Session::default(),
         }
@@ -540,6 +548,8 @@ mod tests {
             replaygain_album: true,
             output_device: Some("Speakers".to_string()),
             crossfade_secs: 4.5,
+            scrobble_listenbrainz: true,
+            listenbrainz_token: "token".to_string(),
             watch_folders: vec!["/music".to_string()],
             session: Session {
                 view: SessionView::Playlist(7),
@@ -567,6 +577,8 @@ mod tests {
         assert!(loaded.replaygain_album);
         assert_eq!(loaded.output_device.as_deref(), Some("Speakers"));
         assert_eq!(loaded.crossfade_secs, 4.5);
+        assert!(loaded.scrobble_listenbrainz);
+        assert_eq!(loaded.listenbrainz_token, "token");
     }
 
     #[test]
@@ -605,5 +617,7 @@ mod tests {
         assert!(!loaded.replaygain_album);
         assert!(loaded.output_device.is_none());
         assert_eq!(loaded.crossfade_secs, 0.0);
+        assert!(!loaded.scrobble_listenbrainz);
+        assert!(loaded.listenbrainz_token.is_empty());
     }
 }
