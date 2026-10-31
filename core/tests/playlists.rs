@@ -121,7 +121,7 @@ fn reorder_and_remove_keep_positions_dense() {
     let ids: Vec<i64> = all.iter().map(|t| t.id).collect();
     let pid = lib.create_playlist("Order", &ids).unwrap();
 
-    let conn = musicbee_conn(&dir);
+    let conn = test_conn(&dir);
     let order = || {
         let lib = Library::open_at(&dir.path().join("library.db")).unwrap();
         lib.playlist_tracks(pid)
@@ -153,6 +153,6 @@ fn reorder_and_remove_keep_positions_dense() {
     assert_eq!(order(), vec![ids[1], ids[3], ids[0]]);
 }
 
-fn musicbee_conn(dir: &tempfile::TempDir) -> rusqlite::Connection {
+fn test_conn(dir: &tempfile::TempDir) -> rusqlite::Connection {
     musicwasp_core::db::open_at(&dir.path().join("library.db")).unwrap()
 }

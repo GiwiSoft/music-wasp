@@ -1,23 +1,22 @@
 # MusicWasp
 
-A MusicBee-inspired music manager and player, written in Rust, for **Linux and Windows**.
+A native music manager and player for **Linux and Windows**.
 
 Website: <https://giwi.github.io/music-wasp/>
 
-Same idea as [MusicBee](https://www.getmusicbee.com/): point it at your music folders, index the
-tags, browse by genre / artist / album, play, fix bad metadata, and keep playlists. No Electron,
-no web view, one native binary.
+Point it at your music folders, index the tags, browse by genre / artist / album, play, fix bad
+metadata, and keep playlists. No Electron, no web view, one native binary.
 
 ![MusicWasp](docs/screenshot.png)
 
 ## Status
 
-This is an early but working clone, not a finished product. What runs today:
+This is an early but working project, not a finished product. What runs today:
 
 | Area | Implemented |
 | :-- | :-- |
 | Library | recursive scan of 18 audio formats, tag reading via `lofty`, SQLite index |
-| Browsing | MusicBee-inspired column browser (genre → artist → album) with foldable sections whose state is remembered, search, sortable table |
+| Browsing | column browser (genre → artist → album) with foldable sections whose state is remembered, search, sortable table |
 | Selection | multi-select (`Ctrl`-click, `Shift`-click, `Ctrl+A`, `Esc`), drag tracks onto a playlist, right-click a row for play / rename / metadata / playlist actions |
 | Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle, gapless preloading and 1–12 s crossfade |
 | Output | system default or any enumerated output device, switchable without restarting the app |
@@ -319,7 +318,7 @@ Set `MUSICWASP_NATIVE_WAYLAND=1` to keep the native Wayland backend (drop will n
 
 ## Roadmap
 
-Ordered by how much it would move the needle towards MusicBee parity:
+Planned improvements:
 
 1. **AcoustID fingerprinting** on top of the existing auto-tag (needs a key + `fpcalc`).
 2. **Editing existing smart playlists** (currently create/delete only) plus rating and play-count
@@ -328,6 +327,4 @@ Ordered by how much it would move the needle towards MusicBee parity:
 
 ## License
 
-GPL-3.0-only. See [LICENSE](LICENSE). MusicBee itself is a separate freeware project by Steven
-Mayall; this is an independent implementation inspired by it, not affiliated with or endorsed by
-it.
+GPL-3.0-only. See [LICENSE](LICENSE).

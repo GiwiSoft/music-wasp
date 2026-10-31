@@ -3049,7 +3049,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(
-                        "A MusicBee-inspired music library and player for Linux and Windows.",
+                        "A native music library and player for Linux and Windows.",
                     )
                     .size(12.0),
                 );

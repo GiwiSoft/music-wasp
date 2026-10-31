@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[command(
     name = "musicwasp",
     version,
-    about = "MusicWasp - a MusicWasp clone in Rust"
+    about = "MusicWasp - a native music manager and player"
 )]
 struct Cli {
     #[command(subcommand)]
