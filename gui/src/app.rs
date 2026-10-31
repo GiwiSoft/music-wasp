@@ -936,6 +936,8 @@ pub struct App {
     pub seek_drag: Option<f64>,
     pub volume: f32,
     pub volume_sent: f32,
+    /// Track id for which the next gapless source has been queued.
+    gapless_for: Option<i64>,
 
     // Misc
     pub scan_path: String,
@@ -1088,6 +1090,7 @@ impl App {
             seek_drag: None,
             volume,
             volume_sent: -1.0,
+            gapless_for: None,
             scan_path,
             message: String::new(),
             art: None,
@@ -1159,6 +1162,7 @@ impl App {
         app.refresh_brand_icon(&cc.egui_ctx);
         if let Some(player) = &app.player {
             player.set_equalizer(app.settings.equalizer);
+            player.set_replaygain(app.settings.replaygain, app.settings.replaygain_album);
         }
         if app.session_enabled {
             app.restart_watcher(&cc.egui_ctx);
@@ -1932,6 +1936,19 @@ impl App {
         self.persist_settings();
     }
 
+    /// Toggle ReplayGain and whether album gain wins over track gain.
+    pub fn set_replaygain(&mut self, enabled: bool, album: bool) {
+        if self.settings.replaygain == enabled && self.settings.replaygain_album == album {
+            return;
+        }
+        self.settings.replaygain = enabled;
+        self.settings.replaygain_album = album;
+        if let Some(player) = &self.player {
+            player.set_replaygain(enabled, album);
+        }
+        self.persist_settings();
+    }
+
     /// Stop watching every remembered folder.
     pub fn forget_watch_folders(&mut self) {
         if self.settings.watch_folders.is_empty() {
@@ -2239,6 +2256,7 @@ impl App {
         if let Some(p) = &self.player {
             p.load_and_play(&path);
         }
+        self.gapless_for = None;
         self.selected.clear();
         self.selected.insert(id);
         self.anchor = Some(id);
@@ -2354,6 +2372,7 @@ impl App {
         if let Some(p) = &self.player {
             p.stop();
         }
+        self.gapless_for = None;
     }
 
     pub fn next_track(&mut self) {
@@ -2391,6 +2410,90 @@ impl App {
         };
         self.queue_pos = Some(prev);
         self.play_loaded();
+    }
+
+    /// Index of the track that follows the current one, honouring shuffle/repeat.
+    fn next_queue_index(&self) -> Option<usize> {
+        let pos = self.queue_pos?;
+        let len = self.queue.len();
+        if len == 0 {
+            return None;
+        }
+        if self.shuffle && len > 1 {
+            let stride = 7.min(len - 1).max(1);
+            Some((pos + stride) % len)
+        } else if pos + 1 < len {
+            Some(pos + 1)
+        } else if self.repeat != RepeatMode::Off {
+            Some(0)
+        } else {
+            None
+        }
+    }
+
+    /// Queue the next file once per current track so rodio can cross the file
+    /// boundary without the sink draining.
+    fn maybe_prime_gapless(&mut self) {
+        if self.repeat == RepeatMode::One {
+            return;
+        }
+        let Some(player) = &self.player else { return };
+        let snapshot = player.snapshot();
+        if snapshot.status != musicwasp_core::PlayerStatus::Playing {
+            return;
+        }
+        // Queue close to the boundary so ordinary queue edits do not leave a
+        // stale "next" source waiting in the sink.
+        if snapshot.duration > 4.0 && snapshot.duration - snapshot.position > 3.0 {
+            return;
+        }
+        let Some(pos) = self.queue_pos else { return };
+        let Some(current_id) = self.queue.get(pos).copied() else {
+            return;
+        };
+        if self.gapless_for == Some(current_id) {
+            return;
+        }
+
+        if let Some(next_index) = self.next_queue_index() {
+            if let Some(next_id) = self.queue.get(next_index).copied() {
+                if let Ok(Some(path)) = self.lib.path_for_id(next_id) {
+                    if let Some(player) = &self.player {
+                        player.enqueue_next(&path);
+                    }
+                }
+            }
+        }
+        self.gapless_for = Some(current_id);
+    }
+
+    /// Consume gapless track transitions, then end-of-queue events.
+    fn poll_player_events(&mut self) {
+        let mut advanced = Vec::new();
+        if let Some(player) = &self.player {
+            while let Some(path) = player.take_advanced() {
+                advanced.push(path);
+            }
+        }
+
+        for path in advanced {
+            if let Ok(Some(track)) = self.lib.track_by_path(&path) {
+                if let Some(position) = self.queue.iter().position(|id| *id == track.id) {
+                    self.queue_pos = Some(position);
+                }
+                self.playing_id = Some(track.id);
+            }
+            self.gapless_for = None;
+            self.art_key = None;
+        }
+
+        if self
+            .player
+            .as_ref()
+            .is_some_and(|player| player.take_finished())
+        {
+            self.on_track_finished();
+        }
     }
 
     pub fn on_track_finished(&mut self) {
@@ -2541,6 +2644,9 @@ impl App {
         self.watch_dirty = true;
         crate::theme::apply(ctx, self.settings.skin);
         self.refresh_brand_icon(ctx);
+        if let Some(player) = &self.player {
+            player.set_replaygain(self.settings.replaygain, self.settings.replaygain_album);
+        }
         self.persist_settings();
     }
 
@@ -3352,11 +3458,8 @@ impl eframe::App for App {
         self.handle_shortcuts(&ctx);
         self.handle_screenshot_capture(&ctx);
 
-        if let Some(p) = &self.player {
-            if p.take_finished() {
-                self.on_track_finished();
-            }
-        }
+        self.poll_player_events();
+        self.maybe_prime_gapless();
         self.sync_volume();
         self.sync_equalizer();
         self.update_cover_art(&ctx);

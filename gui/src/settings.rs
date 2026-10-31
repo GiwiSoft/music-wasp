@@ -224,6 +224,12 @@ pub struct Settings {
     /// Watch scanned folders and import new or changed audio automatically.
     #[serde(default = "default_watch_enabled")]
     pub watch_enabled: bool,
+    /// Apply ReplayGain tags to playback.
+    #[serde(default = "default_replaygain_enabled")]
+    pub replaygain: bool,
+    /// Prefer album gain over track gain.
+    #[serde(default)]
+    pub replaygain_album: bool,
     /// Folders handed to the OS watcher. Added by a successful scan.
     #[serde(default)]
     pub watch_folders: Vec<String>,
@@ -233,6 +239,10 @@ pub struct Settings {
 }
 
 fn default_watch_enabled() -> bool {
+    true
+}
+
+fn default_replaygain_enabled() -> bool {
     true
 }
 
@@ -289,6 +299,8 @@ impl Default for Settings {
             folded: FoldedSections::default(),
             queue_open: default_queue_open(),
             watch_enabled: default_watch_enabled(),
+            replaygain: default_replaygain_enabled(),
+            replaygain_album: false,
             watch_folders: Vec::new(),
             session: Session::default(),
         }
@@ -516,6 +528,8 @@ mod tests {
 
         let settings = Settings {
             watch_enabled: false,
+            replaygain: false,
+            replaygain_album: true,
             watch_folders: vec!["/music".to_string()],
             session: Session {
                 view: SessionView::Playlist(7),
@@ -539,6 +553,8 @@ mod tests {
         assert_eq!(loaded.session, settings.session);
         assert!(!loaded.watch_enabled);
         assert_eq!(loaded.watch_folders, vec!["/music".to_string()]);
+        assert!(!loaded.replaygain);
+        assert!(loaded.replaygain_album);
     }
 
     #[test]
@@ -573,5 +589,7 @@ mod tests {
         assert_eq!(loaded.session, Session::default());
         assert!(loaded.watch_enabled);
         assert!(loaded.watch_folders.is_empty());
+        assert!(loaded.replaygain);
+        assert!(!loaded.replaygain_album);
     }
 }

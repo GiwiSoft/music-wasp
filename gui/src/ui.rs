@@ -2851,6 +2851,28 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         }
                     });
                 }
+
+                ui.add_space(8.0);
+                let mut replaygain = app.settings.replaygain;
+                let mut album_gain = app.settings.replaygain_album;
+                ui.checkbox(
+                    &mut replaygain,
+                    RichText::new("Apply ReplayGain tags").size(11.5),
+                )
+                .on_hover_text(
+                    "Uses REPLAYGAIN_TRACK_GAIN / REPLAYGAIN_ALBUM_GAIN from the file when present.",
+                );
+                ui.add_enabled_ui(replaygain, |ui| {
+                    ui.checkbox(
+                        &mut album_gain,
+                        RichText::new("Prefer album gain").size(11.0),
+                    );
+                });
+                if replaygain != app.settings.replaygain
+                    || album_gain != app.settings.replaygain_album
+                {
+                    app.set_replaygain(replaygain, album_gain);
+                }
             }
 
             if tab == SettingsTab::Keybindings {

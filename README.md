@@ -19,7 +19,8 @@ This is an early but working clone, not a finished product. What runs today:
 | Library | recursive scan of 18 audio formats, tag reading via `lofty`, SQLite index |
 | Browsing | MusicBee-inspired column browser (genre → artist → album) with foldable sections whose state is remembered, search, sortable table |
 | Selection | multi-select (`Ctrl`-click, `Shift`-click, `Ctrl+A`, `Esc`), drag tracks onto a playlist, right-click a row for play / rename / metadata / playlist actions |
-| Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle |
+| Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle, gapless preloading when formats allow |
+| ReplayGain | applies `REPLAYGAIN_TRACK_GAIN` / `REPLAYGAIN_ALBUM_GAIN` per source; choose album gain in Settings |
 | Play queue | right-hand Up Next panel: current track, click any entry to jump, drag to reorder, right-click to remove, or clear everything after the current track; **Play next** / **Add to queue** from the track menu |
 | Now playing | album art from embedded cover or folder sidecar, accent-highlighted current row, live position |
 | Cover tools | album grid view with artwork, fetch missing covers from the Cover Art Archive, replace a cover from an image file, and save it as a `cover.jpg` sidecar |
@@ -41,8 +42,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Session restore | reopens the last view, search, selection, volume, play queue and window size/position; playback always starts stopped |
 | Portability | `MUSICWASP_DATA_DIR` for a portable library, data lives in the OS app-data dir by default |
 
-Not there yet (see [Roadmap](#roadmap)): gapless playback, ReplayGain, device sync, podcasts/radio,
-AcoustID fingerprinting, file watching.
+Not there yet (see [Roadmap](#roadmap)): device sync, podcasts/radio, AcoustID fingerprinting.
 
 ## Build
 
@@ -146,6 +146,7 @@ icon before the app starts.
    the running track update immediately. Changes are saved to `settings.json` automatically.
 13. Pick a **Skin** from the dropdown in **Settings**: MusicWasp Dark (default), Midnight, Forest,
     Mono, or MusicWasp Light. The choice, logo and window icon update instantly and are remembered.
+    The General tab also toggles ReplayGain and whether album gain wins over track gain.
 14. Close and reopen the app: it comes back to the same view, search, selection, volume, queue and
     window size/position. Playback always starts stopped, with no track loaded; press `Space` to
     play the current queue entry from the beginning. Session state is written every few seconds and
@@ -315,10 +316,9 @@ Set `MUSICWASP_NATIVE_WAYLAND=1` to keep the native Wayland backend (drop will n
 Ordered by how much it would move the needle towards MusicBee parity:
 
 1. **AcoustID fingerprinting** on top of the existing auto-tag (needs a key + `fpcalc`).
-2. **Gapless playback and ReplayGain** (`symphonia` gapless info + EBU R128 analysis).
-3. **Editing existing smart playlists** (currently create/delete only) plus rating and play-count
+2. **Editing existing smart playlists** (currently create/delete only) plus rating and play-count
    fields to build rules on.
-4. **Device sync** (MTP / Android) and podcast + internet radio support.
+3. **Device sync** (MTP / Android) and podcast + internet radio support.
 
 ## License
 
