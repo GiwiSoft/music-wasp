@@ -58,6 +58,8 @@ struct Shared {
     finished: AtomicBool,
     replaygain_enabled: AtomicBool,
     replaygain_album: AtomicBool,
+    /// Crossfade length in seconds, stored as f32 bits.
+    crossfade_secs: AtomicU64,
     current: Mutex<Option<PathBuf>>,
     /// Paths gapless playback moved to, consumed by the UI.
     advanced: Mutex<VecDeque<PathBuf>>,
@@ -66,6 +68,26 @@ struct Shared {
 
 #[cfg(feature = "audio")]
 pub use audio_impl::Player;
+
+/// Names of the system's output devices, for the settings dropdown.
+#[cfg(feature = "audio")]
+pub fn output_devices() -> Vec<String> {
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+
+    let host = rodio::cpal::default_host();
+    let Ok(devices) = host.output_devices() else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = devices.filter_map(|device| device.name().ok()).collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+#[cfg(not(feature = "audio"))]
+pub fn output_devices() -> Vec<String> {
+    Vec::new()
+}
 
 #[cfg(not(feature = "audio"))]
 pub use silent_impl::Player;
@@ -80,7 +102,7 @@ mod audio_impl {
     use std::io::BufReader;
     use std::sync::mpsc::{self, Receiver, Sender};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     enum Cmd {
         Load(PathBuf),
@@ -102,6 +124,11 @@ mod audio_impl {
 
     impl Player {
         pub fn new() -> Result<Self> {
+            Self::new_with_device(None)
+        }
+
+        /// Open a specific output device, or the system default when `None`.
+        pub fn new_with_device(device: Option<String>) -> Result<Self> {
             let shared = Arc::new(Shared::default());
             shared
                 .volume
@@ -112,7 +139,7 @@ mod audio_impl {
             let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
             let shared_thread = Arc::clone(&shared);
 
-            let join = thread::spawn(move || audio_loop(rx, shared_thread, ready_tx));
+            let join = thread::spawn(move || audio_loop(rx, shared_thread, ready_tx, device));
 
             match ready_rx.recv() {
                 Ok(Ok(())) => {}
@@ -142,6 +169,13 @@ mod audio_impl {
                 .replaygain_enabled
                 .store(enabled, Ordering::Relaxed);
             self.shared.replaygain_album.store(album, Ordering::Relaxed);
+        }
+
+        /// Crossfade seconds; 0 disables overlap and keeps gapless joining.
+        pub fn set_crossfade(&self, secs: f32) {
+            self.shared
+                .crossfade_secs
+                .store(secs.max(0.0).to_bits() as u64, Ordering::Relaxed);
         }
 
         /// Gapless playback advanced to this path. Consumed by the UI.
@@ -209,50 +243,109 @@ mod audio_impl {
         }
     }
 
-    fn audio_loop(rx: Receiver<Cmd>, shared: Arc<Shared>, ready: Sender<Result<(), String>>) {
-        let (_stream, handle) = match OutputStream::try_default() {
-            Ok(v) => {
-                let _ = ready.send(Ok(()));
-                v
-            }
+    struct Fade {
+        from: usize,
+        to: usize,
+        started: Instant,
+        secs: f32,
+        next: (PathBuf, Duration),
+    }
+
+    fn crossfade_secs(shared: &Shared) -> f32 {
+        f32::from_bits(shared.crossfade_secs.load(Ordering::Relaxed) as u32).max(0.0)
+    }
+
+    fn set_mix_volumes(sinks: &[Sink; 2], fade: Option<&Fade>, volume: f32) {
+        if let Some(fade) = fade {
+            let progress = (fade.started.elapsed().as_secs_f32() / fade.secs).clamp(0.0, 1.0);
+            sinks[fade.from].set_volume(volume * (1.0 - progress));
+            sinks[fade.to].set_volume(volume * progress);
+        } else {
+            sinks[0].set_volume(volume);
+            sinks[1].set_volume(0.0);
+        }
+    }
+
+    fn audio_loop(
+        rx: Receiver<Cmd>,
+        shared: Arc<Shared>,
+        ready: Sender<Result<(), String>>,
+        device_name: Option<String>,
+    ) {
+        use rodio::cpal::traits::{DeviceTrait, HostTrait};
+
+        let host = rodio::cpal::default_host();
+        let device = match device_name.as_deref() {
+            Some(name) => host.output_devices().ok().and_then(|mut devices| {
+                devices.find(|device| device.name().ok().as_deref() == Some(name))
+            }),
+            None => host.default_output_device(),
+        };
+        let Some(device) = device else {
+            let _ = ready.send(Err(match &device_name {
+                Some(name) => format!("output device not found: {name}"),
+                None => "no audio output device".to_string(),
+            }));
+            return;
+        };
+
+        let (_stream, handle) = match OutputStream::try_from_device(&device) {
+            Ok(stream) => stream,
             Err(e) => {
                 let _ = ready.send(Err(format!("cannot open audio output: {e}")));
                 return;
             }
         };
 
-        let sink = match Sink::try_new(&handle) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("sink init failed: {e}");
+        let (first, second) = match (Sink::try_new(&handle), Sink::try_new(&handle)) {
+            (Ok(first), Ok(second)) => (first, second),
+            (Err(e), _) | (_, Err(e)) => {
+                let _ = ready.send(Err(format!("sink init failed: {e}")));
                 return;
             }
         };
-        sink.set_volume(0.8);
+        let sinks = [first, second];
+        sinks[0].set_volume(0.8);
+        sinks[1].pause();
+        sinks[1].set_volume(0.0);
+        let _ = ready.send(Ok(()));
 
+        let mut active = 0usize;
         let mut was_playing = false;
         let mut queued: VecDeque<(PathBuf, Duration)> = VecDeque::new();
+        let mut current: Option<(PathBuf, Duration)> = None;
         let mut current_rate: Option<u32> = None;
+        let mut pending: Option<(PathBuf, Duration)> = None;
+        let mut fade: Option<Fade> = None;
         let mut last_len = 0usize;
 
         loop {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(Cmd::Load(path)) => {
-                    sink.stop();
+                    for sink in &sinks {
+                        sink.stop();
+                    }
+                    sinks[1].pause();
+                    sinks[1].set_volume(0.0);
                     queued.clear();
+                    pending = None;
+                    fade = None;
+                    current = None;
                     current_rate = None;
-                    sink.set_volume(f32::from_bits(shared.volume.load(Ordering::Relaxed) as u32));
+                    active = 0;
+                    let volume = f32::from_bits(shared.volume.load(Ordering::Relaxed) as u32);
+                    sinks[0].set_volume(volume);
                     match open_source(&path, &shared) {
                         Ok((source, duration, rate)) => {
                             shared
                                 .duration_ms
                                 .store((duration.as_secs_f64() * 1000.0) as u64, Ordering::Relaxed);
-                            *shared.current.lock().unwrap() = Some(path);
-                            let source = DspSource::new(source, Arc::clone(&shared.eq));
-                            sink.append(source);
-                            sink.play();
+                            *shared.current.lock().unwrap() = Some(path.clone());
+                            sinks[0].append(DspSource::new(source, Arc::clone(&shared.eq)));
+                            sinks[0].play();
                             was_playing = true;
                             current_rate = Some(rate);
+                            current = Some((path, duration));
                             shared
                                 .status
                                 .store(PlayerStatus::Playing.to_u8(), Ordering::Relaxed);
@@ -265,50 +358,78 @@ mod audio_impl {
                                 .store(PlayerStatus::Stopped.to_u8(), Ordering::Relaxed);
                         }
                     }
-                    last_len = sink.len();
+                    last_len = sinks[active].len();
                 }
                 Ok(Cmd::Enqueue(path)) => {
-                    let current = shared
-                        .current
-                        .lock()
-                        .ok()
-                        .and_then(|current| current.clone());
-                    let duplicate = current.as_deref() == Some(path.as_path())
+                    let duplicate = current
+                        .as_ref()
+                        .is_some_and(|(current, _)| current == &path)
+                        || pending.as_ref().is_some_and(|(queued, _)| queued == &path)
                         || queued.iter().any(|(queued_path, _)| queued_path == &path);
-                    if !duplicate && current.is_some() && !sink.empty() {
+                    if !duplicate && current.is_some() && !sinks[active].empty() {
+                        let crossfade = crossfade_secs(&shared);
                         match open_source(&path, &shared) {
                             Ok((source, duration, rate)) if current_rate == Some(rate) => {
-                                let source = DspSource::new(source, Arc::clone(&shared.eq));
-                                sink.append(source);
-                                queued.push_back((path, duration));
+                                if crossfade > 0.1
+                                    && fade.is_none()
+                                    && pending.is_none()
+                                    && queued.is_empty()
+                                {
+                                    let inactive = 1 - active;
+                                    sinks[inactive].stop();
+                                    sinks[inactive]
+                                        .append(DspSource::new(source, Arc::clone(&shared.eq)));
+                                    sinks[inactive].pause();
+                                    sinks[inactive].set_volume(0.0);
+                                    pending = Some((path, duration));
+                                } else if fade.is_none() {
+                                    sinks[active]
+                                        .append(DspSource::new(source, Arc::clone(&shared.eq)));
+                                    queued.push_back((path, duration));
+                                }
                             }
                             Ok(_) => {
-                                tracing::debug!("gapless skipped: sample rate changes");
+                                tracing::debug!("transition skipped: sample rate changes");
                             }
                             Err(e) => {
-                                tracing::warn!("cannot queue {} for gapless: {e}", path.display());
+                                tracing::warn!("cannot queue {}: {e}", path.display());
                             }
                         }
                     }
-                    last_len = sink.len();
+                    last_len = sinks[active].len();
                 }
                 Ok(Cmd::Resume) => {
-                    sink.play();
+                    if let Some(fade) = &fade {
+                        sinks[fade.from].play();
+                        sinks[fade.to].play();
+                    } else {
+                        sinks[active].play();
+                    }
                     was_playing = true;
                     shared
                         .status
                         .store(PlayerStatus::Playing.to_u8(), Ordering::Relaxed);
                 }
                 Ok(Cmd::Pause) => {
-                    sink.pause();
+                    if let Some(fade) = &fade {
+                        sinks[fade.from].pause();
+                        sinks[fade.to].pause();
+                    } else {
+                        sinks[active].pause();
+                    }
                     was_playing = false;
                     shared
                         .status
                         .store(PlayerStatus::Paused.to_u8(), Ordering::Relaxed);
                 }
                 Ok(Cmd::Stop) => {
-                    sink.stop(); // also clears the queue
+                    for sink in &sinks {
+                        sink.stop();
+                    }
                     queued.clear();
+                    pending = None;
+                    fade = None;
+                    current = None;
                     current_rate = None;
                     was_playing = false;
                     shared
@@ -321,40 +442,95 @@ mod audio_impl {
                 }
                 Ok(Cmd::Seek(secs)) => {
                     let target = Duration::from_secs_f64(secs.max(0.0));
-                    if let Err(e) = sink.try_seek(target) {
+                    if let Err(e) = sinks[active].try_seek(target) {
                         tracing::warn!("seek failed: {e}");
                     }
                 }
                 Ok(Cmd::Volume(v)) => {
                     shared.volume.store(v.to_bits() as u64, Ordering::Relaxed);
-                    sink.set_volume(v);
+                    set_mix_volumes(&sinks, fade.as_ref(), v);
                 }
                 Ok(Cmd::Shutdown) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
 
-            // Keep the snapshot fresh and detect end-of-track.
-            shared
-                .position_ms
-                .store(sink.get_pos().as_millis() as u64, Ordering::Relaxed);
+            let volume = f32::from_bits(shared.volume.load(Ordering::Relaxed) as u32);
+            let crossfade = crossfade_secs(&shared);
 
-            let len = sink.len();
-            if len < last_len {
+            // Begin an overlap when the current source is close enough to its end.
+            if fade.is_none() && crossfade > 0.1 {
+                if let (Some((_, duration)), Some(_)) = (&current, &pending) {
+                    let position = sinks[active].get_pos().as_secs_f32();
+                    let duration = duration.as_secs_f32();
+                    if duration > 0.0 && duration - position <= crossfade {
+                        let inactive = 1 - active;
+                        sinks[inactive].set_volume(0.0);
+                        sinks[inactive].play();
+                        let next = pending.take().expect("pending checked above");
+                        fade = Some(Fade {
+                            from: active,
+                            to: inactive,
+                            started: Instant::now(),
+                            secs: crossfade,
+                            next,
+                        });
+                    }
+                }
+            }
+
+            if let Some(active_fade) = &fade {
+                let progress = (active_fade.started.elapsed().as_secs_f32() / active_fade.secs)
+                    .clamp(0.0, 1.0);
+                sinks[active_fade.from].set_volume(volume * (1.0 - progress));
+                sinks[active_fade.to].set_volume(volume * progress);
+            }
+
+            // Finish a crossfade and publish the new current track.
+            let finished_fade = fade
+                .as_ref()
+                .is_some_and(|fade| fade.started.elapsed().as_secs_f32() >= fade.secs);
+            if finished_fade {
+                let fade = fade.take().expect("fade checked above");
+                sinks[fade.from].stop();
+                sinks[fade.from].pause();
+                sinks[fade.from].set_volume(0.0);
+                active = fade.to;
+                sinks[active].set_volume(volume);
+                let (path, duration) = fade.next;
+                shared
+                    .duration_ms
+                    .store((duration.as_secs_f64() * 1000.0) as u64, Ordering::Relaxed);
+                *shared.current.lock().unwrap() = Some(path.clone());
+                current = Some((path.clone(), duration));
+                if let Ok(mut advanced) = shared.advanced.lock() {
+                    advanced.push_back(path);
+                }
+                last_len = sinks[active].len();
+            }
+
+            shared.position_ms.store(
+                sinks[active].get_pos().as_millis() as u64,
+                Ordering::Relaxed,
+            );
+
+            let len = sinks[active].len();
+            if fade.is_none() && len < last_len {
                 if let Some((path, duration)) = queued.pop_front() {
-                    // The queued source is now playing: keep the snapshot and
-                    // tell the UI which path became current.
                     shared
                         .duration_ms
                         .store((duration.as_secs_f64() * 1000.0) as u64, Ordering::Relaxed);
                     *shared.current.lock().unwrap() = Some(path.clone());
+                    current = Some((path.clone(), duration));
                     if let Ok(mut advanced) = shared.advanced.lock() {
                         advanced.push_back(path);
                     }
                 }
             }
-            last_len = len;
+            if fade.is_none() {
+                last_len = len;
+            }
 
-            if sink.empty() && was_playing {
+            if fade.is_none() && sinks[active].empty() && was_playing && pending.is_none() {
                 was_playing = false;
                 shared
                     .status

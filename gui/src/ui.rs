@@ -2763,6 +2763,8 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     let mut unbind: Option<crate::settings::Action> = None;
     let mut rebind: Option<crate::settings::Action> = None;
     let mut chosen_skin: Option<crate::theme::Skin> = None;
+    let mut chosen_device: Option<Option<String>> = None;
+    let mut crossfade_value: Option<f32> = None;
     let conflicts = app.settings.conflicts();
     let mut tab = app.settings_tab;
 
@@ -2872,6 +2874,56 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     || album_gain != app.settings.replaygain_album
                 {
                     app.set_replaygain(replaygain, album_gain);
+                }
+
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("OUTPUT")
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                let selected = app
+                    .settings
+                    .output_device
+                    .clone()
+                    .unwrap_or_else(|| "System default".to_string());
+                egui::ComboBox::from_id_salt("output_device")
+                    .selected_text(RichText::new(selected).size(11.5))
+                    .width(260.0)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(
+                                app.settings.output_device.is_none(),
+                                "System default",
+                            )
+                            .clicked()
+                        {
+                            chosen_device = Some(None);
+                        }
+                        for name in &app.output_devices {
+                            if ui
+                                .selectable_label(
+                                    app.settings.output_device.as_deref() == Some(name),
+                                    name,
+                                )
+                                .clicked()
+                            {
+                                chosen_device = Some(Some(name.clone()));
+                            }
+                        }
+                    });
+                let mut crossfade = app.settings.crossfade_secs;
+                if ui
+                    .add(
+                        egui::Slider::new(&mut crossfade, 0.0..=12.0)
+                            .text("Crossfade")
+                            .suffix(" s"),
+                    )
+                    .on_hover_text("0 s keeps gapless joining; 1–12 s overlaps tracks")
+                    .changed()
+                {
+                    crossfade_value = Some(crossfade);
                 }
             }
 
@@ -3041,6 +3093,12 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     }
     app.captured_this_frame = false;
 
+    if let Some(device) = chosen_device {
+        app.set_output_device(device);
+    }
+    if let Some(secs) = crossfade_value {
+        app.set_crossfade(secs);
+    }
     if let Some(skin) = chosen_skin {
         app.set_skin(ctx, skin);
     }

@@ -907,6 +907,7 @@ pub struct App {
     pub lib: Library,
     pub player: Option<Player>,
     pub audio_error: Option<String>,
+    pub output_devices: Vec<String>,
 
     // Column browser state
     pub genres: Vec<String>,
@@ -1038,10 +1039,20 @@ impl App {
         crate::theme::apply(&cc.egui_ctx, settings.skin);
 
         let lib = Library::open().expect("cannot open library database");
-        let (player, audio_error) = match Player::new() {
-            Ok(p) => (Some(p), None),
+        let (player, audio_error) = match Player::new_with_device(settings.output_device.clone()) {
+            Ok(player) => (Some(player), None),
+            Err(e) if settings.output_device.is_some() => match Player::new_with_device(None) {
+                Ok(player) => (
+                    Some(player),
+                    Some(format!(
+                        "selected output unavailable ({e}); using the default"
+                    )),
+                ),
+                Err(fallback) => (None, Some(fallback.to_string())),
+            },
             Err(e) => (None, Some(e.to_string())),
         };
+        let output_devices = musicwasp_core::player::output_devices();
 
         let scan_path = dirs::audio_dir()
             .or_else(dirs::home_dir)
@@ -1071,6 +1082,7 @@ impl App {
             lib,
             player,
             audio_error,
+            output_devices,
             genres: Vec::new(),
             artists: Vec::new(),
             albums: Vec::new(),
@@ -1163,6 +1175,7 @@ impl App {
         if let Some(player) = &app.player {
             player.set_equalizer(app.settings.equalizer);
             player.set_replaygain(app.settings.replaygain, app.settings.replaygain_album);
+            player.set_crossfade(app.settings.crossfade_secs);
         }
         if app.session_enabled {
             app.restart_watcher(&cc.egui_ctx);
@@ -1949,6 +1962,72 @@ impl App {
         self.persist_settings();
     }
 
+    /// Overlap the end of one track with the start of the next.
+    pub fn set_crossfade(&mut self, secs: f32) {
+        let secs = secs.clamp(0.0, 12.0);
+        if (self.settings.crossfade_secs - secs).abs() < f32::EPSILON {
+            return;
+        }
+        self.settings.crossfade_secs = secs;
+        if let Some(player) = &self.player {
+            player.set_crossfade(secs);
+        }
+        self.persist_settings();
+    }
+
+    /// Switch output device; playback continues from the same position.
+    pub fn set_output_device(&mut self, device: Option<String>) {
+        if self.settings.output_device == device {
+            return;
+        }
+        let previous = self.settings.output_device.clone();
+        self.settings.output_device = device;
+        if let Err(e) = self.rebuild_player_for_output() {
+            self.settings.output_device = previous;
+            self.persist_settings();
+            self.message = format!("could not change output device: {e}");
+            return;
+        }
+        self.persist_settings();
+    }
+
+    fn rebuild_player_for_output(&mut self) -> Result<(), String> {
+        let snapshot = self.player.as_ref().map(|player| player.snapshot());
+        let path = snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.current.clone());
+        let position = snapshot.as_ref().map_or(0.0, |snapshot| snapshot.position);
+        let was_playing = snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.status == musicwasp_core::PlayerStatus::Playing);
+
+        let player = Player::new_with_device(self.settings.output_device.clone())
+            .map_err(|e| format!("{e:#}"))?;
+        player.set_equalizer(self.settings.equalizer);
+        player.set_replaygain(self.settings.replaygain, self.settings.replaygain_album);
+        player.set_crossfade(self.settings.crossfade_secs);
+        player.set_volume(self.volume);
+        if let Some(path) = path {
+            player.load_and_play(&path);
+            if position > 0.0 {
+                player.seek(position);
+            }
+            if !was_playing {
+                player.pause();
+            }
+        }
+
+        self.player = Some(player);
+        self.audio_error = None;
+        self.volume_sent = self.volume;
+        self.gapless_for = None;
+        self.message = match &self.settings.output_device {
+            Some(name) => format!("output: {name}"),
+            None => "output: system default".to_string(),
+        };
+        Ok(())
+    }
+
     /// Stop watching every remembered folder.
     pub fn forget_watch_folders(&mut self) {
         if self.settings.watch_folders.is_empty() {
@@ -2444,7 +2523,13 @@ impl App {
         }
         // Queue close to the boundary so ordinary queue edits do not leave a
         // stale "next" source waiting in the sink.
-        if snapshot.duration > 4.0 && snapshot.duration - snapshot.position > 3.0 {
+        let crossfade = self.settings.crossfade_secs.max(0.0) as f64;
+        let window = if crossfade > 0.1 {
+            crossfade + 2.0
+        } else {
+            3.0
+        };
+        if snapshot.duration > window + 1.0 && snapshot.duration - snapshot.position > window {
             return;
         }
         let Some(pos) = self.queue_pos else { return };
@@ -2639,6 +2724,7 @@ impl App {
     /// Restore every setting to its default and apply the ones that are live
     /// (theme, window icon, folder watcher).
     pub fn reset_settings(&mut self, ctx: &egui::Context) {
+        let had_output_device = self.settings.output_device.is_some();
         self.settings = Settings::default();
         self.capture = None;
         self.watch_dirty = true;
@@ -2646,6 +2732,10 @@ impl App {
         self.refresh_brand_icon(ctx);
         if let Some(player) = &self.player {
             player.set_replaygain(self.settings.replaygain, self.settings.replaygain_album);
+            player.set_crossfade(self.settings.crossfade_secs);
+        }
+        if had_output_device {
+            let _ = self.rebuild_player_for_output();
         }
         self.persist_settings();
     }

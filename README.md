@@ -19,7 +19,8 @@ This is an early but working clone, not a finished product. What runs today:
 | Library | recursive scan of 18 audio formats, tag reading via `lofty`, SQLite index |
 | Browsing | MusicBee-inspired column browser (genre → artist → album) with foldable sections whose state is remembered, search, sortable table |
 | Selection | multi-select (`Ctrl`-click, `Shift`-click, `Ctrl+A`, `Esc`), drag tracks onto a playlist, right-click a row for play / rename / metadata / playlist actions |
-| Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle, gapless preloading when formats allow |
+| Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle, gapless preloading and 1–12 s crossfade |
+| Output | system default or any enumerated output device, switchable without restarting the app |
 | ReplayGain | applies `REPLAYGAIN_TRACK_GAIN` / `REPLAYGAIN_ALBUM_GAIN` per source; choose album gain in Settings |
 | Play queue | right-hand Up Next panel: current track, click any entry to jump, drag to reorder, right-click to remove, or clear everything after the current track; **Play next** / **Add to queue** from the track menu |
 | Now playing | album art from embedded cover or folder sidecar, accent-highlighted current row, live position |
@@ -146,7 +147,8 @@ icon before the app starts.
    the running track update immediately. Changes are saved to `settings.json` automatically.
 13. Pick a **Skin** from the dropdown in **Settings**: MusicWasp Dark (default), Midnight, Forest,
     Mono, or MusicWasp Light. The choice, logo and window icon update instantly and are remembered.
-    The General tab also toggles ReplayGain and whether album gain wins over track gain.
+    The General tab also toggles ReplayGain (with album-gain preference), picks the output device
+    and sets the crossfade length (0 s keeps gapless joins).
 14. Close and reopen the app: it comes back to the same view, search, selection, volume, queue and
     window size/position. Playback always starts stopped, with no track loaded; press `Space` to
     play the current queue entry from the beginning. Session state is written every few seconds and

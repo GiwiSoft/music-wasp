@@ -230,6 +230,12 @@ pub struct Settings {
     /// Prefer album gain over track gain.
     #[serde(default)]
     pub replaygain_album: bool,
+    /// Selected output device name; `None` uses the system default.
+    #[serde(default)]
+    pub output_device: Option<String>,
+    /// Overlap length between tracks in seconds; 0 keeps gapless joining.
+    #[serde(default)]
+    pub crossfade_secs: f32,
     /// Folders handed to the OS watcher. Added by a successful scan.
     #[serde(default)]
     pub watch_folders: Vec<String>,
@@ -301,6 +307,8 @@ impl Default for Settings {
             watch_enabled: default_watch_enabled(),
             replaygain: default_replaygain_enabled(),
             replaygain_album: false,
+            output_device: None,
+            crossfade_secs: 0.0,
             watch_folders: Vec::new(),
             session: Session::default(),
         }
@@ -530,6 +538,8 @@ mod tests {
             watch_enabled: false,
             replaygain: false,
             replaygain_album: true,
+            output_device: Some("Speakers".to_string()),
+            crossfade_secs: 4.5,
             watch_folders: vec!["/music".to_string()],
             session: Session {
                 view: SessionView::Playlist(7),
@@ -555,6 +565,8 @@ mod tests {
         assert_eq!(loaded.watch_folders, vec!["/music".to_string()]);
         assert!(!loaded.replaygain);
         assert!(loaded.replaygain_album);
+        assert_eq!(loaded.output_device.as_deref(), Some("Speakers"));
+        assert_eq!(loaded.crossfade_secs, 4.5);
     }
 
     #[test]
@@ -591,5 +603,7 @@ mod tests {
         assert!(loaded.watch_folders.is_empty());
         assert!(loaded.replaygain);
         assert!(!loaded.replaygain_album);
+        assert!(loaded.output_device.is_none());
+        assert_eq!(loaded.crossfade_secs, 0.0);
     }
 }
