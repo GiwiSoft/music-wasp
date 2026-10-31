@@ -2,6 +2,8 @@
 
 A MusicBee-inspired music manager and player, written in Rust, for **Linux and Windows**.
 
+Website: <https://giwi.github.io/music-wasp/>
+
 Same idea as [MusicBee](https://www.getmusicbee.com/): point it at your music folders, index the
 tags, browse by genre / artist / album, play, fix bad metadata, and keep playlists. No Electron,
 no web view, one native binary.

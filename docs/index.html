@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MusicWasp — a native music manager and player for Linux and Windows</title>
+<meta name="description" content="MusicWasp is a music manager and player. A fast local library, tag editing, auto-tagging, cover tools and Linux desktop controls.">
+<meta name="theme-color" content="#161a16">
+<meta property="og:title" content="MusicWasp">
+<meta property="og:description" content="A music manager and player.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://giwi.github.io/music-wasp/screenshot.png">
+<link rel="icon" href="icon.png" sizes="128x128">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <a class="brand" href="#top" aria-label="MusicWasp home">
+    <img src="logo.png" alt="" width="34" height="34">
+    <span>MusicWasp</span>
+  </a>
+  <nav class="site-nav" aria-label="Main navigation">
+    <a href="#features">Features</a>
+    <a href="#workflows">Workflows</a>
+    <a href="#screenshots">Screenshots</a>
+    <a href="#install">Install</a>
+  </nav>
+  <div class="header-actions">
+    <span class="version">v0.2.0</span>
+    <a class="button small" href="https://github.com/Giwi/music-wasp">GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top">
+    <div class="hero-copy">
+      <p class="eyebrow">Linux · Windows · GPL-3.0</p>
+      <h1>Your music.<br><span class="accent">Fast as light.</span></h1>
+      <p class="lead">
+        MusicWasp is a music manager and player. Point it at your folders,
+        browse by genre, artist and album, play, fix tags and keep playlists in one native binary.
+      </p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/Giwi/music-wasp/releases/latest">Download</a>
+        <a class="button" href="https://github.com/Giwi/music-wasp">View source</a>
+      </div>
+      <ul class="badges" aria-label="Highlights">
+        <li>18 audio formats</li>
+        <li>Native audio + EQ</li>
+        <li>MPRIS on Linux</li>
+        <li>Auto-tag + undo</li>
+      </ul>
+    </div>
+    <div class="hero-art">
+      <div class="logo-glow">
+        <img src="logo.png" alt="MusicWasp logo: a green wasp with a music note" width="512" height="512">
+      </div>
+    </div>
+  </section>
+
+  <section class="showcase" aria-label="MusicWasp screenshot">
+    <div class="window-frame">
+      <div class="window-bar"><span></span><span></span><span></span><b>MusicWasp</b></div>
+      <img src="screenshot.png" alt="MusicWasp library view with browser columns, track list and Up Next queue" width="1280" height="800">
+    </div>
+  </section>
+
+  <section id="features" class="section">
+    <div class="section-head">
+      <p class="kicker">Everything in one window</p>
+      <h2>Built for a local music library</h2>
+      <p class="section-lead">Fast SQLite indexing and direct tag writes. No account, no sync service, no browser engine.</p>
+    </div>
+
+    <div class="grid cards">
+      <article class="card">
+        <h3>Library &amp; browsing</h3>
+        <p>Recursive scan of 18 audio formats, sortable table, foldable genre → artist → album browser, search, playlists and rule-based smart playlists.</p>
+      </article>
+      <article class="card">
+        <h3>Playback</h3>
+        <p>Play, pause, seek, volume, repeat and shuffle. A visible Up Next queue with drag reordering, jump and removal, plus a plain now-playing view.</p>
+      </article>
+      <article class="card">
+        <h3>Tag editing</h3>
+        <p>Edit title, artist, album, album artist, genre, year, track and disc. Batch edits write only the fields you fill in, with an undo snapshot before every write.</p>
+      </article>
+      <article class="card">
+        <h3>Auto-tag with a preview</h3>
+        <p>Search MusicBrainz by artist and album, review the file-to-release-track table, override rows, inspect tag diffs, then write metadata and cover art.</p>
+      </article>
+      <article class="card">
+        <h3>Cover tools</h3>
+        <p>Album grid with artwork. Fetch missing covers from the Cover Art Archive, replace a cover, or save it as a <code>cover.jpg</code> sidecar.</p>
+      </article>
+      <article class="card">
+        <h3>Library hygiene</h3>
+        <p>Find rows whose files disappeared, detect duplicate artist/title/album groups, and remove entries from the library without ever deleting audio files.</p>
+      </article>
+      <article class="card">
+        <h3>Folder watching</h3>
+        <p>Scanned folders are watched with <code>notify</code>. New audio is imported automatically and external tag edits refresh existing rows.</p>
+      </article>
+      <article class="card">
+        <h3>Linux desktop</h3>
+        <p>MPRIS2 support for GNOME/KDE controls, lock screens, <code>playerctl</code> and Bluetooth headset buttons. Desktop launcher, icon and file drops included.</p>
+      </article>
+      <article class="card">
+        <h3>Session restore</h3>
+        <p>Reopens the last view, search, selection, volume, queue and window geometry. Playback always starts stopped; press Space to begin.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="workflows" class="section">
+    <div class="section-head">
+      <p class="kicker">Trust-first workflows</p>
+      <h2>Destructive actions stay reversible</h2>
+    </div>
+
+    <div class="grid split">
+      <article class="panel">
+        <h3>Auto-tag safely</h3>
+        <p>Matching scores disc/track numbers, titles and durations instead of relying on file order. The mapping table shows each file, its release track and the exact field changes before anything is written.</p>
+        <ul class="ticks">
+          <li>Per-row track overrides and skip</li>
+          <li>Duplicate-selection warnings</li>
+          <li>Cover embedded by default</li>
+          <li>Previous tags and pictures snapshotted for Undo</li>
+        </ul>
+      </article>
+      <article class="panel">
+        <h3>Batch tag actions</h3>
+        <p>Open the tag editor for several tracks and use the batch actions panel. These write immediately, per file, and share the same undo batch.</p>
+        <ul class="ticks">
+          <li>Auto-number tracks, restarting per disc</li>
+          <li>Normalize case: Title Case, lowercase, UPPERCASE</li>
+          <li>Clear one chosen field across the selection</li>
+          <li>Copy a field from the first selected track</li>
+        </ul>
+      </article>
+      <article class="panel">
+        <h3>Clean the library, keep the files</h3>
+        <p>Library hygiene lists missing paths and duplicate recordings. Selection is explicit and removal asks for confirmation; playlist rows cascade, audio files stay on disk.</p>
+        <ul class="ticks">
+          <li>Missing-file scan and prune</li>
+          <li>Duplicate groups by artist/title/album</li>
+          <li>Bulk remove from library only</li>
+          <li>Files remain available for re-import</li>
+        </ul>
+      </article>
+      <article class="panel">
+        <h3>Cover tools in the album grid</h3>
+        <p>Switch the track table to an album grid, then right-click a tile. Embedded art is used first; folder sidecars such as <code>cover.jpg</code> and <code>folder.png</code> fill the gaps.</p>
+        <ul class="ticks">
+          <li>Fetch missing cover from MusicBrainz / CAA</li>
+          <li>Replace cover with a local image</li>
+          <li>Write a JPEG <code>cover.jpg</code> sidecar</li>
+          <li>Undo restores the previous artwork</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section id="screenshots" class="section">
+    <div class="section-head">
+      <p class="kicker">Screenshots</p>
+      <h2>A dense desktop player</h2>
+      <p class="section-lead">MusicWasp Dark is the default skin. Midnight, Forest, Mono and a light skin are included.</p>
+    </div>
+
+    <div class="grid gallery">
+      <figure>
+        <a href="playlist-view.png"><img loading="lazy" src="playlist-view.png" alt="Playlist view with reorderable tracks"></a>
+        <figcaption>Playlists and the Up Next queue</figcaption>
+      </figure>
+      <figure>
+        <a href="autotag.png"><img loading="lazy" src="autotag.png" alt="Auto-tag mapping preview with file-to-release-track rows and tag diffs"></a>
+        <figcaption>Auto-tag mapping preview</figcaption>
+      </figure>
+      <figure>
+        <a href="album-grid.png"><img loading="lazy" src="album-grid.png" alt="Album grid with cover art tiles"></a>
+        <figcaption>Album grid and cover tools</figcaption>
+      </figure>
+      <figure>
+        <a href="batch-edit.png"><img loading="lazy" src="batch-edit.png" alt="Batch tag editor with shared fields and batch actions"></a>
+        <figcaption>Batch editing and tag actions</figcaption>
+      </figure>
+      <figure>
+        <a href="library-hygiene.png"><img loading="lazy" src="library-hygiene.png" alt="Library hygiene window listing missing files and duplicates"></a>
+        <figcaption>Missing files and duplicates</figcaption>
+      </figure>
+      <figure>
+        <a href="settings.png"><img loading="lazy" src="settings.png" alt="Settings window with skins, watching and shortcuts"></a>
+        <figcaption>Skins, watching and keybindings</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="install" class="section install">
+    <div class="section-head">
+      <p class="kicker">Get started</p>
+      <h2>Build it or download a release</h2>
+    </div>
+
+    <div class="grid split">
+      <article class="panel">
+        <h3>Linux</h3>
+        <pre><code><span class="prompt">$</span> sudo apt install libasound2-dev pkg-config
+<span class="prompt">$</span> cargo build --release
+<span class="prompt">$</span> ./scripts/install-desktop.sh</code></pre>
+        <p>Release archives include the binaries, desktop entry, icon and install script. The app prefers XWayland so file-manager drag and drop works.</p>
+      </article>
+      <article class="panel">
+        <h3>Windows</h3>
+        <pre><code><span class="prompt">&gt;</span> cargo build --release
+<span class="prompt">&gt;</span> .\target\release\musicwasp.exe</code></pre>
+        <p>The MSVC toolchain is enough. SQLite is compiled in and audio goes through WASAPI; the executable carries the app icon and version metadata.</p>
+      </article>
+    </div>
+
+    <div class="callout">
+      <p><strong>Requirements:</strong> stable Rust 1.85 or newer. Music files stay local; MusicWasp talks to MusicBrainz and the Cover Art Archive only when you ask it to auto-tag or fetch a cover.</p>
+      <a class="button primary" href="https://github.com/Giwi/music-wasp/releases/latest">Latest release</a>
+    </div>
+  </section>
+
+  <section class="section shortcuts">
+    <div class="section-head">
+      <p class="kicker">Keyboard first</p>
+      <h2>Default shortcuts</h2>
+    </div>
+    <div class="shortcut-grid">
+      <div><kbd>Space</kbd><span>Play / pause</span></div>
+      <div><kbd>Enter</kbd><span>Play selected</span></div>
+      <div><kbd>Ctrl</kbd> + <kbd>→</kbd><span>Next track</span></div>
+      <div><kbd>Ctrl</kbd> + <kbd>←</kbd><span>Previous track</span></div>
+      <div><kbd>F2</kbd><span>Rename</span></div>
+      <div><kbd>Ctrl</kbd> + <kbd>F2</kbd><span>Edit tags</span></div>
+      <div><kbd>Ctrl</kbd> + <kbd>E</kbd><span>Equalizer</span></div>
+      <div><kbd>Ctrl</kbd> + <kbd>,</kbd><span>Settings</span></div>
+    </div>
+    <p class="section-lead">Every binding is rebindable in Settings, with conflict detection.</p>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-brand">
+    <img src="logo.png" alt="" width="30" height="30">
+    <span>MusicWasp <b>v0.2.0</b></span>
+  </div>
+  <p>
+    Copyright © 2026 <a href="https://giwi.fr">giwi.fr</a>.
+    Released under the <a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU GPL v3</a>.
+  </p>
+  <p class="fine">
+    MusicBee is a separate freeware project by Steven Mayall. MusicWasp is an independent
+    implementation inspired by it and is not affiliated with or endorsed by MusicBee.
+  </p>
+  <nav aria-label="Footer">
+    <a href="https://github.com/Giwi/music-wasp">Source</a>
+    <a href="https://github.com/Giwi/music-wasp/issues">Issues</a>
+    <a href="https://github.com/Giwi/music-wasp/releases">Releases</a>
+    <a href="https://giwi.fr">giwi.fr</a>
+  </nav>
+</footer>
+</body>
+</html>
