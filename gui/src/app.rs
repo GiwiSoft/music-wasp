@@ -58,11 +58,13 @@ pub struct QueueDrag {
     pub index: usize,
 }
 
-/// Editing state for a new smart playlist.
+/// Editing state for a new or existing smart playlist.
 pub struct SmartDraft {
     pub name: String,
     pub definition: Definition,
     pub status: Option<String>,
+    /// `Some(id)` edits an existing playlist; `None` creates one.
+    pub editing: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1561,6 +1563,26 @@ impl App {
             name: format!("Smart playlist {}", self.smart_playlists.len() + 1),
             definition,
             status: None,
+            editing: None,
+        });
+    }
+
+    /// Open the rule editor for an existing smart playlist.
+    pub fn edit_smart_dialog(&mut self, id: i64) {
+        let Some(smart) = self
+            .smart_playlists
+            .iter()
+            .find(|smart| smart.id == id)
+            .cloned()
+        else {
+            self.message = "that smart playlist no longer exists".to_string();
+            return;
+        };
+        self.smart_dialog = Some(SmartDraft {
+            name: smart.name,
+            definition: smart.definition,
+            status: None,
+            editing: Some(id),
         });
     }
 
@@ -1571,6 +1593,22 @@ impl App {
         let name = draft.name.trim().to_string();
         if name.is_empty() {
             draft.status = Some("give the playlist a name".to_string());
+            return;
+        }
+        if let Some(id) = draft.editing {
+            let result = self
+                .lib
+                .update_smart_playlist(id, &draft.definition)
+                .and_then(|()| self.lib.rename_smart_playlist(id, &name));
+            match result {
+                Ok(()) => {
+                    self.message = format!("smart playlist \"{name}\" updated");
+                    self.smart_dialog = None;
+                    self.view = View::Smart(id);
+                    self.mark_browser_dirty();
+                }
+                Err(e) => draft.status = Some(format!("update failed: {e}")),
+            }
             return;
         }
         match self.lib.create_smart_playlist(&name, &draft.definition) {
@@ -3855,9 +3893,17 @@ impl App {
             }
         }
 
-        // Debug hook: MUSICWASP_SMART=1 opens the smart playlist editor.
-        if self.frames == 20 && std::env::var("MUSICWASP_SMART").is_ok() {
-            self.open_smart_dialog();
+        // Debug hook: MUSICWASP_SMART=1 creates; =edit opens the first existing.
+        if self.frames == 20 {
+            match std::env::var("MUSICWASP_SMART").as_deref() {
+                Ok("edit") => {
+                    if let Some(smart) = self.smart_playlists.first() {
+                        self.edit_smart_dialog(smart.id);
+                    }
+                }
+                Ok(_) => self.open_smart_dialog(),
+                Err(_) => {}
+            }
         }
 
         // Debug hook: MUSICWASP_PLAYLIST=1 (or =smart) opens a playlist view.

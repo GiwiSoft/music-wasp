@@ -32,7 +32,7 @@ This is an early but working project, not a finished product. What runs today:
 | Auto-tagging | search MusicBrainz by artist + album; preview a file-to-release-track table with per-row overrides and tag diffs; match by disc/track/title/duration, write title/artist/album/album artist/year/genre/track/disc and embed the front cover; every write keeps a pre-write snapshot for Undo |
 | File drops | drop audio files or folders from the OS file manager onto a playlist, **All music**, or an open playlist’s track list to import and add them |
 | Playlists | save the current view or selection as a playlist, reorder by drag or Up/Down, remove tracks, drag rows onto another playlist to move them |
-| Smart playlists | rule-based (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
+| Smart playlists | editable rule sets (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
 | Skins | five palettes (MusicWasp Dark, Midnight, Forest, Mono, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
 | Settings | tabbed panel: General (skins, folder watching), Keybindings, About; shortcuts persist to `settings.json` |
@@ -132,7 +132,8 @@ icon before the app starts.
    auto-number tracks (per disc), normalize case (title/lower/UPPER), clear a chosen field, or copy
    a field from the first selected track. All batch actions are covered by the same Undo snapshot.
 8. The plus button next to **PLAYLISTS** saves the current selection (or the whole view) as a
-   playlist; the sparkle button creates a smart playlist from rules. Inside a playlist, drag rows to reorder, use
+   playlist; the sparkle button creates a smart playlist from rules. Right-click a smart playlist
+   and choose **Edit rules…** to change its rules, sort, limit or name. Inside a playlist, drag rows to reorder, use
    **Remove**/`Delete` to drop tracks, **Up**/**Down** (or `Alt`+arrows) to nudge a selection, and
    drag rows onto another playlist to move them there.
 9. The monitor button in the toolbar switches to a plain now-playing view with large cover,

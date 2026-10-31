@@ -160,6 +160,15 @@ impl Library {
         crate::smart::delete(&self.conn, playlist_id)
     }
 
+    /// Replace the rule set of an existing smart playlist.
+    pub fn update_smart_playlist(
+        &self,
+        playlist_id: i64,
+        definition: &crate::smart::Definition,
+    ) -> Result<()> {
+        crate::smart::update_definition(&self.conn, playlist_id, definition)
+    }
+
     pub fn rename_smart_playlist(&self, playlist_id: i64, name: &str) -> Result<()> {
         crate::smart::rename(&self.conn, playlist_id, name)
     }

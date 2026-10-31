@@ -284,6 +284,7 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
         DropOnPlaylist(i64, Vec<i64>, Option<i64>),
         SaveView,
         NewSmart,
+        EditSmart(i64),
         DeletePlaylist,
     }
     let mut act: Option<Act> = None;
@@ -500,7 +501,14 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                         for smart in &app.smart_playlists {
                             let selected = matches!(app.view, crate::app::View::Smart(id) if id == smart.id);
                             let label = format!("{} {}", icons::SPARKLE.as_str(), smart.name);
-                            if ui.selectable_label(selected, label).clicked() {
+                            let response = ui.selectable_label(selected, label);
+                            response.context_menu(|ui| {
+                                if ui.button("Edit rules…").clicked() {
+                                    act = Some(Act::EditSmart(smart.id));
+                                    ui.close();
+                                }
+                            });
+                            if response.clicked() {
                                 act = Some(Act::Smart(smart.id));
                             }
                         }
@@ -569,6 +577,7 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
             app.playlist_dialog = Some(format!("Playlist {n}"));
         }
         Some(Act::NewSmart) => app.open_smart_dialog(),
+        Some(Act::EditSmart(id)) => app.edit_smart_dialog(id),
         Some(Act::DeletePlaylist) => app.delete_current_playlist(),
         None => {}
     }
@@ -3692,140 +3701,148 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
     let mut create = false;
     let mut cancel = false;
     let mut remove_rule: Option<usize> = None;
+    let editing = draft.editing.is_some();
 
-    egui::Window::new("New smart playlist")
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(true)
-        .default_width(560.0)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Name").size(12.0).color(th::text_dim()));
-                ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut draft.name));
-            });
+    egui::Window::new(if editing {
+        "Edit smart playlist"
+    } else {
+        "New smart playlist"
+    })
+    .open(&mut open)
+    .collapsible(false)
+    .resizable(true)
+    .default_width(560.0)
+    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+    .show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Name").size(12.0).color(th::text_dim()));
+            ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut draft.name));
+        });
 
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Match").size(12.0).color(th::text_dim()));
-                egui::ComboBox::from_id_salt("match_mode")
-                    .selected_text(if draft.definition.match_all {
-                        "all rules"
-                    } else {
-                        "any rule"
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut draft.definition.match_all, true, "all rules");
-                        ui.selectable_value(&mut draft.definition.match_all, false, "any rule");
-                    });
-                if ui.button("Add rule").clicked() {
-                    draft
-                        .definition
-                        .rules
-                        .push(musicwasp_core::smart::Rule::new(Field::Genre, Op::Contains));
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Match").size(12.0).color(th::text_dim()));
+            egui::ComboBox::from_id_salt("match_mode")
+                .selected_text(if draft.definition.match_all {
+                    "all rules"
+                } else {
+                    "any rule"
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut draft.definition.match_all, true, "all rules");
+                    ui.selectable_value(&mut draft.definition.match_all, false, "any rule");
+                });
+            if ui.button("Add rule").clicked() {
+                draft
+                    .definition
+                    .rules
+                    .push(musicwasp_core::smart::Rule::new(Field::Genre, Op::Contains));
+            }
+        });
+
+        ui.add_space(4.0);
+        egui::Grid::new("smart_rules")
+            .num_columns(4)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                for (index, rule) in draft.definition.rules.iter_mut().enumerate() {
+                    egui::ComboBox::from_id_salt(("field", index))
+                        .width(110.0)
+                        .selected_text(rule.field.label())
+                        .show_ui(ui, |ui| {
+                            for field in Field::ALL {
+                                ui.selectable_value(&mut rule.field, field, field.label());
+                            }
+                        });
+
+                    egui::ComboBox::from_id_salt(("op", index))
+                        .width(110.0)
+                        .selected_text(rule.op.label())
+                        .show_ui(ui, |ui| {
+                            for op in Op::ALL {
+                                ui.selectable_value(&mut rule.op, op, op.label());
+                            }
+                        });
+
+                    ui.add_sized(
+                        [150.0, 22.0],
+                        egui::TextEdit::singleline(&mut rule.value).hint_text("value"),
+                    );
+
+                    if ui.small_button("x").clicked() {
+                        remove_rule = Some(index);
+                    }
+                    ui.end_row();
                 }
             });
 
-            ui.add_space(4.0);
-            egui::Grid::new("smart_rules")
-                .num_columns(4)
-                .spacing([8.0, 6.0])
-                .show(ui, |ui| {
-                    for (index, rule) in draft.definition.rules.iter_mut().enumerate() {
-                        egui::ComboBox::from_id_salt(("field", index))
-                            .width(110.0)
-                            .selected_text(rule.field.label())
-                            .show_ui(ui, |ui| {
-                                for field in Field::ALL {
-                                    ui.selectable_value(&mut rule.field, field, field.label());
-                                }
-                            });
+        if draft.definition.rules.is_empty() {
+            ui.label(
+                RichText::new("No rules: the playlist contains everything.")
+                    .size(10.0)
+                    .color(th::text_dim()),
+            );
+        }
 
-                        egui::ComboBox::from_id_salt(("op", index))
-                            .width(110.0)
-                            .selected_text(rule.op.label())
-                            .show_ui(ui, |ui| {
-                                for op in Op::ALL {
-                                    ui.selectable_value(&mut rule.op, op, op.label());
-                                }
-                            });
-
-                        ui.add_sized(
-                            [150.0, 22.0],
-                            egui::TextEdit::singleline(&mut rule.value).hint_text("value"),
-                        );
-
-                        if ui.small_button("x").clicked() {
-                            remove_rule = Some(index);
-                        }
-                        ui.end_row();
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Sort").size(12.0).color(th::text_dim()));
+            egui::ComboBox::from_id_salt("smart_sort")
+                .selected_text(draft.definition.sort.label())
+                .show_ui(ui, |ui| {
+                    for sort in SortBy::ALL {
+                        ui.selectable_value(&mut draft.definition.sort, sort, sort.label());
                     }
                 });
 
-            if draft.definition.rules.is_empty() {
-                ui.label(
-                    RichText::new("No rules: the playlist contains everything.")
-                        .size(10.0)
-                        .color(th::text_dim()),
-                );
+            let mut limited = draft.definition.limit.is_some();
+            if ui.checkbox(&mut limited, "Limit to").changed() {
+                draft.definition.limit = limited.then_some(100);
             }
-
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Sort").size(12.0).color(th::text_dim()));
-                egui::ComboBox::from_id_salt("smart_sort")
-                    .selected_text(draft.definition.sort.label())
-                    .show_ui(ui, |ui| {
-                        for sort in SortBy::ALL {
-                            ui.selectable_value(&mut draft.definition.sort, sort, sort.label());
-                        }
-                    });
-
-                let mut limited = draft.definition.limit.is_some();
-                if ui.checkbox(&mut limited, "Limit to").changed() {
-                    draft.definition.limit = limited.then_some(100);
-                }
-                if let Some(limit) = &mut draft.definition.limit {
-                    ui.add(egui::DragValue::new(limit).range(1..=10_000).speed(1.0));
-                    ui.label(RichText::new("tracks").size(10.0).color(th::text_dim()));
-                }
-            });
-
-            ui.add_space(4.0);
-            let preview = app
-                .lib
-                .evaluate_smart(&draft.definition)
-                .map(|t| t.len())
-                .unwrap_or(0);
-            ui.label(
-                RichText::new(format!("matches {preview} track(s) right now"))
-                    .size(11.0)
-                    .color(th::accent()),
-            );
-
-            if let Some(status) = &draft.status {
-                ui.label(
-                    RichText::new(status)
-                        .size(11.0)
-                        .color(Color32::from_rgb(230, 120, 120)),
-                );
+            if let Some(limit) = &mut draft.definition.limit {
+                ui.add(egui::DragValue::new(limit).range(1..=10_000).speed(1.0));
+                ui.label(RichText::new("tracks").size(10.0).color(th::text_dim()));
             }
-
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if ui.button("Create").clicked() {
-                    create = true;
-                }
-                if ui.button("Cancel").clicked() {
-                    cancel = true;
-                }
-                ui.label(
-                    RichText::new("Smart playlists re-query the library every time they open")
-                        .size(10.0)
-                        .color(th::text_dim()),
-                );
-            });
         });
+
+        ui.add_space(4.0);
+        let preview = app
+            .lib
+            .evaluate_smart(&draft.definition)
+            .map(|t| t.len())
+            .unwrap_or(0);
+        ui.label(
+            RichText::new(format!("matches {preview} track(s) right now"))
+                .size(11.0)
+                .color(th::accent()),
+        );
+
+        if let Some(status) = &draft.status {
+            ui.label(
+                RichText::new(status)
+                    .size(11.0)
+                    .color(Color32::from_rgb(230, 120, 120)),
+            );
+        }
+
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            if ui
+                .button(if editing { "Save changes" } else { "Create" })
+                .clicked()
+            {
+                create = true;
+            }
+            if ui.button("Cancel").clicked() {
+                cancel = true;
+            }
+            ui.label(
+                RichText::new("Smart playlists re-query the library every time they open")
+                    .size(10.0)
+                    .color(th::text_dim()),
+            );
+        });
+    });
 
     if let Some(index) = remove_rule {
         if let Some(draft) = &mut app.smart_dialog {

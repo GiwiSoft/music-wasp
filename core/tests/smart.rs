@@ -175,6 +175,22 @@ fn smart_playlist_crud_and_persistence() {
         ["First", "Third"]
     );
 
+    // Editing updates the stored definition and the evaluated tracks.
+    let edited = Definition {
+        rules: vec![Rule {
+            field: Field::Genre,
+            op: Op::Equals,
+            value: "Jazz".into(),
+        }],
+        ..Default::default()
+    };
+    album.lib.update_smart_playlist(id, &edited).unwrap();
+    assert_eq!(
+        titles(&album.lib.smart_playlist_tracks(id).unwrap()),
+        ["Second"]
+    );
+    assert_eq!(album.lib.smart_playlists().unwrap()[0].definition, edited);
+
     // A smart playlist never stores rows, so deleting it is cheap.
     album.lib.delete_smart_playlist(id).unwrap();
     assert!(album.lib.smart_playlists().unwrap().is_empty());
