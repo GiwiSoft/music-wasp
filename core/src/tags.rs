@@ -52,6 +52,11 @@ impl TagEdit {
     }
 }
 
+/// Read the editable fields from a file's primary tag.
+pub fn read(path: &Path) -> Result<TagEdit> {
+    Ok(TagSnapshot::capture(path)?.edit)
+}
+
 /// Write `edit` into the file's primary tag, clearing fields left empty.
 pub fn write(path: &Path, edit: &TagEdit) -> Result<()> {
     write_fields(path, edit, false)

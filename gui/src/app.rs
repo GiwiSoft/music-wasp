@@ -5,7 +5,7 @@ use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
 use musicwasp_core::tags::TagSnapshot;
 use musicwasp_core::{AlbumGroup, Filter, Library, Player, Playlist, SortKey, TagEdit, Track};
 use notify::Watcher as _;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 
@@ -96,6 +96,124 @@ pub struct EditState {
     /// Batch mode: empty fields mean "leave unchanged" instead of "clear".
     pub batch: bool,
     pub status: Option<String>,
+}
+
+/// Case style used by the batch tag actions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BatchCase {
+    #[default]
+    Title,
+    Lower,
+    Upper,
+}
+
+impl BatchCase {
+    pub const ALL: [Self; 3] = [Self::Title, Self::Lower, Self::Upper];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Title => "Title Case",
+            Self::Lower => "lowercase",
+            Self::Upper => "UPPERCASE",
+        }
+    }
+}
+
+/// A tag field targeted by clear/copy batch actions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BatchField {
+    #[default]
+    Title,
+    Artist,
+    Album,
+    AlbumArtist,
+    Genre,
+    Year,
+    TrackNo,
+    DiscNo,
+}
+
+impl BatchField {
+    pub const ALL: [Self; 8] = [
+        Self::Title,
+        Self::Artist,
+        Self::Album,
+        Self::AlbumArtist,
+        Self::Genre,
+        Self::Year,
+        Self::TrackNo,
+        Self::DiscNo,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Title => "Title",
+            Self::Artist => "Artist",
+            Self::Album => "Album",
+            Self::AlbumArtist => "Album artist",
+            Self::Genre => "Genre",
+            Self::Year => "Year",
+            Self::TrackNo => "Track no",
+            Self::DiscNo => "Disc no",
+        }
+    }
+
+    fn value(self, edit: &TagEdit) -> String {
+        match self {
+            Self::Title => edit.title.clone(),
+            Self::Artist => edit.artist.clone(),
+            Self::Album => edit.album.clone(),
+            Self::AlbumArtist => edit.album_artist.clone(),
+            Self::Genre => edit.genre.clone(),
+            Self::Year => edit.year.map(|value| value.to_string()).unwrap_or_default(),
+            Self::TrackNo => edit
+                .track_no
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            Self::DiscNo => edit
+                .disc_no
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn set(self, edit: &mut TagEdit, value: &str) {
+        match self {
+            Self::Title => edit.title = value.to_string(),
+            Self::Artist => edit.artist = value.to_string(),
+            Self::Album => edit.album = value.to_string(),
+            Self::AlbumArtist => edit.album_artist = value.to_string(),
+            Self::Genre => edit.genre = value.to_string(),
+            Self::Year => edit.year = value.trim().parse().ok(),
+            Self::TrackNo => edit.track_no = value.trim().parse().ok(),
+            Self::DiscNo => edit.disc_no = value.trim().parse().ok(),
+        }
+    }
+
+    fn clear(self, edit: &mut TagEdit) {
+        self.set(edit, "");
+    }
+}
+
+/// Immediate batch tag transformations; unlike the shared edit fields these
+/// need to read and write each file individually.
+#[derive(Debug, Clone, Copy)]
+pub enum BatchAction {
+    AutoNumber,
+    Case(BatchCase),
+    Clear(BatchField),
+    Copy(BatchField),
+}
+
+impl BatchAction {
+    fn label(self) -> &'static str {
+        match self {
+            Self::AutoNumber => "auto-number",
+            Self::Case(_) => "normalize case",
+            Self::Clear(_) => "clear field",
+            Self::Copy(_) => "copy field",
+        }
+    }
 }
 
 /// A track-list column that F2 can rename in place.
@@ -703,6 +821,36 @@ fn queue_reorder(queue: &mut Vec<i64>, pos: Option<usize>, from: usize, to: usiz
     true
 }
 
+fn auto_number_tracks(edits: &mut [TagEdit]) {
+    let mut counters: BTreeMap<i32, i32> = BTreeMap::new();
+    for edit in edits {
+        let disc = edit.disc_no.unwrap_or(1);
+        let counter = counters.entry(disc).or_insert(0);
+        *counter += 1;
+        edit.track_no = Some(*counter);
+    }
+}
+
+fn normalize_case_value(value: &str, style: BatchCase) -> String {
+    match style {
+        BatchCase::Lower => value.to_lowercase(),
+        BatchCase::Upper => value.to_uppercase(),
+        BatchCase::Title => value
+            .split_whitespace()
+            .map(|word| {
+                let mut chars = word.chars();
+                let Some(first) = chars.next() else {
+                    return String::new();
+                };
+                let mut out = first.to_uppercase().collect::<String>();
+                out.push_str(&chars.as_str().to_lowercase());
+                out
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
 pub fn common_fields(tracks: &[Track]) -> TagEdit {
     let same_text = |field: fn(&Track) -> &str| -> String {
         let Some(first) = tracks.first() else {
@@ -819,6 +967,9 @@ pub struct App {
     pub autotag: Option<AutoTagState>,
     pub show_hygiene: bool,
     pub hygiene: Option<HygieneState>,
+    pub batch_case: BatchCase,
+    pub batch_field: BatchField,
+    pub batch_copy: BatchField,
     /// Album grid mode and its cached covers.
     pub album_view: bool,
     pub album_groups: Vec<AlbumGroup>,
@@ -959,6 +1110,9 @@ impl App {
             autotag: None,
             show_hygiene: false,
             hygiene: None,
+            batch_case: BatchCase::default(),
+            batch_field: BatchField::default(),
+            batch_copy: BatchField::default(),
             album_view: false,
             album_groups: Vec::new(),
             album_covers: HashMap::new(),
@@ -2536,6 +2690,98 @@ impl App {
         self.message = summary;
     }
 
+    /// Apply an immediate per-file transformation to the open batch selection.
+    pub fn apply_batch_action(&mut self, action: BatchAction) {
+        let Some(state) = &self.editing else {
+            return;
+        };
+        if !state.batch {
+            return;
+        }
+        let paths = state.paths.clone();
+        if paths.is_empty() {
+            return;
+        }
+        if let Err(e) = self.store_tag_undo(&paths) {
+            if let Some(state) = &mut self.editing {
+                state.status = Some(format!("nothing written: {e}"));
+            }
+            return;
+        }
+
+        let mut edits = Vec::with_capacity(paths.len());
+        for path in &paths {
+            match musicwasp_core::tags::read(path) {
+                Ok(edit) => edits.push(edit),
+                Err(e) => {
+                    if let Some(state) = &mut self.editing {
+                        state.status = Some(format!(
+                            "nothing written: cannot read {}: {e:#}",
+                            path.display()
+                        ));
+                    }
+                    return;
+                }
+            }
+        }
+
+        match action {
+            BatchAction::AutoNumber => {
+                auto_number_tracks(&mut edits);
+            }
+            BatchAction::Case(style) => {
+                for edit in &mut edits {
+                    for value in [
+                        &mut edit.title,
+                        &mut edit.artist,
+                        &mut edit.album,
+                        &mut edit.album_artist,
+                        &mut edit.genre,
+                    ] {
+                        *value = normalize_case_value(value, style);
+                    }
+                }
+            }
+            BatchAction::Clear(field) => {
+                for edit in &mut edits {
+                    field.clear(edit);
+                }
+            }
+            BatchAction::Copy(field) => {
+                let source = field.value(&edits[0]);
+                for edit in edits.iter_mut().skip(1) {
+                    field.set(edit, &source);
+                }
+            }
+        }
+
+        let mut written = 0usize;
+        let mut errors = Vec::new();
+        for (path, edit) in paths.iter().zip(edits.iter()) {
+            match musicwasp_core::tags::write(path, edit) {
+                Ok(()) => {
+                    if let Err(e) = self.lib.refresh_file(path) {
+                        errors.push(format!("{}: reindex failed: {e}", path.display()));
+                    } else {
+                        written += 1;
+                    }
+                }
+                Err(e) => errors.push(format!("{}: {e:#}", path.display())),
+            }
+        }
+
+        self.art_key = None;
+        self.mark_browser_dirty();
+        let mut summary = format!("{}: updated {written} file(s)", action.label());
+        if !errors.is_empty() {
+            summary.push_str(&format!(", {} failed ({})", errors.len(), errors[0]));
+        }
+        self.message = summary.clone();
+        if let Some(state) = &mut self.editing {
+            state.status = Some(summary);
+        }
+    }
+
     /// Persist the open editor(s) and re-read the files into the library.
     pub fn save_editor(&mut self) {
         let Some(state) = &mut self.editing else {
@@ -3396,9 +3642,10 @@ pub fn fmt_size(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_click, best_release_track, clamp_seek, common_fields, list_subdirs, mapping_matches,
-        queue_insert_next, queue_reorder, remove_tracks_from_queue, restore_queue,
-        suggested_mappings, TrackField,
+        apply_click, auto_number_tracks, best_release_track, clamp_seek, common_fields,
+        list_subdirs, mapping_matches, normalize_case_value, queue_insert_next, queue_reorder,
+        remove_tracks_from_queue, restore_queue, suggested_mappings, BatchCase, BatchField,
+        TrackField,
     };
     use musicwasp_core::autotag::{Release, ReleaseTrack};
     use musicwasp_core::{TagEdit, Track};
@@ -3653,6 +3900,61 @@ mod tests {
         let matches = mapping_matches(&mappings, &release);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].track.title, "First Song");
+    }
+
+    #[test]
+    fn batch_transforms_number_per_disc_and_normalize_case() {
+        let mut edits = vec![
+            TagEdit {
+                title: "hELLO wORLD".into(),
+                disc_no: Some(1),
+                ..Default::default()
+            },
+            TagEdit {
+                disc_no: Some(1),
+                ..Default::default()
+            },
+            TagEdit {
+                disc_no: Some(2),
+                ..Default::default()
+            },
+        ];
+        auto_number_tracks(&mut edits);
+        assert_eq!(edits[0].track_no, Some(1));
+        assert_eq!(edits[1].track_no, Some(2));
+        assert_eq!(edits[2].track_no, Some(1), "numbering restarts per disc");
+
+        assert_eq!(
+            normalize_case_value("hELLO wORLD", BatchCase::Title),
+            "Hello World"
+        );
+        assert_eq!(
+            normalize_case_value("hELLO wORLD", BatchCase::Lower),
+            "hello world"
+        );
+        assert_eq!(
+            normalize_case_value("hELLO wORLD", BatchCase::Upper),
+            "HELLO WORLD"
+        );
+    }
+
+    #[test]
+    fn batch_field_copy_and_clear_round_trip() {
+        let source = TagEdit {
+            genre: "Alternative".into(),
+            year: Some(1997),
+            ..Default::default()
+        };
+        let mut target = TagEdit::default();
+        BatchField::Genre.set(&mut target, &BatchField::Genre.value(&source));
+        BatchField::Year.set(&mut target, &BatchField::Year.value(&source));
+        assert_eq!(target.genre, "Alternative");
+        assert_eq!(target.year, Some(1997));
+
+        BatchField::Genre.clear(&mut target);
+        BatchField::Year.clear(&mut target);
+        assert!(target.genre.is_empty());
+        assert_eq!(target.year, None);
     }
 
     #[test]

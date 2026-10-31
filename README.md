@@ -22,6 +22,7 @@ This is an early but working clone, not a finished product. What runs today:
 | Now playing | album art from embedded cover or folder sidecar, accent-highlighted current row, live position |
 | Cover tools | album grid view with artwork, fetch missing covers from the Cover Art Archive, replace a cover from an image file, and save it as a `cover.jpg` sidecar |
 | Tag editing | edit title, artist, album, album artist, genre, year, track no, disc no and write them into the file; batch edit writes only the fields you fill in |
+| Tag batch actions | auto-number selected tracks per disc, normalize text case, clear one field, or copy a field from the first selected track; every action is undoable |
 | Plain view | one-click full-window now-playing view: large cover, transport, seek, volume and the next track |
 | Renaming | `F2` renames the clicked track field (title, artist, album, genre, year, track no) or the open playlist / smart playlist |
 | Folder selection | in-app folder chooser (up/home, hidden folders, recursive scan) plus a path field |
@@ -124,7 +125,9 @@ icon before the app starts.
    restore them. The same undo snapshot is kept for editor and `F2` writes.
 7. Select one track and press **Edit tags** (`Ctrl+F2`) to fix metadata; saved straight into the file.
    Select several and the editor becomes a batch editor: shared values are pre-filled, empty
-   fields are left untouched in every file.
+   fields are left untouched in every file. The **Batch actions** section writes immediately:
+   auto-number tracks (per disc), normalize case (title/lower/UPPER), clear a chosen field, or copy
+   a field from the first selected track. All batch actions are covered by the same Undo snapshot.
 8. The plus button next to **PLAYLISTS** saves the current selection (or the whole view) as a
    playlist; the sparkle button creates a smart playlist from rules. Inside a playlist, drag rows to reorder, use
    **Remove**/`Delete` to drop tracks, **Up**/**Down** (or `Alt`+arrows) to nudge a selection, and

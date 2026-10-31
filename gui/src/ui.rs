@@ -1,4 +1,7 @@
-use crate::app::{fmt_size, fmt_time, App, Focus, RenameTarget, SettingsTab, TrackField};
+use crate::app::{
+    fmt_size, fmt_time, App, BatchAction, BatchCase, BatchField, Focus, RenameTarget, SettingsTab,
+    TrackField,
+};
 use crate::icons;
 use crate::theme as th;
 use egui::{Color32, RichText};
@@ -2161,6 +2164,17 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
     }
 }
 
+fn batch_field_combo(ui: &mut egui::Ui, id: &str, field: &mut BatchField) {
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(RichText::new(field.label()).size(11.0))
+        .width(120.0)
+        .show_ui(ui, |ui| {
+            for candidate in BatchField::ALL {
+                ui.selectable_value(field, candidate, candidate.label());
+            }
+        });
+}
+
 pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
     let Some(state) = &mut app.editing else {
         return;
@@ -2168,6 +2182,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
 
     let mut save = false;
     let mut cancel = false;
+    let mut batch_action: Option<BatchAction> = None;
 
     let batch = state.batch;
     let count = state.paths.len();
@@ -2256,6 +2271,59 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                     }
                 });
 
+            if batch {
+                ui.add_space(8.0);
+                ui.separator();
+                ui.label(
+                    RichText::new("BATCH ACTIONS")
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.label(
+                    RichText::new(
+                        "These read and write each file immediately; Undo restores the batch.",
+                    )
+                    .size(9.5)
+                    .color(th::text_dim()),
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("Auto-number tracks").clicked() {
+                        batch_action = Some(BatchAction::AutoNumber);
+                    }
+                    ui.label(RichText::new("Case").size(10.5).color(th::text_dim()));
+                    egui::ComboBox::from_id_salt("batch_case")
+                        .selected_text(RichText::new(app.batch_case.label()).size(11.0))
+                        .width(110.0)
+                        .show_ui(ui, |ui| {
+                            for case in BatchCase::ALL {
+                                ui.selectable_value(&mut app.batch_case, case, case.label());
+                            }
+                        });
+                    if ui.button("Apply case").clicked() {
+                        batch_action = Some(BatchAction::Case(app.batch_case));
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Clear").size(10.5).color(th::text_dim()));
+                    batch_field_combo(ui, "batch_clear", &mut app.batch_field);
+                    if ui.button("Clear field").clicked() {
+                        batch_action = Some(BatchAction::Clear(app.batch_field));
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Copy field from the first track")
+                            .size(10.5)
+                            .color(th::text_dim()),
+                    );
+                    batch_field_combo(ui, "batch_copy", &mut app.batch_copy);
+                    if ui.button("Copy").clicked() {
+                        batch_action = Some(BatchAction::Copy(app.batch_copy));
+                    }
+                });
+            }
+
             if let Some(status) = &state.status {
                 ui.add_space(4.0);
                 ui.label(RichText::new(status).size(11.0).color(th::accent()));
@@ -2286,6 +2354,9 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
             });
         });
 
+    if let Some(action) = batch_action {
+        app.apply_batch_action(action);
+    }
     if save {
         app.save_editor();
     } else if cancel {
