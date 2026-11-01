@@ -163,12 +163,12 @@ impl BatchField {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Title => tr("Title"),
-            Self::Artist => tr("Artist"),
+            Self::Title => tr("column.title"),
+            Self::Artist => tr("column.artist"),
             Self::Album => "Album",
             Self::AlbumArtist => "Album artist",
-            Self::Genre => tr("Genre"),
-            Self::Year => tr("Year"),
+            Self::Genre => tr("column.genre"),
+            Self::Year => tr("column.year"),
             Self::TrackNo => "Track no",
             Self::DiscNo => "Disc no",
         }
@@ -247,11 +247,11 @@ pub enum TrackField {
 impl TrackField {
     pub fn label(self) -> &'static str {
         match self {
-            TrackField::Title => tr("Title"),
-            TrackField::Artist => tr("Artist"),
+            TrackField::Title => tr("column.title"),
+            TrackField::Artist => tr("column.artist"),
             TrackField::Album => "Album",
-            TrackField::Genre => tr("Genre"),
-            TrackField::Year => tr("Year"),
+            TrackField::Genre => tr("column.genre"),
+            TrackField::Year => tr("column.year"),
             TrackField::TrackNo => "Track number",
         }
     }
@@ -346,7 +346,7 @@ pub enum Focus {
 }
 
 /// A region that accepts audio files dropped from the OS file manager.
-/// `playlist` is `None` for the whole library (tr("All music")).
+/// `playlist` is `None` for the whole library (tr("ui.all_music")).
 #[derive(Debug, Clone, Copy)]
 pub struct OsDropZone {
     pub playlist: Option<i64>,
@@ -421,9 +421,13 @@ impl AutoTagMapping {
                 changes.push((field, old, new));
             }
         };
-        compare(tr("Title"), self.track.title.clone(), track.title.clone());
         compare(
-            tr("Artist"),
+            tr("column.title"),
+            self.track.title.clone(),
+            track.title.clone(),
+        );
+        compare(
+            tr("column.artist"),
             self.track.artist.clone(),
             if track.artist.is_empty() {
                 self.track.artist.clone()
@@ -438,7 +442,7 @@ impl AutoTagMapping {
             release.album_artist.clone(),
         );
         compare(
-            tr("Year"),
+            tr("column.year"),
             self.track.year.map(|y| y.to_string()).unwrap_or_default(),
             release
                 .year
@@ -447,7 +451,7 @@ impl AutoTagMapping {
                 .unwrap_or_default(),
         );
         compare(
-            tr("Genre"),
+            tr("column.genre"),
             self.track.genre.clone(),
             release
                 .genre
@@ -1664,19 +1668,19 @@ impl App {
 
     pub fn view_title(&self) -> String {
         match self.view {
-            View::Library => tr("Library").to_string(),
+            View::Library => tr("library.title").to_string(),
             View::Playlist(id) => self
                 .playlists
                 .iter()
                 .find(|p| p.id == id)
                 .map(|p| format!("Playlist · {}", p.name))
-                .unwrap_or_else(|| tr("Library").to_string()),
+                .unwrap_or_else(|| tr("library.title").to_string()),
             View::Smart(id) => self
                 .smart_playlists
                 .iter()
                 .find(|p| p.id == id)
                 .map(|p| format!("Smart · {}", p.name))
-                .unwrap_or_else(|| tr("Library").to_string()),
+                .unwrap_or_else(|| tr("library.title").to_string()),
         }
     }
 
@@ -3901,7 +3905,7 @@ impl App {
     // ---- OS file drag and drop ----
 
     /// Import files dropped from the OS file manager into the playlist under
-    /// the pointer, or into the whole library (tr("All music")).
+    /// the pointer, or into the whole library (tr("ui.all_music")).
     fn handle_os_drop(&mut self, ctx: &egui::Context) {
         let (dropped, hovering) =
             ctx.input(|i| (i.raw.dropped_files.clone(), !i.raw.hovered_files.is_empty()));

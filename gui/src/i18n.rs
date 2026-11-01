@@ -68,22 +68,23 @@ pub fn current() -> Language {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-pub fn tr(text: &'static str) -> &'static str {
+pub fn tr(key: &'static str) -> &'static str {
     let language = current();
-    if language == Language::English {
-        return text;
-    }
-    dictionary(language).get(text).copied().unwrap_or(text)
+    dictionary(language)
+        .get(key)
+        .or_else(|| dictionary(Language::English).get(key))
+        .copied()
+        .unwrap_or(key)
 }
 
 fn dictionary(language: Language) -> &'static HashMap<&'static str, &'static str> {
+    static ENGLISH: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     static FRENCH: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     static GERMAN: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     static SPANISH: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     match language {
         Language::English => {
-            static EMPTY: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-            EMPTY.get_or_init(HashMap::new)
+            ENGLISH.get_or_init(|| parse(include_str!("../../assets/i18n/en.json")))
         }
         Language::French => FRENCH.get_or_init(|| parse(include_str!("../../assets/i18n/fr.json"))),
         Language::German => GERMAN.get_or_init(|| parse(include_str!("../../assets/i18n/de.json"))),

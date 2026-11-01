@@ -235,14 +235,14 @@ impl TrackColumn {
     pub fn label(self) -> &'static str {
         match self {
             TrackColumn::Number => "#",
-            TrackColumn::Title => tr("Title"),
-            TrackColumn::Artist => tr("Artist"),
-            TrackColumn::Album => tr("Album"),
-            TrackColumn::Genre => tr("Genre"),
-            TrackColumn::Year => tr("Year"),
-            TrackColumn::Duration => tr("Time"),
-            TrackColumn::Rating => tr("Rating"),
-            TrackColumn::Format => tr("Format"),
+            TrackColumn::Title => tr("column.title"),
+            TrackColumn::Artist => tr("column.artist"),
+            TrackColumn::Album => tr("column.album"),
+            TrackColumn::Genre => tr("column.genre"),
+            TrackColumn::Year => tr("column.year"),
+            TrackColumn::Duration => tr("column.time"),
+            TrackColumn::Rating => tr("column.rating"),
+            TrackColumn::Format => tr("column.format"),
         }
     }
 
@@ -294,9 +294,9 @@ impl TrackLayout {
 
     pub fn label(self) -> &'static str {
         match self {
-            TrackLayout::Standard => tr("Standard"),
-            TrackLayout::Compact => tr("Compact"),
-            TrackLayout::AlbumArt => tr("Album art"),
+            TrackLayout::Standard => tr("ui.standard"),
+            TrackLayout::Compact => tr("ui.compact"),
+            TrackLayout::AlbumArt => tr("ui.album_art"),
         }
     }
 }

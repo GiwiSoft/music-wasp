@@ -264,10 +264,10 @@ translucent backdrop; an optional `backdrop` array supplies its four corner colo
 
 ### Languages
 
-English is the source language and default. French, German and Spanish catalogues live in
-[`assets/i18n`](assets/i18n), with English source strings as keys and graceful fallback for any
-missing entry. The language can be changed live in **Settings → General** and is persisted in
-`settings.json`.
+The UI uses translation keys. English is the default and complete catalogue in
+[`assets/i18n/en.json`](assets/i18n/en.json); French, German and Spanish live beside it in
+[`assets/i18n`](assets/i18n). Missing keys fall back to English. The language can be changed live
+in **Settings → General** and is persisted in `settings.json`.
 
 ![Auto-tag by album](docs/autotag.png)
 

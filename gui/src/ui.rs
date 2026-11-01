@@ -171,19 +171,19 @@ fn playlist_tree(
                 row_act = Some(Act::MovePlaylist(drag.id, Some(folder.id)));
             }
             resp.context_menu(|ui| {
-                if ui.button(tr("New playlist here…")).clicked() {
+                if ui.button(tr("ui.new_playlist_here")).clicked() {
                     row_act = Some(Act::NewPlaylistInFolder(folder.id));
                     ui.close();
                 }
-                if ui.button(tr("New subfolder…")).clicked() {
+                if ui.button(tr("ui.new_subfolder")).clicked() {
                     row_act = Some(Act::NewFolder(Some(folder.id)));
                     ui.close();
                 }
-                if ui.button(tr("Rename folder…")).clicked() {
+                if ui.button(tr("ui.rename_folder")).clicked() {
                     row_act = Some(Act::RenameFolder(folder.id));
                     ui.close();
                 }
-                if ui.button(tr("Delete folder")).clicked() {
+                if ui.button(tr("ui.delete_folder")).clicked() {
                     row_act = Some(Act::DeleteFolder(folder.id));
                     ui.close();
                 }
@@ -237,16 +237,16 @@ fn playlist_tree(
             }
 
             resp.context_menu(|ui| {
-                if ui.button(tr("Rename…")).clicked() {
+                if ui.button(tr("ui.rename_2")).clicked() {
                     row_act = Some(Act::RenamePlaylist(playlist.id));
                     ui.close();
                 }
-                if ui.button(tr("Export M3U…")).clicked() {
+                if ui.button(tr("ui.export_m3u")).clicked() {
                     row_act = Some(Act::ExportPlaylist(playlist.id));
                     ui.close();
                 }
-                ui.menu_button(tr("Move to folder"), |ui| {
-                    if playlist.folder_id.is_some() && ui.button(tr("Top level")).clicked() {
+                ui.menu_button(tr("ui.move_to_folder"), |ui| {
+                    if playlist.folder_id.is_some() && ui.button(tr("ui.top_level")).clicked() {
                         row_act = Some(Act::MovePlaylist(playlist.id, None));
                         ui.close();
                     }
@@ -258,7 +258,7 @@ fn playlist_tree(
                         }
                     }
                 });
-                if ui.button(tr("Delete playlist")).clicked() {
+                if ui.button(tr("ui.delete_playlist")).clicked() {
                     row_act = Some(Act::DeletePlaylistAt(playlist.id));
                     ui.close();
                 }
@@ -284,9 +284,9 @@ fn scan_controls(app: &mut App, ui: &mut egui::Ui) {
             [260.0, 24.0],
             egui::TextEdit::singleline(&mut app.scan_path)
                 .id(egui::Id::new("scan_path"))
-                .hint_text(tr("folder to scan")),
+                .hint_text(tr("ui.folder_to_scan")),
         );
-        let folder = icons::compact(ui, icons::FOLDER_OPEN, tr("Choose a music folder"));
+        let folder = icons::compact(ui, icons::FOLDER_OPEN, tr("ui.choose_a_music_folder"));
         if folder.clicked() {
             app.open_picker();
         }
@@ -296,9 +296,9 @@ fn scan_controls(app: &mut App, ui: &mut egui::Ui) {
             !scanning,
             icons::ARROWS_CLOCKWISE,
             if scanning {
-                tr("Indexing…")
+                tr("library.indexing")
             } else {
-                tr("Scan")
+                tr("library.scan")
             },
         )
         .on_hover_text("Index new and changed tracks in the background")
@@ -358,14 +358,15 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                      Fields: title, artist, album, albumartist, genre, format,\n\
                      year, track, disc, duration. Use >, <, >=, <= or 1990..1999.",
                 );
-            search_label
-                .widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, tr("Search tracks")));
+            search_label.widget_info(|| {
+                WidgetInfo::labeled(WidgetType::Label, true, tr("ui.search_tracks"))
+            });
             let search = ui
                 .add_sized(
                     [180.0, 24.0],
                     egui::TextEdit::singleline(&mut app.search)
                         .id(egui::Id::new("search_box"))
-                        .hint_text(tr("search or artist:\"radiohead\" year:1997")),
+                        .hint_text(tr("ui.search_or_artist_radiohead_year_1997")),
                 )
                 .labelled_by(search_label.id);
             if search.changed() {
@@ -382,7 +383,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             let mut delete_saved: Option<i64> = None;
             let saved = app.saved_searches.clone();
             let saved_menu = ui.menu_button(icons::text(icons::BOOKMARK_SIMPLE, 14.0), |ui| {
-                if ui.button(tr("Save current search…")).clicked() {
+                if ui.button(tr("ui.save_current_search")).clicked() {
                     save_search = true;
                     ui.close();
                 }
@@ -398,11 +399,11 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         ui.close();
                     }
                     response.context_menu(|ui| {
-                        if ui.button(tr("Edit…")).clicked() {
+                        if ui.button(tr("ui.edit")).clicked() {
                             edit_saved = Some(saved.id);
                             ui.close();
                         }
-                        if ui.button(tr("Delete")).clicked() {
+                        if ui.button(tr("common.delete")).clicked() {
                             delete_saved = Some(saved.id);
                             ui.close();
                         }
@@ -411,9 +412,9 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             });
             let saved_menu = saved_menu.response;
             saved_menu.widget_info(|| {
-                WidgetInfo::labeled(WidgetType::Button, true, tr("Saved searches"))
+                WidgetInfo::labeled(WidgetType::Button, true, tr("ui.saved_searches"))
             });
-            saved_menu.on_hover_text(tr("Saved searches"));
+            saved_menu.on_hover_text(tr("ui.saved_searches"));
             if save_search {
                 app.open_save_search_dialog();
             }
@@ -432,7 +433,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let menu = ui.menu_button(icons::text(icons::LIST, 16.0), |ui| {
                     let settings = ui.add(
-                        egui::Button::new(icons::with(icons::GEAR, tr("Settings")))
+                        egui::Button::new(icons::with(icons::GEAR, tr("settings.title")))
                             .selected(app.show_settings),
                     );
                     if settings.clicked() {
@@ -440,7 +441,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         ui.close();
                     }
                     let hygiene = ui.add(
-                        egui::Button::new(icons::with(icons::BROOM, tr("Library hygiene")))
+                        egui::Button::new(icons::with(icons::BROOM, tr("menu.library_hygiene")))
                             .selected(app.show_hygiene),
                     );
                     if hygiene.clicked() {
@@ -449,7 +450,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                     }
                     if app.tag_undo.is_some() {
                         let count = app.tag_undo.as_ref().map_or(0, Vec::len);
-                        let label = format!("{} ({count})", tr("Undo last tag write"));
+                        let label = format!("{} ({count})", tr("ui.undo_last_tag_write"));
                         let undo = ui.add(egui::Button::new(icons::with(
                             icons::ARROW_COUNTER_CLOCKWISE,
                             &label,
@@ -464,9 +465,9 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         egui::Button::new(icons::with(
                             icons::MONITOR_PLAY,
                             if app.plain_view {
-                                tr("Back to the library")
+                                tr("ui.back_to_the_library")
                             } else {
-                                tr("Plain now-playing view")
+                                tr("ui.plain_now_playing_view")
                             },
                         ))
                         .selected(app.plain_view),
@@ -478,7 +479,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                     if ui
                         .add_enabled(
                             !app.plain_view,
-                            egui::Button::new(icons::with(icons::QUEUE, tr("Play queue")))
+                            egui::Button::new(icons::with(icons::QUEUE, tr("menu.play_queue")))
                                 .selected(app.settings.queue_open),
                         )
                         .clicked()
@@ -488,7 +489,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         ui.close();
                     }
                     let columns = ui.add(
-                        egui::Button::new(icons::with(icons::COLUMNS, tr("Track columns")))
+                        egui::Button::new(icons::with(icons::COLUMNS, tr("menu.track_columns")))
                             .selected(app.show_columns),
                     );
                     if columns.clicked() {
@@ -499,9 +500,9 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         egui::Button::new(icons::with(
                             icons::GRID_FOUR,
                             if app.album_view {
-                                tr("Back to the track list")
+                                tr("ui.back_to_the_track_list")
                             } else {
-                                tr("Album grid")
+                                tr("menu.album_grid")
                             },
                         ))
                         .selected(app.album_view),
@@ -511,7 +512,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         ui.close();
                     }
                     let eq = ui.add(
-                        egui::Button::new(icons::with(icons::SLIDERS, tr("Equalizer")))
+                        egui::Button::new(icons::with(icons::SLIDERS, tr("menu.equalizer")))
                             .selected(app.show_equalizer),
                     );
                     if eq.clicked() {
@@ -519,26 +520,29 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         ui.close();
                     }
                     ui.separator();
-                    ui.menu_button(icons::with(icons::SORT_ASCENDING, tr("Sort by")), |ui| {
-                        for (key, label) in [
-                            (SortKey::Rating, tr("Rating")),
-                            (SortKey::PlayCount, tr("Play count")),
-                            (SortKey::LastPlayed, tr("Last played")),
-                            (SortKey::Added, tr("Date added")),
-                        ] {
-                            if ui
-                                .add(egui::Button::new(label).selected(app.sort == key))
-                                .clicked()
-                            {
-                                apply_sort(app, key);
-                                ui.close();
+                    ui.menu_button(
+                        icons::with(icons::SORT_ASCENDING, tr("menu.sort_by")),
+                        |ui| {
+                            for (key, label) in [
+                                (SortKey::Rating, tr("column.rating")),
+                                (SortKey::PlayCount, tr("sort.play_count")),
+                                (SortKey::LastPlayed, tr("sort.last_played")),
+                                (SortKey::Added, tr("sort.date_added")),
+                            ] {
+                                if ui
+                                    .add(egui::Button::new(label).selected(app.sort == key))
+                                    .clicked()
+                                {
+                                    apply_sort(app, key);
+                                    ui.close();
+                                }
                             }
-                        }
-                    });
-                    ui.menu_button(icons::with(icons::FADERS, tr("Play history")), |ui| {
+                        },
+                    );
+                    ui.menu_button(icons::with(icons::FADERS, tr("menu.play_history")), |ui| {
                         if ui
                             .add(
-                                egui::Button::new(tr("Never played"))
+                                egui::Button::new(tr("filter.never_played"))
                                     .selected(app.filter_never_played),
                             )
                             .clicked()
@@ -549,7 +553,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         }
                         if ui
                             .add(
-                                egui::Button::new(tr("Not played in 90 days"))
+                                egui::Button::new(tr("filter.not_played_90"))
                                     .selected(app.filter_not_played_90),
                             )
                             .clicked()
@@ -560,7 +564,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         }
                         if app.filter_never_played || app.filter_not_played_90 {
                             ui.separator();
-                            if ui.button(tr("Clear play filters")).clicked() {
+                            if ui.button(tr("filter.clear")).clicked() {
                                 app.filter_never_played = false;
                                 app.filter_not_played_90 = false;
                                 app.mark_tracks_dirty();
@@ -570,8 +574,8 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                     });
                 });
                 let menu = menu.response;
-                menu.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tr("Main menu")));
-                menu.on_hover_text(tr("Main menu"));
+                menu.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tr("menu.main")));
+                menu.on_hover_text(tr("menu.main"));
                 ui.separator();
                 if !app.message.is_empty() {
                     if ui.available_width() > 180.0 {
@@ -624,9 +628,9 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
             let full_h = ui.available_height();
 
             let sections = [
-                (icons::FUNNEL_SIMPLE, tr("GENRE"), 0.25),
-                (icons::PERSON, tr("ARTIST"), 0.31),
-                (icons::VINYL_RECORD, tr("ALBUM"), 0.24),
+                (icons::FUNNEL_SIMPLE, tr("browser.genre"), 0.25),
+                (icons::PERSON, tr("browser.artist"), 0.31),
+                (icons::VINYL_RECORD, tr("browser.album"), 0.24),
             ];
 
             // Expanded sections share the available height proportionally, so
@@ -663,9 +667,9 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                         ui,
                         start_folded,
                         if start_folded {
-                            tr("Expand this section")
+                            tr("ui.expand_this_section")
                         } else {
-                            tr("Collapse this section")
+                            tr("ui.collapse_this_section")
                         },
                     );
                     toggled |= section_label(ui, *icon, title);
@@ -695,7 +699,10 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                         .auto_shrink([false, true])
                         .max_height(height_for(*weight))
                         .show(ui, |ui| {
-                            if ui.selectable_label(selected.is_none(), tr("All")).clicked() {
+                            if ui
+                                .selectable_label(selected.is_none(), tr("ui.all"))
+                                .clicked()
+                            {
                                 act = Some(match i {
                                     0 => Act::Genre(None),
                                     1 => Act::Artist(None),
@@ -725,27 +732,27 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                     ui,
                     folded.playlists,
                     if folded.playlists {
-                        tr("Expand playlists")
+                        tr("ui.expand_playlists")
                     } else {
-                        tr("Collapse playlists")
+                        tr("ui.collapse_playlists")
                     },
                 );
-                playlists_toggled |= section_label(ui, icons::QUEUE, tr("PLAYLISTS"));
+                playlists_toggled |= section_label(ui, icons::QUEUE, tr("browser.playlists"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let menu = ui.menu_button(icons::text(icons::PLUS, 14.0), |ui| {
                         if ui.button("Save current view as playlist").clicked() {
                             act = Some(Act::SaveView);
                             ui.close();
                         }
-                        if ui.button(tr("New empty playlist")).clicked() {
+                        if ui.button(tr("ui.new_empty_playlist")).clicked() {
                             act = Some(Act::NewEmptyPlaylist);
                             ui.close();
                         }
-                        if ui.button(tr("New playlist folder")).clicked() {
+                        if ui.button(tr("ui.new_playlist_folder")).clicked() {
                             act = Some(Act::NewFolder(None));
                             ui.close();
                         }
-                        if ui.button(tr("Import M3U playlist…")).clicked() {
+                        if ui.button(tr("ui.import_m3u_playlist")).clicked() {
                             act = Some(Act::ImportM3u);
                             ui.close();
                         }
@@ -765,7 +772,7 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                     if matches!(
                         app.view,
                         crate::app::View::Playlist(_) | crate::app::View::Smart(_)
-                    ) && icons::compact(ui, icons::TRASH, tr("Delete playlist")).clicked()
+                    ) && icons::compact(ui, icons::TRASH, tr("ui.delete_playlist")).clicked()
                     {
                         act = Some(Act::DeletePlaylist);
                     }
@@ -778,14 +785,14 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
 
             if !folded.playlists {
                 egui::ScrollArea::vertical()
-                    .id_salt(tr("PLAYLISTS"))
+                    .id_salt(tr("browser.playlists"))
                     .auto_shrink([false, true])
                     .max_height(height_for(0.20).max(70.0))
                     .show(ui, |ui| {
                         let in_library = matches!(app.view, crate::app::View::Library);
                         let all = ui.selectable_label(
                             in_library,
-                            icons::with(icons::MUSIC_NOTES, tr("All music")),
+                            icons::with(icons::MUSIC_NOTES, tr("ui.all_music")),
                         );
                         os_zones.push(crate::app::OsDropZone {
                             playlist: None,
@@ -834,13 +841,13 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                             && app.playlist_folders.is_empty()
                         {
                             ui.label(
-                                RichText::new(tr("no playlists yet"))
+                                RichText::new(tr("ui.no_playlists_yet"))
                                     .size(10.0)
                                     .color(th::text_dim()),
                             );
                         } else if egui::DragAndDrop::has_any_payload(ui.ctx()) {
                             ui.label(
-                                RichText::new(tr("drop tracks here"))
+                                RichText::new(tr("ui.drop_tracks_here"))
                                     .size(9.0)
                                     .color(th::accent()),
                             );
@@ -972,17 +979,18 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                 let title = current_track
                     .as_ref()
                     .map(|t| t.title.clone())
-                    .unwrap_or_else(|| tr("Nothing playing").to_string());
+                    .unwrap_or_else(|| tr("transport.nothing_playing").to_string());
                 let sub = current_track
                     .as_ref()
                     .map(|t| format!("{}  ·  {}", t.artist, t.album))
-                    .unwrap_or_else(|| tr("Double-click a track to play").to_string());
+                    .unwrap_or_else(|| tr("transport.hint").to_string());
                 ui.label(RichText::new(title).size(15.0).strong().color(th::text()));
                 ui.label(RichText::new(sub).size(11.0).color(th::text_dim()));
 
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if icons::transport(ui, icons::SKIP_BACK, 16.0, false, tr("Previous")).clicked()
+                    if icons::transport(ui, icons::SKIP_BACK, 16.0, false, tr("transport.previous"))
+                        .clicked()
                     {
                         app.prev_track();
                     }
@@ -991,11 +999,14 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     if icons::transport(ui, icon, 18.0, true, "Play / pause").clicked() {
                         app.toggle_pause();
                     }
-                    if icons::transport(ui, icons::SKIP_FORWARD, 16.0, false, tr("Next")).clicked()
+                    if icons::transport(ui, icons::SKIP_FORWARD, 16.0, false, tr("transport.next"))
+                        .clicked()
                     {
                         app.next_track();
                     }
-                    if icons::transport(ui, icons::STOP, 14.0, false, tr("Stop")).clicked() {
+                    if icons::transport(ui, icons::STOP, 14.0, false, tr("transport.stop"))
+                        .clicked()
+                    {
                         app.stop();
                     }
                     ui.separator();
@@ -1015,7 +1026,9 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     {
                         app.repeat = app.repeat.next();
                     }
-                    if icons::toggle(ui, app.shuffle, icons::SHUFFLE, tr("Shuffle")).clicked() {
+                    if icons::toggle(ui, app.shuffle, icons::SHUFFLE, tr("transport.shuffle"))
+                        .clicked()
+                    {
                         app.shuffle = !app.shuffle;
                     }
                 });
@@ -1026,9 +1039,11 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                 ui.spacing_mut().slider_width = 120.0;
                 let volume =
                     ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
-                volume.widget_info(|| WidgetInfo::labeled(WidgetType::Slider, true, tr("Volume")));
+                volume.widget_info(|| {
+                    WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.volume"))
+                });
                 ui.label(icons::text(icons::SPEAKER_HIGH, 14.0).color(th::text_dim()))
-                    .on_hover_text(tr("Volume"));
+                    .on_hover_text(tr("transport.volume"));
             });
         });
 
@@ -1050,7 +1065,9 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     .show_value(false)
                     .trailing_fill(true),
             );
-            resp.widget_info(|| WidgetInfo::labeled(WidgetType::Slider, true, tr("Seek")));
+            resp.widget_info(|| {
+                WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
+            });
             if resp.dragged() {
                 app.seek_drag = Some(pos);
             }
@@ -1151,7 +1168,7 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
             let title = current_track
                 .as_ref()
                 .map(|t| t.title.clone())
-                .unwrap_or_else(|| tr("Nothing playing").to_string());
+                .unwrap_or_else(|| tr("transport.nothing_playing").to_string());
             ui.label(RichText::new(title).size(26.0).strong().color(th::text()));
 
             ui.add_space(2.0);
@@ -1190,7 +1207,9 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                             .show_value(false)
                             .trailing_fill(true),
                     );
-                    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Slider, true, tr("Seek")));
+                    resp.widget_info(|| {
+                        WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
+                    });
                     if resp.dragged() {
                         app.seek_drag = Some(pos);
                     }
@@ -1212,7 +1231,8 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(12.0);
             ui.allocate_ui(egui::vec2(285.0, 34.0), |ui| {
                 ui.horizontal(|ui| {
-                    if icons::transport(ui, icons::SKIP_BACK, 22.0, false, tr("Previous")).clicked()
+                    if icons::transport(ui, icons::SKIP_BACK, 22.0, false, tr("transport.previous"))
+                        .clicked()
                     {
                         app.prev_track();
                     }
@@ -1220,11 +1240,14 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                     if icons::transport(ui, icon, 30.0, true, "Play / pause").clicked() {
                         app.toggle_pause();
                     }
-                    if icons::transport(ui, icons::SKIP_FORWARD, 22.0, false, tr("Next")).clicked()
+                    if icons::transport(ui, icons::SKIP_FORWARD, 22.0, false, tr("transport.next"))
+                        .clicked()
                     {
                         app.next_track();
                     }
-                    if icons::transport(ui, icons::STOP, 18.0, false, tr("Stop")).clicked() {
+                    if icons::transport(ui, icons::STOP, 18.0, false, tr("transport.stop"))
+                        .clicked()
+                    {
                         app.stop();
                     }
                     let repeat_icon = if app.repeat == crate::app::RepeatMode::One {
@@ -1242,7 +1265,9 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                     {
                         app.repeat = app.repeat.next();
                     }
-                    if icons::toggle(ui, app.shuffle, icons::SHUFFLE, tr("Shuffle")).clicked() {
+                    if icons::toggle(ui, app.shuffle, icons::SHUFFLE, tr("transport.shuffle"))
+                        .clicked()
+                    {
                         app.shuffle = !app.shuffle;
                     }
                 });
@@ -1256,7 +1281,7 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                     let volume =
                         ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
                     volume.widget_info(|| {
-                        WidgetInfo::labeled(WidgetType::Slider, true, tr("Volume"))
+                        WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.volume"))
                     });
                 });
             });
@@ -1265,10 +1290,14 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
             match &upcoming {
                 Some(track) => {
                     ui.label(
-                        RichText::new(format!("{} {}", icons::QUEUE.as_str(), tr("UP NEXT")))
-                            .size(10.0)
-                            .strong()
-                            .color(th::text_dim()),
+                        RichText::new(format!(
+                            "{} {}",
+                            icons::QUEUE.as_str(),
+                            tr("queue.up_next_upper")
+                        ))
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
                     );
                     ui.add_space(4.0);
                     ui.label(RichText::new(&track.title).size(15.0).color(th::text()));
@@ -1364,20 +1393,20 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(format!("{} {}", icons::QUEUE.as_str(), tr("QUEUE")))
+                        RichText::new(format!("{} {}", icons::QUEUE.as_str(), tr("queue.title")))
                             .size(10.0)
                             .strong()
                             .color(th::text_dim()),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if icons::compact(ui, icons::X, tr("Hide the play queue")).clicked() {
+                        if icons::compact(ui, icons::X, tr("ui.hide_the_play_queue")).clicked() {
                             act = Some(Act::Close);
                         }
                         if icons::compact_enabled(
                             ui,
                             can_clear,
                             icons::TRASH,
-                            tr("Clear everything after the current track"),
+                            tr("ui.clear_everything_after_the_current_track"),
                         )
                         .clicked()
                         {
@@ -1420,7 +1449,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(tr("UP NEXT"))
+                        RichText::new(tr("queue.up_next_upper"))
                             .size(9.5)
                             .strong()
                             .color(th::text_dim()),
@@ -1438,17 +1467,13 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                 if upcoming.is_empty() {
                     ui.add_space(10.0);
                     ui.label(
-                        RichText::new(format!(
-                            "{} {}",
-                            icons::CHECK.as_str(),
-                            tr("Nothing queued")
-                        ))
-                        .size(11.0)
-                        .color(th::text_dim()),
+                        RichText::new(format!("{} {}", icons::CHECK.as_str(), tr("queue.empty")))
+                            .size(11.0)
+                            .color(th::text_dim()),
                     );
                     ui.label(
                         RichText::new(tr(
-                            "Right-click a track and choose Play next or Add to queue.",
+                            "ui.right_click_a_track_and_choose_play_next_or_add_to_queue",
                         ))
                         .size(10.0)
                         .color(th::text_dim()),
@@ -1610,7 +1635,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                 ));
                                 resp.context_menu(|ui| {
                                     if ui
-                                        .button(icons::with(icons::PLAY, tr("Play now")))
+                                        .button(icons::with(icons::PLAY, tr("ui.play_now")))
                                         .clicked()
                                     {
                                         jump = true;
@@ -1725,7 +1750,7 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
     if groups.is_empty() {
         ui.centered_and_justified(|ui| {
             ui.label(
-                RichText::new(tr("No albums yet. Scan a music folder first."))
+                RichText::new(tr("ui.no_albums_yet_scan_a_music_folder_first"))
                     .size(13.0)
                     .color(th::text_dim()),
             );
@@ -1853,15 +1878,15 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                             act = Some(Act::Open(group.album.clone()));
                         }
                         response.context_menu(|ui| {
-                            if ui.button(tr("Open album")).clicked() {
+                            if ui.button(tr("ui.open_album")).clicked() {
                                 act = Some(Act::Open(group.album.clone()));
                                 ui.close();
                             }
-                            if ui.button(tr("Fetch missing cover")).clicked() {
+                            if ui.button(tr("ui.fetch_missing_cover")).clicked() {
                                 act = Some(Act::Fetch(group.album.clone(), group.artist.clone()));
                                 ui.close();
                             }
-                            if ui.button(tr("Replace cover…")).clicked() {
+                            if ui.button(tr("ui.replace_cover")).clicked() {
                                 let start = PathBuf::from(&group.path)
                                     .parent()
                                     .map(PathBuf::from)
@@ -1875,7 +1900,7 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                                 ));
                                 ui.close();
                             }
-                            if ui.button(tr("Save cover.jpg")).clicked() {
+                            if ui.button(tr("ui.save_cover_jpg")).clicked() {
                                 act = Some(Act::Sidecar(group.album.clone(), group.artist.clone()));
                                 ui.close();
                             }
@@ -1909,7 +1934,7 @@ pub fn cover_picker(app: &mut App, ctx: &egui::Context) {
     let mut choose: Option<PathBuf> = None;
     let mut cancel = false;
 
-    egui::Window::new(tr("Choose cover image"))
+    egui::Window::new(tr("ui.choose_cover_image"))
         .open(&mut open)
         .collapsible(false)
         .resizable(true)
@@ -1918,12 +1943,12 @@ pub fn cover_picker(app: &mut App, ctx: &egui::Context) {
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if ui.button(tr("Up")).clicked() {
+                if ui.button(tr("ui.up")).clicked() {
                     if let Some(parent) = picker.current.parent().map(PathBuf::from) {
                         navigate = Some(parent);
                     }
                 }
-                if ui.button(tr("Home")).clicked() {
+                if ui.button(tr("ui.home")).clicked() {
                     if let Some(home) = dirs::home_dir() {
                         navigate = Some(home);
                     }
@@ -1995,7 +2020,7 @@ pub fn cover_picker(app: &mut App, ctx: &egui::Context) {
                 {
                     choose = picker.selected.clone();
                 }
-                if ui.button(tr("Cancel")).clicked() {
+                if ui.button(tr("common.cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -2159,7 +2184,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                 );
                 ui.separator();
                 let has_selection = !app.selected.is_empty();
-                if icons::button_enabled(ui, has_selection, icons::TRASH, tr("Remove"))
+                if icons::button_enabled(ui, has_selection, icons::TRASH, tr("common.remove"))
                     .on_hover_text("Remove the selection from this playlist (Delete)")
                     .clicked()
                 {
@@ -2169,7 +2194,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                     ui,
                     has_selection,
                     icons::ARROW_UP,
-                    tr("Move up (Alt+Up)"),
+                    tr("ui.move_up_alt_up"),
                 )
                 .clicked()
                 {
@@ -2179,7 +2204,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                     ui,
                     has_selection,
                     icons::ARROW_DOWN,
-                    tr("Move down (Alt+Down)"),
+                    tr("ui.move_down_alt_down"),
                 )
                 .clicked()
                 {
@@ -2196,21 +2221,21 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
 
         if tracks.is_empty() {
             let hint = if !app.search.is_empty() {
-                tr("No tracks match your search.")
+                tr("ui.no_tracks_match_your_search")
             } else if matches!(
                 app.view,
                 crate::app::View::Playlist(_) | crate::app::View::Smart(_)
             ) {
-                tr("This view is empty. Drag tracks here from the library.")
+                tr("ui.this_view_is_empty_drag_tracks_here_from_the_library")
             } else {
-                tr("Scan a music folder to build your library.")
+                tr("ui.scan_a_music_folder_to_build_your_library")
             };
             ui.add_space(70.0);
             ui.vertical_centered(|ui| {
                 ui.label(icons::text(icons::MUSIC_NOTES, 42.0).color(th::text_dim()));
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new(tr("Nothing here yet"))
+                    RichText::new(tr("ui.nothing_here_yet"))
                         .size(16.0)
                         .strong()
                         .color(th::text()),
@@ -2343,7 +2368,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                     h.col(|ui| {
                         ui.label(icons::text(icons::IMAGE, 12.0).color(th::text_dim()))
                             .widget_info(|| {
-                                WidgetInfo::labeled(WidgetType::Label, true, tr("Album art"))
+                                WidgetInfo::labeled(WidgetType::Label, true, tr("ui.album_art"))
                             });
                     });
                 }
@@ -2535,21 +2560,21 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                     }
                     resp.context_menu(|ui| {
                         if ui
-                            .button(icons::with(icons::PLAY, tr("Play now")))
+                            .button(icons::with(icons::PLAY, tr("ui.play_now")))
                             .clicked()
                         {
                             menu_action = Some(MenuAction::PlayNow(idx));
                             ui.close();
                         }
                         if ui
-                            .button(icons::with(icons::SKIP_FORWARD, tr("Play next")))
+                            .button(icons::with(icons::SKIP_FORWARD, tr("ui.play_next")))
                             .clicked()
                         {
                             menu_action = Some(MenuAction::PlayNext(idx));
                             ui.close();
                         }
                         if ui
-                            .button(icons::with(icons::QUEUE, tr("Add to queue")))
+                            .button(icons::with(icons::QUEUE, tr("ui.add_to_queue")))
                             .clicked()
                         {
                             menu_action = Some(MenuAction::AddToQueue(idx));
@@ -2557,21 +2582,21 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                         }
                         ui.separator();
                         if ui
-                            .button(icons::with(icons::PENCIL_SIMPLE, tr("Rename")))
+                            .button(icons::with(icons::PENCIL_SIMPLE, tr("ui.rename")))
                             .clicked()
                         {
                             menu_action = Some(MenuAction::Rename(idx));
                             ui.close();
                         }
                         if ui
-                            .button(icons::with(icons::TAG, tr("Edit tags")))
+                            .button(icons::with(icons::TAG, tr("ui.edit_tags")))
                             .clicked()
                         {
                             menu_action = Some(MenuAction::EditTags(idx));
                             ui.close();
                         }
                         if ui
-                            .button(icons::with(icons::MAGIC_WAND, tr("Find metadata")))
+                            .button(icons::with(icons::MAGIC_WAND, tr("ui.find_metadata")))
                             .clicked()
                         {
                             menu_action = Some(MenuAction::FindMetadata(idx));
@@ -2583,7 +2608,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                                 in_playlist,
                                 egui::Button::new(icons::with(
                                     icons::TRASH,
-                                    tr("Remove from playlist"),
+                                    tr("ui.remove_from_playlist"),
                                 )),
                             )
                             .on_disabled_hover_text("Only available inside a playlist")
@@ -2592,10 +2617,10 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                             menu_action = Some(MenuAction::RemoveFromPlaylist(idx));
                             ui.close();
                         }
-                        ui.menu_button(icons::with(icons::PLUS, tr("Add to playlist")), |ui| {
+                        ui.menu_button(icons::with(icons::PLUS, tr("ui.add_to_playlist")), |ui| {
                             if playlists.is_empty() {
                                 ui.label(
-                                    RichText::new(tr("no playlists yet"))
+                                    RichText::new(tr("ui.no_playlists_yet"))
                                         .size(11.0)
                                         .color(th::text_dim()),
                                 );
@@ -2820,7 +2845,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
     let title = if batch {
         format!("Batch edit · {count} tracks")
     } else {
-        tr("Edit tags").to_string()
+        tr("ui.edit_tags").to_string()
     };
     let hint = if batch { "(unchanged)" } else { "" };
 
@@ -2863,18 +2888,21 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                         .labelled_by(label.id);
                         ui.end_row();
                     };
-                    field(ui, tr("Title"), &mut state.edit.title);
-                    field(ui, tr("Artist"), &mut state.edit.artist);
+                    field(ui, tr("column.title"), &mut state.edit.title);
+                    field(ui, tr("column.artist"), &mut state.edit.artist);
                     field(ui, "Album", &mut state.edit.album);
                     field(ui, "Album artist", &mut state.edit.album_artist);
-                    field(ui, tr("Genre"), &mut state.edit.genre);
+                    field(ui, tr("column.genre"), &mut state.edit.genre);
 
                     let mut year = state.edit.year.unwrap_or(0);
                     let mut track_no = state.edit.track_no.unwrap_or(0);
                     let mut disc_no = state.edit.disc_no.unwrap_or(0);
 
-                    let year_label =
-                        ui.label(RichText::new(tr("Year")).size(12.0).color(th::text_dim()));
+                    let year_label = ui.label(
+                        RichText::new(tr("column.year"))
+                            .size(12.0)
+                            .color(th::text_dim()),
+                    );
                     ui.add(egui::DragValue::new(&mut year).range(0..=9999).speed(1.0))
                         .labelled_by(year_label.id);
                     ui.end_row();
@@ -2913,7 +2941,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.separator();
                 ui.label(
-                    RichText::new(tr("BATCH ACTIONS"))
+                    RichText::new(tr("ui.batch_actions"))
                         .size(10.0)
                         .strong()
                         .color(th::text_dim()),
@@ -2943,7 +2971,11 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                     }
                 });
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(tr("Clear")).size(10.5).color(th::text_dim()));
+                    ui.label(
+                        RichText::new(tr("common.clear"))
+                            .size(10.5)
+                            .color(th::text_dim()),
+                    );
                     batch_field_combo(ui, "batch_clear", &mut app.batch_field);
                     if ui.button("Clear field").clicked() {
                         batch_action = Some(BatchAction::Clear(app.batch_field));
@@ -2972,12 +3004,12 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                 let save_label = if batch {
                     format!("Save to {count} files")
                 } else {
-                    tr("Save").to_string()
+                    tr("common.save").to_string()
                 };
                 if ui.button(save_label).clicked() {
                     save = true;
                 }
-                if ui.button(tr("Cancel")).clicked() {
+                if ui.button(tr("common.cancel")).clicked() {
                     cancel = true;
                 }
                 ui.label(
@@ -3049,10 +3081,10 @@ pub fn rename_window(app: &mut App, ctx: &egui::Context) {
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if icons::button(ui, icons::CHECK, tr("Save")).clicked() {
+                if icons::button(ui, icons::CHECK, tr("common.save")).clicked() {
                     commit = true;
                 }
-                if icons::button(ui, icons::X, tr("Cancel")).clicked() {
+                if icons::button(ui, icons::X, tr("common.cancel")).clicked() {
                     cancel = true;
                 }
                 ui.label(
@@ -3085,7 +3117,7 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
 
     let mut create = false;
     let mut cancel = false;
-    egui::Window::new(tr("New playlist"))
+    egui::Window::new(tr("ui.new_playlist"))
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -3120,11 +3152,11 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
             ui.add_space(4.0);
             ui.checkbox(
                 &mut empty,
-                RichText::new(tr("Create empty playlist")).size(11.0),
+                RichText::new(tr("ui.create_empty_playlist")).size(11.0),
             )
-            .on_hover_text(tr("Do not copy the current selection or view"));
+            .on_hover_text(tr("ui.do_not_copy_the_current_selection_or_view"));
             ui.add_space(4.0);
-            let name_label = ui.label(RichText::new(tr("Playlist name")).size(10.5));
+            let name_label = ui.label(RichText::new(tr("ui.playlist_name")).size(10.5));
             let resp = ui
                 .add_sized(
                     [260.0, 22.0],
@@ -3136,10 +3168,10 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if ui.button(tr("Create")).clicked() {
+                if ui.button(tr("common.create")).clicked() {
                     create = true;
                 }
-                if ui.button(tr("Cancel")).clicked() {
+                if ui.button(tr("common.cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -3169,7 +3201,7 @@ pub fn folder_dialog(app: &mut App, ctx: &egui::Context) {
     let title = parent
         .as_ref()
         .map(|path| format!("New folder in {path}"))
-        .unwrap_or_else(|| tr("New playlist folder").to_string());
+        .unwrap_or_else(|| tr("ui.new_playlist_folder").to_string());
 
     let mut create = false;
     let mut cancel = false;
@@ -3179,7 +3211,7 @@ pub fn folder_dialog(app: &mut App, ctx: &egui::Context) {
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.add_space(4.0);
-            let name_label = ui.label(RichText::new(tr("Folder name")).size(10.5));
+            let name_label = ui.label(RichText::new(tr("ui.folder_name")).size(10.5));
             let resp = ui
                 .add_sized(
                     [280.0, 22.0],
@@ -3199,10 +3231,10 @@ pub fn folder_dialog(app: &mut App, ctx: &egui::Context) {
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if ui.button(tr("Create")).clicked() {
+                if ui.button(tr("common.create")).clicked() {
                     create = true;
                 }
-                if ui.button(tr("Cancel")).clicked() {
+                if ui.button(tr("common.cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -3250,7 +3282,7 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
             );
             ui.add_space(6.0);
 
-            let file_label = ui.label(RichText::new(tr("Playlist file")).size(10.5));
+            let file_label = ui.label(RichText::new(tr("ui.playlist_file")).size(10.5));
             let path_resp = ui
                 .add_sized(
                     [520.0, 22.0],
@@ -3264,7 +3296,7 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
 
             if importing {
                 ui.add_space(6.0);
-                let name_label = ui.label(RichText::new(tr("Playlist name")).size(10.5));
+                let name_label = ui.label(RichText::new(tr("ui.playlist_name")).size(10.5));
                 ui.add_sized(
                     [320.0, 22.0],
                     egui::TextEdit::singleline(&mut draft.name)
@@ -3273,16 +3305,16 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
                 .labelled_by(name_label.id);
 
                 ui.add_space(6.0);
-                ui.label(RichText::new(tr("Folder")).size(10.5));
+                ui.label(RichText::new(tr("ui.folder")).size(10.5));
                 let selected = draft
                     .folder_id
                     .map(|id| app.playlist_folder_path(id))
                     .filter(|path| !path.is_empty())
-                    .unwrap_or_else(|| tr("Top level").to_string());
+                    .unwrap_or_else(|| tr("ui.top_level").to_string());
                 egui::ComboBox::from_id_salt("m3u_folder")
                     .selected_text(selected)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut draft.folder_id, None, tr("Top level"));
+                        ui.selectable_value(&mut draft.folder_id, None, tr("ui.top_level"));
                         for folder in &app.playlist_folders {
                             let label = app.playlist_folder_path(folder.id);
                             ui.selectable_value(&mut draft.folder_id, Some(folder.id), label);
@@ -3309,16 +3341,16 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
                         icons::UPLOAD_SIMPLE
                     },
                     if importing {
-                        tr("Import")
+                        tr("ui.import")
                     } else {
-                        tr("Export")
+                        tr("ui.export")
                     },
                 )
                 .clicked()
                 {
                     commit = true;
                 }
-                if icons::button(ui, icons::X, tr("Cancel")).clicked() {
+                if icons::button(ui, icons::X, tr("common.cancel")).clicked() {
                     cancel = true;
                 }
             });
@@ -3346,13 +3378,17 @@ pub fn columns_window(app: &mut App, ctx: &egui::Context) {
     let mut config = app.settings.columns.clone();
     let mut reset = false;
 
-    egui::Window::new(tr("Track columns"))
+    egui::Window::new(tr("menu.track_columns"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .default_width(400.0)
         .show(ctx, |ui| {
-            ui.label(RichText::new(tr("Layout")).size(10.5).color(th::text_dim()));
+            ui.label(
+                RichText::new(tr("ui.layout"))
+                    .size(10.5)
+                    .color(th::text_dim()),
+            );
             ui.horizontal(|ui| {
                 for layout in TrackLayout::ALL {
                     ui.selectable_value(&mut config.layout, layout, layout.label());
@@ -3367,7 +3403,7 @@ pub fn columns_window(app: &mut App, ctx: &egui::Context) {
             ui.separator();
 
             ui.label(
-                RichText::new(tr("Columns"))
+                RichText::new(tr("ui.columns"))
                     .size(10.5)
                     .color(th::text_dim()),
             );
@@ -3411,7 +3447,7 @@ pub fn columns_window(app: &mut App, ctx: &egui::Context) {
                 if ui
                     .button(icons::with(
                         icons::ARROW_COUNTER_CLOCKWISE,
-                        tr("Reset columns"),
+                        tr("ui.reset_columns"),
                     ))
                     .clicked()
                 {
@@ -3448,16 +3484,16 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
     let mut save = false;
     let mut cancel = false;
     egui::Window::new(if editing {
-        tr("Edit saved search")
+        tr("ui.edit_saved_search")
     } else {
-        tr("Save search")
+        tr("ui.save_search")
     })
     .collapsible(false)
     .resizable(false)
     .default_width(460.0)
     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
     .show(ctx, |ui| {
-        let name_label = ui.label(RichText::new(tr("Name")).size(10.5));
+        let name_label = ui.label(RichText::new(tr("ui.name")).size(10.5));
         let name_resp = ui
             .add_sized(
                 [440.0, 22.0],
@@ -3465,7 +3501,7 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
             )
             .labelled_by(name_label.id);
         ui.add_space(6.0);
-        let query_label = ui.label(RichText::new(tr("Query")).size(10.5));
+        let query_label = ui.label(RichText::new(tr("ui.query")).size(10.5));
         let query_resp = ui
             .add_sized(
                 [440.0, 22.0],
@@ -3494,10 +3530,10 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
 
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if icons::button(ui, icons::BOOKMARK_SIMPLE, tr("Save")).clicked() {
+            if icons::button(ui, icons::BOOKMARK_SIMPLE, tr("common.save")).clicked() {
                 save = true;
             }
-            if icons::button(ui, icons::X, tr("Cancel")).clicked() {
+            if icons::button(ui, icons::X, tr("common.cancel")).clicked() {
                 cancel = true;
             }
         });
@@ -3572,7 +3608,7 @@ pub fn hygiene_window(app: &mut App, ctx: &egui::Context) {
     let mut open = app.show_hygiene;
     let duplicate_tracks: usize = state.duplicate_groups.iter().map(|group| group.len()).sum();
 
-    egui::Window::new(tr("Library hygiene"))
+    egui::Window::new(tr("menu.library_hygiene"))
         .open(&mut open)
         .collapsible(false)
         .resizable(true)
@@ -3704,7 +3740,7 @@ pub fn hygiene_window(app: &mut App, ctx: &egui::Context) {
                     {
                         act = Some(Act::Confirm);
                     }
-                    if ui.button(tr("Cancel")).clicked() {
+                    if ui.button(tr("common.cancel")).clicked() {
                         act = Some(Act::Cancel);
                     }
                 });
@@ -3798,7 +3834,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     let conflicts = app.settings.conflicts();
     let mut tab = app.settings_tab;
 
-    egui::Window::new(tr("Settings"))
+    egui::Window::new(tr("settings.title"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -3806,16 +3842,16 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut tab, SettingsTab::General, tr("General"));
-                ui.selectable_value(&mut tab, SettingsTab::Keybindings, tr("Keybindings"));
-                ui.selectable_value(&mut tab, SettingsTab::About, tr("About"));
+                ui.selectable_value(&mut tab, SettingsTab::General, tr("settings.general"));
+                ui.selectable_value(&mut tab, SettingsTab::Keybindings, tr("settings.keybindings"));
+                ui.selectable_value(&mut tab, SettingsTab::About, tr("settings.about"));
             });
             ui.separator();
             ui.add_space(4.0);
 
             if tab == SettingsTab::General {
                 ui.label(
-                    RichText::new(tr("LIBRARY"))
+                    RichText::new(tr("library.section"))
                         .size(10.0)
                         .strong()
                         .color(th::text_dim()),
@@ -3827,7 +3863,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 }
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new(tr("LANGUAGE"))
+                    RichText::new(tr("settings.language_section"))
                         .size(10.0)
                         .strong()
                         .color(th::text_dim()),
@@ -3851,7 +3887,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     });
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new(tr("SKIN"))
+                    RichText::new(tr("settings.skin_section"))
                         .size(10.0)
                         .strong()
                         .color(th::text_dim()),
@@ -3872,14 +3908,14 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     });
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new(tr("Skins apply immediately and are remembered in settings.json."))
+                    RichText::new(tr("ui.skins_apply_immediately_and_are_remembered_in_settings_json"))
                         .size(10.5)
                         .color(th::text_dim()),
                 );
 
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new(tr("ACCESSIBILITY"))
+                    RichText::new(tr("settings.accessibility_section"))
                         .size(10.0)
                         .strong()
                         .color(th::text_dim()),
@@ -3889,7 +3925,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 if ui
                     .checkbox(
                         &mut large_fonts,
-                        RichText::new(tr("Larger text and controls")).size(11.5),
+                        RichText::new(tr("ui.larger_text_and_controls")).size(11.5),
                     )
                     .on_hover_text("Scales the whole interface, including tables and dialogs")
                     .changed()
@@ -3909,7 +3945,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 if ui
                     .checkbox(
                         &mut watching,
-                        RichText::new(tr("Watch scanned folders for new or changed files")).size(11.5),
+                        RichText::new(tr("ui.watch_scanned_folders_for_new_or_changed_files")).size(11.5),
                     )
                     .on_hover_text(
                         "New audio files are imported automatically and tag edits refresh \
@@ -3952,7 +3988,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 let mut album_gain = app.settings.replaygain_album;
                 ui.checkbox(
                     &mut replaygain,
-                    RichText::new(tr("Apply ReplayGain tags")).size(11.5),
+                    RichText::new(tr("ui.apply_replaygain_tags")).size(11.5),
                 )
                 .on_hover_text(
                     "Uses REPLAYGAIN_TRACK_GAIN / REPLAYGAIN_ALBUM_GAIN from the file when present.",
@@ -3960,7 +3996,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_enabled_ui(replaygain, |ui| {
                     ui.checkbox(
                         &mut album_gain,
-                        RichText::new(tr("Prefer album gain")).size(11.0),
+                        RichText::new(tr("ui.prefer_album_gain")).size(11.0),
                     );
                 });
                 if replaygain != app.settings.replaygain
@@ -3971,7 +4007,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
 
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new(tr("OUTPUT"))
+                    RichText::new(tr("settings.output_section"))
                         .size(10.0)
                         .strong()
                         .color(th::text_dim()),
@@ -4010,7 +4046,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 if ui
                     .add(
                         egui::Slider::new(&mut crossfade, 0.0..=12.0)
-                            .text(tr("Crossfade"))
+                            .text(tr("ui.crossfade"))
                             .suffix(" s"),
                     )
                     .on_hover_text("0 s keeps gapless joining; 1–12 s overlaps tracks")
@@ -4022,7 +4058,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.checkbox(
                     &mut scrobble_enabled,
-                    RichText::new(tr("Scrobble to ListenBrainz")).size(11.5),
+                    RichText::new(tr("ui.scrobble_to_listenbrainz")).size(11.5),
                 );
                 if scrobble_enabled {
                     let token_label =
@@ -4046,7 +4082,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
 
             if tab == SettingsTab::Keybindings {
                 ui.label(
-                    RichText::new(tr("KEYBOARD SHORTCUTS"))
+                    RichText::new(tr("ui.keyboard_shortcuts"))
                         .size(10.0)
                         .strong()
                         .color(th::text_dim()),
@@ -4191,7 +4227,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(10.0);
                 ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button(tr("Reset to defaults")).clicked() {
+                    if ui.button(tr("ui.reset_to_defaults")).clicked() {
                         reset = true;
                     }
                     ui.label(
@@ -4265,18 +4301,18 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if ui.button(tr("Up")).clicked() {
+                if ui.button(tr("ui.up")).clicked() {
                     if let Some(parent) = picker.current.parent().map(PathBuf::from) {
                         navigate = Some(parent);
                     }
                 }
-                if ui.button(tr("Home")).clicked() {
+                if ui.button(tr("ui.home")).clicked() {
                     if let Some(home) = dirs::home_dir() {
                         navigate = Some(home);
                     }
                 }
                 if ui
-                    .checkbox(&mut picker.show_hidden, tr("Hidden folders"))
+                    .checkbox(&mut picker.show_hidden, tr("ui.hidden_folders"))
                     .changed()
                 {
                     toggle_hidden = true;
@@ -4329,14 +4365,14 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
             ui.separator();
             ui.horizontal(|ui| {
                 if ui
-                    .button(tr("Use this folder"))
+                    .button(tr("ui.use_this_folder"))
                     .on_hover_text("Scan this folder")
                     .clicked()
                 {
                     choose = true;
                 }
                 ui.label(
-                    RichText::new(tr("Music folders are scanned recursively"))
+                    RichText::new(tr("ui.music_folders_are_scanned_recursively"))
                         .size(10.0)
                         .color(th::text_dim()),
                 );
@@ -4381,7 +4417,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
     let mut undo = false;
     let mut reload_release = false;
 
-    egui::Window::new(tr("Auto-tag by album"))
+    egui::Window::new(tr("ui.auto_tag_by_album"))
         .open(&mut open)
         .collapsible(false)
         .resizable(true)
@@ -4389,14 +4425,14 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(tr("Artist")).size(12.0).color(th::text_dim()));
+                ui.label(RichText::new(tr("column.artist")).size(12.0).color(th::text_dim()));
                 ui.add_sized([170.0, 22.0], egui::TextEdit::singleline(&mut state.artist));
                 ui.label(RichText::new("Album").size(12.0).color(th::text_dim()));
                 ui.add_sized([170.0, 22.0], egui::TextEdit::singleline(&mut state.album));
                 if ui
                     .add_enabled(
                         !matches!(state.stage, AutoTagStage::Searching | AutoTagStage::Applying),
-                        egui::Button::new(tr("Search")),
+                        egui::Button::new(tr("ui.search")),
                     )
                     .clicked()
                 {
@@ -4803,7 +4839,11 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
     .show(ctx, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(tr("Name")).size(12.0).color(th::text_dim()));
+            ui.label(
+                RichText::new(tr("ui.name"))
+                    .size(12.0)
+                    .color(th::text_dim()),
+            );
             ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut draft.name));
         });
 
@@ -4820,7 +4860,7 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
                     ui.selectable_value(&mut draft.definition.match_all, true, "all rules");
                     ui.selectable_value(&mut draft.definition.match_all, false, "any rule");
                 });
-            if ui.button(tr("Add rule")).clicked() {
+            if ui.button(tr("ui.add_rule")).clicked() {
                 draft
                     .definition
                     .rules
@@ -4919,13 +4959,13 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
                 .button(if editing {
                     "Save changes"
                 } else {
-                    tr("Create")
+                    tr("common.create")
                 })
                 .clicked()
             {
                 create = true;
             }
-            if ui.button(tr("Cancel")).clicked() {
+            if ui.button(tr("common.cancel")).clicked() {
                 cancel = true;
             }
             ui.label(
