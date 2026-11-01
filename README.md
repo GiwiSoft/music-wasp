@@ -389,6 +389,15 @@ GUI tests use `egui_kittest` to drive the real app through AccessKit, including 
 layout changes and the auto-tag dialog. Auto-tag tests point the MusicBrainz and Cover Art Archive
 base URLs at an in-process fake HTTP server, so they never touch the network.
 
+For a live development loop, install `cargo-watch` and run:
+
+```bash
+cargo install cargo-watch --locked
+scripts/dev-watch.sh                   # launch and restart the GUI on every save
+WATCH_MODE=check scripts/dev-watch.sh  # fast cargo check instead
+WATCH_MODE=test scripts/dev-watch.sh   # full tests instead
+```
+
 Dev-only screenshot hooks (used to produce the images above):
 
 ```bash
