@@ -1187,21 +1187,31 @@ impl App {
         crate::icons::install(&cc.egui_ctx);
         crate::theme::apply(&cc.egui_ctx, settings.skin);
 
+        // Headless UI tests use a temporary data dir and no audio/watcher/MPRIS.
+        let test_mode = std::env::var_os("MUSICWASP_TEST").is_some();
         let lib = Library::open().expect("cannot open library database");
-        let (player, audio_error) = match Player::new_with_device(settings.output_device.clone()) {
-            Ok(player) => (Some(player), None),
-            Err(e) if settings.output_device.is_some() => match Player::new_with_device(None) {
-                Ok(player) => (
-                    Some(player),
-                    Some(format!(
-                        "selected output unavailable ({e}); using the default"
-                    )),
-                ),
-                Err(fallback) => (None, Some(fallback.to_string())),
-            },
-            Err(e) => (None, Some(e.to_string())),
+        let (player, audio_error) = if test_mode {
+            (None, None)
+        } else {
+            match Player::new_with_device(settings.output_device.clone()) {
+                Ok(player) => (Some(player), None),
+                Err(e) if settings.output_device.is_some() => match Player::new_with_device(None) {
+                    Ok(player) => (
+                        Some(player),
+                        Some(format!(
+                            "selected output unavailable ({e}); using the default"
+                        )),
+                    ),
+                    Err(fallback) => (None, Some(fallback.to_string())),
+                },
+                Err(e) => (None, Some(e.to_string())),
+            }
         };
-        let output_devices = musicwasp_core::player::output_devices();
+        let output_devices = if test_mode {
+            Vec::new()
+        } else {
+            musicwasp_core::player::output_devices()
+        };
         let (scrobble_tx, scrobble_rx) = mpsc::channel();
 
         let scan_path = dirs::audio_dir()
@@ -1212,7 +1222,7 @@ impl App {
         let eq_applied = settings.equalizer;
 
         let shot_path = std::env::var("MUSICWASP_SCREENSHOT").ok();
-        let session_enabled = shot_path.is_none();
+        let session_enabled = shot_path.is_none() && !test_mode;
         let session = if session_enabled {
             settings.session.clone()
         } else {

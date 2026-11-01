@@ -22,6 +22,14 @@ pub const USER_AGENT: &str = concat!(
 const MB_API: &str = "https://musicbrainz.org/ws/2";
 const CAA_API: &str = "https://coverartarchive.org";
 
+fn mb_api() -> String {
+    std::env::var("MUSICWASP_MUSICBRAINZ_API").unwrap_or_else(|_| MB_API.to_string())
+}
+
+fn caa_api() -> String {
+    std::env::var("MUSICWASP_COVERART_API").unwrap_or_else(|_| CAA_API.to_string())
+}
+
 // ---------------------------------------------------------------- public types
 
 /// A release returned by search, before we fetch its tracks.
@@ -91,8 +99,12 @@ fn client() -> Result<reqwest::blocking::Client> {
         .context("cannot build HTTP client")
 }
 
-/// MusicBrainz allows one request per second per client.
-fn throttle() {
+/// MusicBrainz allows one request per second per client. Local fake servers in
+/// tests do not need the delay.
+fn throttle(url: &str) {
+    if !url.starts_with("https://musicbrainz.org") {
+        return;
+    }
     static LAST: Mutex<Option<Instant>> = Mutex::new(None);
     let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(previous) = *last {
@@ -111,7 +123,7 @@ fn get_json<T: DeserializeOwned>(url: &str, query: &[(&str, &str)], what: &str) 
     let mut last_error = None;
 
     for attempt in 1..=ATTEMPTS {
-        throttle();
+        throttle(url);
         let response = match client()?.get(url).query(query).send() {
             Ok(r) => r,
             Err(e) => {
@@ -194,8 +206,9 @@ pub fn search(artist: &str, album: &str) -> Result<Vec<Candidate>> {
         escape(artist)
     );
 
+    let api = mb_api();
     let parsed: SearchResponse = get_json(
-        &format!("{MB_API}/release"),
+        &format!("{api}/release"),
         &[("query", query.as_str()), ("fmt", "json"), ("limit", "12")],
         "MusicBrainz search",
     )?;
@@ -287,8 +300,9 @@ fn year_of(date: &Option<String>) -> Option<i32> {
 
 /// Fetch a release with its recordings.
 pub fn fetch(release_id: &str) -> Result<Release> {
+    let api = mb_api();
     let parsed: ReleaseResponse = get_json(
-        &format!("{MB_API}/release/{release_id}"),
+        &format!("{api}/release/{release_id}"),
         &[
             ("inc", "recordings+artist-credits+release-groups+tags"),
             ("fmt", "json"),
@@ -352,8 +366,9 @@ fn release_from_response(release_id: &str, parsed: ReleaseResponse) -> Release {
 pub fn front_cover(release_id: &str) -> Result<Option<Cover>> {
     // The archive normally serves `front-500`; fall back to the original image
     // for releases where that size is missing.
+    let api = caa_api();
     for suffix in ["front-500", "front"] {
-        if let Some(cover) = fetch_cover(&format!("{CAA_API}/release/{release_id}/{suffix}"))? {
+        if let Some(cover) = fetch_cover(&format!("{api}/release/{release_id}/{suffix}"))? {
             return Ok(Some(cover));
         }
     }

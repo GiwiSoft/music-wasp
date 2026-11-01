@@ -6,6 +6,8 @@ mod mpris;
 mod settings;
 mod theme;
 mod ui;
+#[cfg(test)]
+mod ui_tests;
 
 use app::App;
 

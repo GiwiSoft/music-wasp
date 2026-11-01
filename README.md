@@ -324,10 +324,14 @@ saved_searches(id, name, query)
 ## Testing
 
 ```bash
-cargo test --workspace          # tags, filters, playlists, smart rules, shortcuts, auto-tag, EQ, skins
+cargo test --workspace          # core, CLI and headless GUI regression tests
+cargo test -p musicwasp-gui ui_tests
 ```
 
 The tests synthesise their own WAV files, so they need no sample library and no audio device.
+GUI tests use `egui_kittest` to drive the real app through AccessKit, including search, column
+layout changes and the auto-tag dialog. Auto-tag tests point the MusicBrainz and Cover Art Archive
+base URLs at an in-process fake HTTP server, so they never touch the network.
 
 Dev-only screenshot hooks (used to produce the images above):
 
