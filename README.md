@@ -18,6 +18,7 @@ This is an early but working project, not a finished product. What runs today:
 | Library | incremental background scan of 18 audio formats, skips unchanged files by mtime + size, batches writes, tag reading via `lofty`, SQLite index |
 | Browsing | column browser (genre → artist → album) with foldable sections whose state is remembered, advanced field search, sortable table |
 | Track list | persisted column widths, drag/reorder/hide columns, and standard / compact / album-art row layouts |
+| Languages | English (default), French, German and Spanish UI; switch live under Settings → General |
 | Saved searches | name and reuse queries such as `artist:"radiohead" year:1997`, edit or delete them from the bookmark menu |
 | Selection | multi-select (`Ctrl`-click, `Shift`-click, `Ctrl+A`, `Esc`), drag tracks onto a playlist, right-click a row for play / rename / metadata / playlist actions |
 | Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle, gapless preloading and 1–12 s crossfade |
@@ -167,9 +168,10 @@ icon before the app starts.
     cancels, and conflicts are shown in red.
 12. **EQ** (`Ctrl+E`) opens the 10-band equalizer. Pick a preset or move the sliders; the curve and
    the running track update immediately. Changes are saved to `settings.json` automatically.
-13. Pick a **Skin** from the dropdown in **Settings**: MusicWasp Dark (default), Midnight, Forest,
-    Mono, Winamp Classic, High contrast, Liquid Glass Dark, Liquid Glass White, or MusicWasp Light.
-    The choice, logo and window icon update instantly and are remembered. The General tab also toggles
+13. Pick a **Language** and a **Skin** in **Settings**. Languages are English (default), French,
+    German and Spanish. Skins are MusicWasp Dark (default), Midnight, Forest, Mono, Winamp Classic,
+    High contrast, Liquid Glass Dark, Liquid Glass White, or MusicWasp Light. Changes update
+    instantly and are remembered. The General tab also toggles
     ReplayGain (with album-gain preference), picks the output device, sets the crossfade length
     (0 s keeps gapless joins) and enables **Larger text and controls** (a 120% interface scale).
     Tab and Shift+Tab follow the logical toolbar and panel order; icon-only buttons expose their
@@ -257,6 +259,13 @@ built-in skin; new ids are appended to the dropdown.
 Colours accept `#rrggbb` or `#rrggbbaa`. `icon` accepts `light`, `dark`, or a path relative to
 `skins.json`. Missing palette fields fall back to MusicWasp Dark. `glass: true` enables the
 translucent backdrop; an optional `backdrop` array supplies its four corner colours.
+
+### Languages
+
+English is the source language and default. French, German and Spanish catalogues live in
+[`assets/i18n`](assets/i18n), with English source strings as keys and graceful fallback for any
+missing entry. The language can be changed live in **Settings → General** and is persisted in
+`settings.json`.
 
 ![Auto-tag by album](docs/autotag.png)
 

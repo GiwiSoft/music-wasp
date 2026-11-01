@@ -1,6 +1,7 @@
 //! User settings. Currently just rebindable keyboard shortcuts, stored as JSON
 //! next to the library database.
 
+use crate::i18n::{tr, Language};
 use crate::theme::Skin;
 use egui::{Key, Modifiers};
 use musicwasp_core::dsp::Equalizer;
@@ -232,13 +233,13 @@ impl TrackColumn {
     pub fn label(self) -> &'static str {
         match self {
             TrackColumn::Number => "#",
-            TrackColumn::Title => "Title",
-            TrackColumn::Artist => "Artist",
-            TrackColumn::Album => "Album",
-            TrackColumn::Genre => "Genre",
-            TrackColumn::Year => "Year",
-            TrackColumn::Duration => "Time",
-            TrackColumn::Format => "Format",
+            TrackColumn::Title => tr("Title"),
+            TrackColumn::Artist => tr("Artist"),
+            TrackColumn::Album => tr("Album"),
+            TrackColumn::Genre => tr("Genre"),
+            TrackColumn::Year => tr("Year"),
+            TrackColumn::Duration => tr("Time"),
+            TrackColumn::Format => tr("Format"),
         }
     }
 
@@ -288,9 +289,9 @@ impl TrackLayout {
 
     pub fn label(self) -> &'static str {
         match self {
-            TrackLayout::Standard => "Standard",
-            TrackLayout::Compact => "Compact",
-            TrackLayout::AlbumArt => "Album art",
+            TrackLayout::Standard => tr("Standard"),
+            TrackLayout::Compact => tr("Compact"),
+            TrackLayout::AlbumArt => tr("Album art"),
         }
     }
 }
@@ -400,6 +401,9 @@ pub struct Settings {
     /// Colour skin.
     #[serde(default)]
     pub skin: Skin,
+    /// UI language. English is the source language and default.
+    #[serde(default)]
+    pub language: Language,
     /// Scale the whole interface for larger text and controls.
     #[serde(default)]
     pub large_fonts: bool,
@@ -499,6 +503,7 @@ impl Default for Settings {
             shortcuts,
             equalizer: Equalizer::default(),
             skin: Skin::default(),
+            language: Language::default(),
             large_fonts: false,
             folded: FoldedSections::default(),
             columns: ColumnConfig::default(),
@@ -803,6 +808,7 @@ mod tests {
         let settings = Settings {
             watch_enabled: false,
             large_fonts: true,
+            language: Language::French,
             replaygain: false,
             replaygain_album: true,
             output_device: Some("Speakers".to_string()),
@@ -832,6 +838,7 @@ mod tests {
         assert_eq!(loaded.session, settings.session);
         assert!(!loaded.watch_enabled);
         assert!(loaded.large_fonts);
+        assert_eq!(loaded.language, Language::French);
         assert_eq!(loaded.watch_folders, vec!["/music".to_string()]);
         assert!(!loaded.replaygain);
         assert!(loaded.replaygain_album);
@@ -870,6 +877,7 @@ mod tests {
         assert!(!loaded.equalizer.enabled);
         assert_eq!(loaded.skin, crate::theme::Skin::default());
         assert!(!loaded.large_fonts);
+        assert_eq!(loaded.language, Language::English);
         assert_eq!(loaded.shortcut(Action::PlayPause).unwrap().token(), "space");
         assert_eq!(loaded.session, Session::default());
         assert!(loaded.watch_enabled);

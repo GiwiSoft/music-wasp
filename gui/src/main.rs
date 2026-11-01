@@ -1,5 +1,6 @@
 mod app;
 mod equalizer;
+mod i18n;
 mod icons;
 #[cfg(target_os = "linux")]
 mod mpris;

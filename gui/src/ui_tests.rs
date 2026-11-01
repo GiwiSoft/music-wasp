@@ -5,6 +5,7 @@
 //! touches the network.
 
 use crate::app::{App, AutoTagStage};
+use crate::i18n::Language;
 use crate::settings::{TrackColumn, TrackLayout};
 use crate::theme::{self, Skin};
 use egui::accesskit::Role;
@@ -493,6 +494,13 @@ fn advanced_search_and_column_manager_update_the_ui() {
     harness.state_mut().set_skin(&ctx, Skin::HIGH_CONTRAST);
     harness.run_steps(1);
     assert_eq!(harness.state().settings.skin, Skin::HIGH_CONTRAST);
+
+    harness.state_mut().set_language(Language::French);
+    harness.run_steps(1);
+    assert!(harness.query_by_label("Scanner").is_some());
+    assert!(harness.query_by_label("Bibliothèque").is_some());
+    harness.state_mut().set_language(Language::English);
+    harness.run_steps(1);
 }
 
 #[test]

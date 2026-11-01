@@ -54,6 +54,7 @@ jobs:
               packaging/musicwasp.desktop \
               assets/ic_launcher-web.png \
               assets/skins.json \
+              assets/i18n \
               scripts/install-desktop.sh
 
       - name: Package (Windows)
@@ -62,7 +63,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Compress-Archive `
-            -Path target/release/musicwasp.exe,target/release/musicwasp-cli.exe,LICENSE,README.md,assets/musicwasp.ico,assets/skins.json `
+            -Path target/release/musicwasp.exe,target/release/musicwasp-cli.exe,LICENSE,README.md,assets/musicwasp.ico,assets/skins.json,assets/i18n `
             -DestinationPath "dist/musicwasp-$env:GITHUB_REF_NAME-windows-x86_64.zip"
 
       - name: Upload release artifacts
@@ -95,8 +96,10 @@ jobs:
           test -n "$(find dist -maxdepth 1 -name '*-windows-x86_64.zip' -print -quit)"
           tar -tzf dist/*-linux-x86_64.tar.gz | grep -q 'assets/ic_launcher-web.png'
           tar -tzf dist/*-linux-x86_64.tar.gz | grep -q 'assets/skins.json'
+          tar -tzf dist/*-linux-x86_64.tar.gz | grep -q 'assets/i18n/fr.json'
           unzip -l dist/*-windows-x86_64.zip | grep -q 'musicwasp.ico'
           unzip -l dist/*-windows-x86_64.zip | grep -q 'skins.json'
+          unzip -l dist/*-windows-x86_64.zip | grep -q 'fr.json'
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

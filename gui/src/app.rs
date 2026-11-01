@@ -1,3 +1,4 @@
+use crate::i18n::{tr, Language};
 use crate::settings::{
     Action, Session, SessionView, Settings, Shortcut, TrackColumn, WindowGeometry,
 };
@@ -162,12 +163,12 @@ impl BatchField {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Title => "Title",
-            Self::Artist => "Artist",
+            Self::Title => tr("Title"),
+            Self::Artist => tr("Artist"),
             Self::Album => "Album",
             Self::AlbumArtist => "Album artist",
-            Self::Genre => "Genre",
-            Self::Year => "Year",
+            Self::Genre => tr("Genre"),
+            Self::Year => tr("Year"),
             Self::TrackNo => "Track no",
             Self::DiscNo => "Disc no",
         }
@@ -246,11 +247,11 @@ pub enum TrackField {
 impl TrackField {
     pub fn label(self) -> &'static str {
         match self {
-            TrackField::Title => "Title",
-            TrackField::Artist => "Artist",
+            TrackField::Title => tr("Title"),
+            TrackField::Artist => tr("Artist"),
             TrackField::Album => "Album",
-            TrackField::Genre => "Genre",
-            TrackField::Year => "Year",
+            TrackField::Genre => tr("Genre"),
+            TrackField::Year => tr("Year"),
             TrackField::TrackNo => "Track number",
         }
     }
@@ -345,7 +346,7 @@ pub enum Focus {
 }
 
 /// A region that accepts audio files dropped from the OS file manager.
-/// `playlist` is `None` for the whole library ("All music").
+/// `playlist` is `None` for the whole library (tr("All music")).
 #[derive(Debug, Clone, Copy)]
 pub struct OsDropZone {
     pub playlist: Option<i64>,
@@ -420,9 +421,9 @@ impl AutoTagMapping {
                 changes.push((field, old, new));
             }
         };
-        compare("Title", self.track.title.clone(), track.title.clone());
+        compare(tr("Title"), self.track.title.clone(), track.title.clone());
         compare(
-            "Artist",
+            tr("Artist"),
             self.track.artist.clone(),
             if track.artist.is_empty() {
                 self.track.artist.clone()
@@ -437,7 +438,7 @@ impl AutoTagMapping {
             release.album_artist.clone(),
         );
         compare(
-            "Year",
+            tr("Year"),
             self.track.year.map(|y| y.to_string()).unwrap_or_default(),
             release
                 .year
@@ -446,7 +447,7 @@ impl AutoTagMapping {
                 .unwrap_or_default(),
         );
         compare(
-            "Genre",
+            tr("Genre"),
             self.track.genre.clone(),
             release
                 .genre
@@ -1261,6 +1262,7 @@ impl App {
             .ok()
             .flatten();
         settings.equalizer = settings.equalizer.clamped();
+        crate::i18n::set_language(settings.language);
         crate::icons::install(&cc.egui_ctx);
         crate::theme::apply(&cc.egui_ctx, settings.skin);
         crate::theme::apply_text_scale(&cc.egui_ctx, settings.large_fonts);
@@ -1651,19 +1653,19 @@ impl App {
 
     pub fn view_title(&self) -> String {
         match self.view {
-            View::Library => "Library".to_string(),
+            View::Library => tr("Library").to_string(),
             View::Playlist(id) => self
                 .playlists
                 .iter()
                 .find(|p| p.id == id)
                 .map(|p| format!("Playlist · {}", p.name))
-                .unwrap_or_else(|| "Library".to_string()),
+                .unwrap_or_else(|| tr("Library").to_string()),
             View::Smart(id) => self
                 .smart_playlists
                 .iter()
                 .find(|p| p.id == id)
                 .map(|p| format!("Smart · {}", p.name))
-                .unwrap_or_else(|| "Library".to_string()),
+                .unwrap_or_else(|| tr("Library").to_string()),
         }
     }
 
@@ -3514,6 +3516,7 @@ impl App {
         self.settings = Settings::default();
         self.capture = None;
         self.watch_dirty = true;
+        crate::i18n::set_language(self.settings.language);
         crate::theme::apply(ctx, self.settings.skin);
         crate::theme::apply_text_scale(ctx, self.settings.large_fonts);
         self.refresh_brand_icon(ctx);
@@ -3533,6 +3536,15 @@ impl App {
             self.settings.skin = skin;
             crate::theme::apply(ctx, skin);
             self.refresh_brand_icon(ctx);
+            self.persist_settings();
+        }
+    }
+
+    /// Switch UI language immediately and remember the choice.
+    pub fn set_language(&mut self, language: Language) {
+        if self.settings.language != language {
+            self.settings.language = language;
+            crate::i18n::set_language(language);
             self.persist_settings();
         }
     }
@@ -3828,7 +3840,7 @@ impl App {
     // ---- OS file drag and drop ----
 
     /// Import files dropped from the OS file manager into the playlist under
-    /// the pointer, or into the whole library ("All music").
+    /// the pointer, or into the whole library (tr("All music")).
     fn handle_os_drop(&mut self, ctx: &egui::Context) {
         let (dropped, hovering) =
             ctx.input(|i| (i.raw.dropped_files.clone(), !i.raw.hovered_files.is_empty()));
@@ -4850,6 +4862,7 @@ mod tests {
         remove_tracks_from_queue, restore_queue, sanitize_file_name, suggested_mappings, BatchCase,
         BatchField, CoverCache, TrackField,
     };
+    use crate::i18n::tr;
     use musicwasp_core::autotag::{Release, ReleaseTrack};
     use musicwasp_core::{TagEdit, Track};
     use std::collections::BTreeSet;
@@ -5057,7 +5070,7 @@ mod tests {
             disc,
             number,
             title: title.into(),
-            artist: "Artist".into(),
+            artist: tr("Artist").into(),
             length_ms: Some(200_000),
         }
     }
@@ -5067,8 +5080,8 @@ mod tests {
         let release = Release {
             id: "r".into(),
             title: "Album".into(),
-            artist: "Artist".into(),
-            album_artist: "Artist".into(),
+            artist: tr("Artist").into(),
+            album_artist: tr("Artist").into(),
             year: None,
             genre: None,
             tracks: vec![
@@ -5079,7 +5092,7 @@ mod tests {
             has_front_cover: false,
         };
 
-        let mut local = track("Wrong local title", "Artist", "Album", None);
+        let mut local = track("Wrong local title", tr("Artist"), "Album", None);
         local.track_no = Some(2);
         local.disc_no = Some(1);
         assert_eq!(best_release_track(&local, &release), 1);
@@ -5099,8 +5112,8 @@ mod tests {
         let release = Release {
             id: "r".into(),
             title: "Album".into(),
-            artist: "Artist".into(),
-            album_artist: "Artist".into(),
+            artist: tr("Artist").into(),
+            album_artist: tr("Artist").into(),
             year: Some(2000),
             genre: None,
             tracks: vec![
@@ -5110,9 +5123,9 @@ mod tests {
             has_front_cover: false,
         };
 
-        let mut second = track("Wrong two", "Artist", "Album", None);
+        let mut second = track("Wrong two", tr("Artist"), "Album", None);
         second.track_no = Some(2);
-        let mut first = track("Wrong one", "Artist", "Album", None);
+        let mut first = track("Wrong one", tr("Artist"), "Album", None);
         first.track_no = Some(1);
 
         let mut mappings = suggested_mappings(&[second, first], &release);
@@ -5122,7 +5135,7 @@ mod tests {
         let changes = mappings[1].changes(&release);
         assert!(changes
             .iter()
-            .any(|(field, _, new)| *field == "Title" && new == "First Song"));
+            .any(|(field, _, new)| *field == tr("Title") && new == "First Song"));
 
         // A manual override changes what gets written; skip removes the row.
         mappings[0].release_index = Some(0);
