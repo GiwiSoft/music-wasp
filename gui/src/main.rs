@@ -13,15 +13,19 @@ use app::App;
 
 fn main() -> eframe::Result<()> {
     maybe_force_x11();
+    crate::theme::load_user_skins();
     // Screenshot runs need a predictable canvas and must not inherit a session.
     let screenshot = std::env::var_os("MUSICWASP_SCREENSHOT").is_some();
-    let saved_window = if screenshot {
+    let settings = if screenshot {
         None
     } else {
-        crate::settings::Settings::load(&crate::settings::Settings::path())
-            .session
-            .window
+        Some(crate::settings::Settings::load(
+            &crate::settings::Settings::path(),
+        ))
     };
+    let saved_window = settings
+        .as_ref()
+        .and_then(|settings| settings.session.window);
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 800.0])
@@ -37,7 +41,11 @@ fn main() -> eframe::Result<()> {
             viewport = viewport.with_position([x, y]);
         }
     }
-    if let Some(icon) = icons::icon_data(false) {
+    let skin = settings
+        .as_ref()
+        .map(|settings| settings.skin)
+        .unwrap_or_default();
+    if let Some(icon) = icons::icon_data(skin) {
         viewport = viewport.with_icon(icon);
     }
 

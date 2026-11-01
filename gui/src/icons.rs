@@ -26,32 +26,41 @@ pub fn install(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-/// The MusicWasp logo, decoded and downscaled. Light skins use the light asset.
-fn logo_rgba(size: u32, light: bool) -> Option<(usize, Vec<u8>)> {
-    // Dark skins get the logo with white lettering, light skins the dark one.
+/// The MusicWasp logo, decoded and downscaled. A custom skin may point at its
+/// own image in `skins.json`; otherwise the embedded dark/light logo is used.
+fn logo_rgba(size: u32, skin: crate::theme::Skin) -> Option<(usize, Vec<u8>)> {
     const DARK: &[u8] = include_bytes!("../../assets/MusicWasp-dark.png");
     const LIGHT: &[u8] = include_bytes!("../../assets/MusicWasp.png");
-    let bytes = if light { LIGHT } else { DARK };
-    let logo = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let custom = skin.icon_path().and_then(|path| image::open(path).ok());
+    let logo = match custom {
+        Some(image) => image.into_rgba8(),
+        None => {
+            let bytes = if skin.icon_is_light() { LIGHT } else { DARK };
+            image::load_from_memory(bytes).ok()?.into_rgba8()
+        }
+    };
     let logo = image::imageops::resize(&logo, size, size, image::imageops::FilterType::Lanczos3);
     Some((logo.width() as usize, logo.into_raw()))
 }
 
 /// A texture handle for the logo, e.g. for the toolbar.
-pub fn logo(ctx: &egui::Context, light: bool, size: u32) -> Option<egui::TextureHandle> {
-    let (width, rgba) = logo_rgba(size, light)?;
+pub fn logo(
+    ctx: &egui::Context,
+    skin: crate::theme::Skin,
+    size: u32,
+) -> Option<egui::TextureHandle> {
+    let (width, rgba) = logo_rgba(size, skin)?;
     let color = egui::ColorImage::from_rgba_unmultiplied([width, width], &rgba);
-    let name = if light {
-        "musicwasp-logo-light"
-    } else {
-        "musicwasp-logo"
-    };
-    Some(ctx.load_texture(name, color, egui::TextureOptions::LINEAR))
+    Some(ctx.load_texture(
+        format!("musicwasp-logo-{}", skin.id()),
+        color,
+        egui::TextureOptions::LINEAR,
+    ))
 }
 
 /// The logo as window icon data.
-pub fn icon_data(light: bool) -> Option<egui::IconData> {
-    let (width, rgba) = logo_rgba(256, light)?;
+pub fn icon_data(skin: crate::theme::Skin) -> Option<egui::IconData> {
+    let (width, rgba) = logo_rgba(256, skin)?;
     Some(egui::IconData {
         rgba,
         width: width as u32,

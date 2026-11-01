@@ -760,14 +760,14 @@ mod tests {
         settings.equalizer.enabled = true;
         settings.equalizer.gains_db[2] = 4.5;
         settings.equalizer.preamp_db = -2.0;
-        settings.skin = crate::theme::Skin::Midnight;
+        settings.skin = crate::theme::Skin::MIDNIGHT;
         settings.save(&path).unwrap();
 
         let loaded = Settings::load(&path);
         assert!(loaded.equalizer.enabled);
         assert_eq!(loaded.equalizer.gains_db[2], 4.5);
         assert_eq!(loaded.equalizer.preamp_db, -2.0);
-        assert_eq!(loaded.skin, crate::theme::Skin::Midnight);
+        assert_eq!(loaded.skin, crate::theme::Skin::MIDNIGHT);
     }
 
     #[test]

@@ -53,6 +53,7 @@ jobs:
             -C "$GITHUB_WORKSPACE" LICENSE README.md \
               packaging/musicwasp.desktop \
               assets/ic_launcher-web.png \
+              assets/skins.json \
               scripts/install-desktop.sh
 
       - name: Package (Windows)
@@ -61,7 +62,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Compress-Archive `
-            -Path target/release/musicwasp.exe,target/release/musicwasp-cli.exe,LICENSE,README.md,assets/musicwasp.ico `
+            -Path target/release/musicwasp.exe,target/release/musicwasp-cli.exe,LICENSE,README.md,assets/musicwasp.ico,assets/skins.json `
             -DestinationPath "dist/musicwasp-$env:GITHUB_REF_NAME-windows-x86_64.zip"
 
       - name: Upload release artifacts
@@ -93,7 +94,9 @@ jobs:
           test -n "$(find dist -maxdepth 1 -name '*-linux-x86_64.tar.gz' -print -quit)"
           test -n "$(find dist -maxdepth 1 -name '*-windows-x86_64.zip' -print -quit)"
           tar -tzf dist/*-linux-x86_64.tar.gz | grep -q 'assets/ic_launcher-web.png'
+          tar -tzf dist/*-linux-x86_64.tar.gz | grep -q 'assets/skins.json'
           unzip -l dist/*-windows-x86_64.zip | grep -q 'musicwasp.ico'
+          unzip -l dist/*-windows-x86_64.zip | grep -q 'skins.json'
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

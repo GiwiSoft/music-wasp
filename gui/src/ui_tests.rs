@@ -6,7 +6,7 @@
 
 use crate::app::{App, AutoTagStage};
 use crate::settings::{TrackColumn, TrackLayout};
-use crate::theme::Skin;
+use crate::theme::{self, Skin};
 use egui::accesskit::Role;
 use egui_kittest::kittest::Queryable;
 use egui_kittest::Harness;
@@ -269,6 +269,51 @@ fn serve(mut stream: TcpStream) -> Option<String> {
 // ---------------------------------------------------------------- tests
 
 #[test]
+fn custom_skin_json_adds_a_theme_and_icon() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    let icon = dir.path().join("berry.png");
+    image::RgbaImage::from_pixel(4, 4, image::Rgba([220, 20, 90, 255]))
+        .save(&icon)
+        .unwrap();
+    std::fs::write(
+        dir.path().join("skins.json"),
+        r##"{
+            "skins": [
+                {
+                    "id": "berry",
+                    "label": "Berry",
+                    "aliases": ["berry-pink"],
+                    "icon": "berry.png",
+                    "palette": {
+                        "accent": "#ff0066",
+                        "bg_dark": "#1a0710",
+                        "text": "#fff4f8"
+                    }
+                }
+            ]
+        }"##,
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("settings.json"), r#"{"skin":"berry"}"#).unwrap();
+
+    let mut harness = harness();
+    harness.run_steps(2);
+
+    assert_eq!(harness.state().settings.skin.id(), "berry");
+    assert_eq!(harness.state().settings.skin.label(), "Berry");
+    let berry = Skin::from_id("berry-pink");
+    assert_eq!(berry.id(), "berry");
+    assert_eq!(berry.icon_path().as_deref(), Some(icon.as_path()));
+    assert!(crate::icons::icon_data(berry).is_some());
+    assert!(Skin::all().iter().any(|skin| skin.id() == "berry"));
+
+    // Leave the built-in registry behind for the other tests.
+    std::fs::remove_file(dir.path().join("skins.json")).unwrap();
+    theme::load_user_skins();
+}
+
+#[test]
 fn folder_context_menu_creates_a_playlist_in_that_folder() {
     let dir = tempfile::tempdir().unwrap();
     let _env = TestEnv::new(dir.path());
@@ -445,9 +490,9 @@ fn advanced_search_and_column_manager_update_the_ui() {
     assert!(harness.state().settings.large_fonts);
 
     let ctx = harness.ctx.clone();
-    harness.state_mut().set_skin(&ctx, Skin::HighContrast);
+    harness.state_mut().set_skin(&ctx, Skin::HIGH_CONTRAST);
     harness.run_steps(1);
-    assert_eq!(harness.state().settings.skin, Skin::HighContrast);
+    assert_eq!(harness.state().settings.skin, Skin::HIGH_CONTRAST);
 }
 
 #[test]

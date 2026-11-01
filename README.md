@@ -38,7 +38,7 @@ This is an early but working project, not a finished product. What runs today:
 | M3U import / export | import `.m3u` / `.m3u8` files (relative paths resolved, missing audio skipped, new files indexed) and export any playlist with `#EXTINF` metadata |
 | Smart playlists | editable rule sets (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
-| Skins | six palettes (MusicWasp Dark, Midnight, Forest, Mono, High contrast, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
+| Skins | eight built-in palettes plus user skins from `skins.json`, with per-skin colours, glass backdrops, labels and logo/icon; picked from Settings and remembered |
 | Accessibility | logical Tab order, screen-reader labels for icon controls, larger text mode, high-contrast palette and visible focus rings |
 | Settings | tabbed panel: General (skins, accessibility, folder watching), Keybindings, About; shortcuts and track-list column settings persist to `settings.json` |
 | Library hygiene | find rows whose files vanished, detect duplicate artist/title/album groups, and remove entries from the library in bulk; audio files are never deleted |
@@ -168,11 +168,12 @@ icon before the app starts.
 12. **EQ** (`Ctrl+E`) opens the 10-band equalizer. Pick a preset or move the sliders; the curve and
    the running track update immediately. Changes are saved to `settings.json` automatically.
 13. Pick a **Skin** from the dropdown in **Settings**: MusicWasp Dark (default), Midnight, Forest,
-    Mono, High contrast, or MusicWasp Light. The choice, logo and window icon update instantly and
-    are remembered. The General tab also toggles ReplayGain (with album-gain preference), picks the
-    output device, sets the crossfade length (0 s keeps gapless joins) and enables **Larger text and
-    controls** (a 120% interface scale). Tab and Shift+Tab follow the logical toolbar and panel
-    order; icon-only buttons expose their tooltip text to screen readers.
+    Mono, High contrast, Liquid Glass Dark, Liquid Glass White, or MusicWasp Light. The choice,
+    logo and window icon update instantly and are remembered. The General tab also toggles
+    ReplayGain (with album-gain preference), picks the output device, sets the crossfade length
+    (0 s keeps gapless joins) and enables **Larger text and controls** (a 120% interface scale).
+    Tab and Shift+Tab follow the logical toolbar and panel order; icon-only buttons expose their
+    tooltip text to screen readers.
 14. Close and reopen the app: it comes back to the same view, search, selection, volume, queue and
     window size/position. Playback always starts stopped, with no track loaded; press `Space` to
     play the current queue entry from the beginning. Session state is written every few seconds and
@@ -217,6 +218,45 @@ icon before the app starts.
 Bindings live in `settings.json` beside the library database (`~/.local/share/musicwasp/` on
 Linux, `%APPDATA%\musicwasp\` on Windows), and are written atomically on every change. Delete
 the file, or press **Reset to defaults**, to start over.
+
+### Custom skins
+
+The built-in skin list, colours and logo choice live in
+[`assets/skins.json`](assets/skins.json). To add or override skins, put a
+`skins.json` beside `settings.json` in the data directory. Entries with the same `id` replace a
+built-in skin; new ids are appended to the dropdown.
+
+```json
+{
+  "skins": [
+    {
+      "id": "berry",
+      "label": "Berry",
+      "aliases": ["berry-pink"],
+      "icon": "berry.png",
+      "light": true,
+      "glass": false,
+      "palette": {
+        "bg_dark": "#fbeef4",
+        "bg_panel": "#fff7fa",
+        "bg_row_alt": "#f8e4ed",
+        "bg_selected": "#ffd6e7",
+        "accent": "#d4145a",
+        "text_dim": "#7a5262",
+        "text": "#2a111b",
+        "extreme_bg": "#f2dce6",
+        "widget_inactive": "#f4dbe6",
+        "widget_weak": "#f9ecf1",
+        "widget_hover": "#efd1df"
+      }
+    }
+  ]
+}
+```
+
+Colours accept `#rrggbb` or `#rrggbbaa`. `icon` accepts `light`, `dark`, or a path relative to
+`skins.json`. Missing palette fields fall back to MusicWasp Dark. `glass: true` enables the
+translucent backdrop; an optional `backdrop` array supplies its four corner colours.
 
 ![Auto-tag by album](docs/autotag.png)
 
@@ -313,7 +353,9 @@ cli/    musicwasp-cli    headless library tool
   It also persists the equalizer state, selected skin and track-list column configuration.
 - **`gui::theme`** is a small skin engine: named palettes drive egui's `Visuals` and the colours
   that custom-painted widgets (equalizer curve, drag marker, album-art placeholder) use directly.
-  It also owns the high-contrast palette, visible focus strokes and the larger-text UI scale.
+  It also owns the high-contrast palette, visible focus strokes, the larger-text UI scale and the
+  translucent Liquid Glass gradients. Skin ids, labels, colours, backdrops and icons come from
+  `assets/skins.json`, with an optional user override in the data directory.
 
 Database schema (SQLite, `PRAGMA journal_mode=WAL`):
 

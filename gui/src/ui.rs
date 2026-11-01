@@ -3666,7 +3666,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     .selected_text(RichText::new(app.settings.skin.label()).size(12.0))
                     .width(220.0)
                     .show_ui(ui, |ui| {
-                        for skin in crate::theme::Skin::ALL {
+                        for skin in crate::theme::Skin::all() {
                             if ui
                                 .selectable_label(app.settings.skin == skin, skin.label())
                                 .clicked()

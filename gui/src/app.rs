@@ -1181,6 +1181,7 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        crate::theme::load_user_skins();
         let settings_path = Settings::path();
         let mut settings = Settings::load(&settings_path);
         let tag_undo_path = settings_path.with_file_name("tag-undo.json");
@@ -3475,9 +3476,9 @@ impl App {
 
     /// Swap the toolbar logo and window icon to match the active theme.
     fn refresh_brand_icon(&mut self, ctx: &egui::Context) {
-        let light = self.settings.skin.is_light();
-        self.logo = crate::icons::logo(ctx, light, 64);
-        if let Some(icon) = crate::icons::icon_data(light) {
+        let skin = self.settings.skin;
+        self.logo = crate::icons::logo(ctx, skin, 64);
+        if let Some(icon) = crate::icons::icon_data(skin) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Icon(Some(std::sync::Arc::new(icon))));
         }
     }
@@ -4437,6 +4438,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
+        crate::theme::paint_backdrop(root, self.settings.skin);
         self.capture_window(&ctx);
         if self.watch_dirty {
             self.restart_watcher(&ctx);
