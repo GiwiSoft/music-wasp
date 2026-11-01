@@ -35,4 +35,10 @@ case "$mode" in
         ;;
 esac
 
-exec cargo watch -w Cargo.toml -w core/src -w cli/src -w gui/src -x "$action"
+exec cargo watch \
+    -w Cargo.toml \
+    -w core/src -w core/tests \
+    -w cli/src \
+    -w gui/src -w gui/tests \
+    -w assets \
+    -x "$action"

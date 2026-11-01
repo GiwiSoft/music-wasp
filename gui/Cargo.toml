@@ -8,6 +8,10 @@ license.workspace = true
 name = "musicwasp"
 path = "src/main.rs"
 
+[lib]
+name = "musicwasp_gui"
+path = "src/lib.rs"
+
 [dependencies]
 egui_phosphor_icons = "0.5"
 musicwasp-core = { path = "../core" }

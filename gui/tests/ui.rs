@@ -4,14 +4,14 @@
 //! auto-tag flow talks to an in-process fake MusicBrainz server, so it never
 //! touches the network.
 
-use crate::app::{App, AutoTagStage};
-use crate::i18n::Language;
-use crate::settings::{TrackColumn, TrackLayout};
-use crate::theme::{self, Skin};
 use egui::accesskit::Role;
 use egui_kittest::kittest::Queryable;
 use egui_kittest::Harness;
 use musicwasp_core::{tags, Library, TagEdit};
+use musicwasp_gui::app::{App, AutoTagStage};
+use musicwasp_gui::i18n::Language;
+use musicwasp_gui::settings::{TrackColumn, TrackLayout};
+use musicwasp_gui::theme::{self, Skin};
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -306,7 +306,7 @@ fn custom_skin_json_adds_a_theme_and_icon() {
     let berry = Skin::from_id("berry-pink");
     assert_eq!(berry.id(), "berry");
     assert_eq!(berry.icon_path().as_deref(), Some(icon.as_path()));
-    assert!(crate::icons::icon_data(berry).is_some());
+    assert!(musicwasp_gui::icons::icon_data(berry).is_some());
     assert!(Skin::all().iter().any(|skin| skin.id() == "berry"));
 
     // Leave the built-in registry behind for the other tests.

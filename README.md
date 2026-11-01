@@ -381,10 +381,12 @@ saved_searches(id, name, query)
 
 ```bash
 cargo test --workspace          # core, CLI and headless GUI regression tests
-cargo test -p musicwasp-gui ui_tests
+cargo test -p musicwasp-gui --test ui
 ```
 
 The tests synthesise their own WAV files, so they need no sample library and no audio device.
+GUI integration tests live in `gui/tests`; private unit-test modules also live under
+`gui/tests/unit` and are included with `#[path]`.
 GUI tests use `egui_kittest` to drive the real app through AccessKit, including search, column
 layout changes and the auto-tag dialog. Auto-tag tests point the MusicBrainz and Cover Art Archive
 base URLs at an in-process fake HTTP server, so they never touch the network.

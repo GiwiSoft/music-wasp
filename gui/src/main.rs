@@ -1,28 +1,15 @@
-mod app;
-mod equalizer;
-mod i18n;
-mod icons;
-#[cfg(target_os = "linux")]
-mod mpris;
-mod settings;
-mod theme;
-mod ui;
-#[cfg(test)]
-mod ui_tests;
-
-use app::App;
+use musicwasp_gui::app::App;
+use musicwasp_gui::{icons, settings::Settings, theme};
 
 fn main() -> eframe::Result<()> {
     maybe_force_x11();
-    crate::theme::load_user_skins();
+    theme::load_user_skins();
     // Screenshot runs need a predictable canvas and must not inherit a session.
     let screenshot = std::env::var_os("MUSICWASP_SCREENSHOT").is_some();
     let settings = if screenshot {
         None
     } else {
-        Some(crate::settings::Settings::load(
-            &crate::settings::Settings::path(),
-        ))
+        Some(Settings::load(&Settings::path()))
     };
     let saved_window = settings
         .as_ref()
