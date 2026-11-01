@@ -5,7 +5,7 @@ use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::{Accessor, AudioFile, ItemKey};
 use lofty::probe::Probe;
 use lofty::tag::{Tag, TagExt};
-use rusqlite::{params, params_from_iter, Connection};
+use rusqlite::{params, params_from_iter, types::Value, Connection};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -181,6 +181,24 @@ impl Library {
         crate::m3u::export(&self.conn, playlist_id, path)
     }
 
+    // ---- saved searches ----
+
+    pub fn saved_searches(&self) -> Result<Vec<crate::search::SavedSearch>> {
+        crate::search::list_saved(&self.conn)
+    }
+
+    pub fn create_saved_search(&self, name: &str, query: &str) -> Result<i64> {
+        crate::search::create_saved(&self.conn, name, query)
+    }
+
+    pub fn update_saved_search(&self, id: i64, name: &str, query: &str) -> Result<()> {
+        crate::search::update_saved(&self.conn, id, name, query)
+    }
+
+    pub fn delete_saved_search(&self, id: i64) -> Result<()> {
+        crate::search::delete_saved(&self.conn, id)
+    }
+
     // ---- smart playlists ----
 
     pub fn smart_playlists(&self) -> Result<Vec<crate::smart::SmartPlaylist>> {
@@ -306,7 +324,8 @@ pub struct Stats {
     pub total_bytes: u64,
 }
 
-/// Browsing filter. Every field is ANDed; `text` matches title/artist/album/genre.
+/// Browsing filter. Every field is ANDed; `text` is parsed as an advanced
+/// search (plain text plus `artist:`, `year:` and similar filters).
 #[derive(Debug, Clone, Default)]
 pub struct Filter {
     pub genre: Option<String>,
@@ -364,25 +383,55 @@ pub(crate) fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
 
 pub fn query(conn: &Connection, filter: &Filter, sort: SortKey, asc: bool) -> Result<Vec<Track>> {
     let mut sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE 1=1");
-    let mut args: Vec<String> = Vec::new();
+    let mut args: Vec<Value> = Vec::new();
+    let search = crate::search::parse(&filter.text);
 
     if let Some(g) = &filter.genre {
         sql.push_str(" AND genre = ?");
-        args.push(g.clone());
+        args.push(Value::Text(g.clone()));
     }
     if let Some(a) = &filter.artist {
         sql.push_str(" AND artist = ?");
-        args.push(a.clone());
+        args.push(Value::Text(a.clone()));
     }
     if let Some(al) = &filter.album {
         sql.push_str(" AND album = ?");
-        args.push(al.clone());
+        args.push(Value::Text(al.clone()));
     }
-    if !filter.text.trim().is_empty() {
-        sql.push_str(" AND (title LIKE ? OR artist LIKE ? OR album LIKE ? OR genre LIKE ?)");
-        let like = format!("%{}%", filter.text.trim());
+    if !search.text.trim().is_empty() {
+        sql.push_str(
+            " AND (title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\'
+                   OR album LIKE ? ESCAPE '\\' OR genre LIKE ? ESCAPE '\\')",
+        );
+        let like = like_pattern(search.text.trim());
         for _ in 0..4 {
-            args.push(like.clone());
+            args.push(Value::Text(like.clone()));
+        }
+    }
+    for condition in search.conditions {
+        match condition {
+            crate::search::Condition::Text {
+                field,
+                value,
+                exact,
+            } => {
+                if exact {
+                    sql.push_str(&format!(" AND {} = ? COLLATE NOCASE", field.column()));
+                    args.push(Value::Text(value));
+                } else {
+                    sql.push_str(&format!(" AND {} LIKE ? ESCAPE '\\'", field.column()));
+                    args.push(Value::Text(like_pattern(&value)));
+                }
+            }
+            crate::search::Condition::Number { field, op, value } => {
+                sql.push_str(&format!(" AND {} {} ?", field.column(), op.sql()));
+                args.push(Value::Integer(value));
+            }
+            crate::search::Condition::Range { field, from, to } => {
+                sql.push_str(&format!(" AND {} BETWEEN ? AND ?", field.column()));
+                args.push(Value::Integer(from));
+                args.push(Value::Integer(to));
+            }
         }
     }
 
@@ -395,6 +444,15 @@ pub fn query(conn: &Connection, filter: &Filter, sort: SortKey, asc: bool) -> Re
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(args.iter()), row_to_track)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Escape LIKE wildcards so plain search text is matched literally.
+fn like_pattern(value: &str) -> String {
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
 }
 
 /// Tracks for a set of ids, in the order requested.

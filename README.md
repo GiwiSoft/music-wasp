@@ -16,7 +16,8 @@ This is an early but working project, not a finished product. What runs today:
 | Area | Implemented |
 | :-- | :-- |
 | Library | recursive scan of 18 audio formats, tag reading via `lofty`, SQLite index |
-| Browsing | column browser (genre → artist → album) with foldable sections whose state is remembered, search, sortable table |
+| Browsing | column browser (genre → artist → album) with foldable sections whose state is remembered, advanced field search, sortable table |
+| Saved searches | name and reuse queries such as `artist:"radiohead" year:1997`, edit or delete them from the bookmark menu |
 | Selection | multi-select (`Ctrl`-click, `Shift`-click, `Ctrl+A`, `Esc`), drag tracks onto a playlist, right-click a row for play / rename / metadata / playlist actions |
 | Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle, gapless preloading and 1–12 s crossfade |
 | Output | system default or any enumerated output device, switchable without restarting the app |
@@ -110,7 +111,11 @@ icon before the app starts.
 
 1. Start the GUI, pick a folder with the folder button (or type a path), press **Scan**.
 2. Browse with the left columns (click an entry again to clear it). Click a section caret to fold it;
-   the folded state is saved like the rest of the settings. Type in **Search** to filter.
+   the folded state is saved like the rest of the settings. Type in **Search** to filter across
+   title, artist, album and genre. Field filters narrow it further, for example
+   `artist:"radiohead" year:1997`, `genre:rock year:>=1990` or `year:1990..1999`; text fields
+   accept `=` for an exact match. Use the bookmark button beside the search box to save the current
+   query, apply a saved one, or right-click a saved entry to edit or delete it.
 3. Double-click a track, or select it and press `Enter`, to play. `Space` toggles pause. The
    **QUEUE** panel on the right shows the current track and **Up Next**: click an entry to jump to
    it, drag rows to reorder, right-click a row to remove it, or **Clear** everything after the
@@ -237,6 +242,7 @@ CLI, handy for scripting and for checking the library without a display:
 musicwasp-cli scan ~/Music          # index a folder
 musicwasp-cli scan ~/Music --rescan # re-read tags even for unchanged files
 musicwasp-cli list --filter "floyd"
+musicwasp-cli list --filter 'artist:radiohead year:1997'
 musicwasp-cli play 42               # play library track 42
 musicwasp-cli stats
 musicwasp-cli playlist list
@@ -281,6 +287,8 @@ cli/    musicwasp-cli    headless library tool
   self-referencing tree; deleting a folder promotes its children instead of hiding them.
 - **`core::m3u`** parses `#EXTINF` metadata, resolves relative and `file://` paths, imports missing
   audio through the normal tag reader, and exports absolute paths with `#EXTINF` for other players.
+- **`core::search`** parses field filters into a small typed query, compiles them to parameterised
+  SQL, and also stores named queries so the GUI and CLI share the same syntax.
 - **`core::smart`** stores a JSON rule set and compiles it to one parameterised SELECT, with the
   field/operator names coming from enums rather than user text.
 - **`core::autotag`** is split into pure steps (`search`, `fetch`, `suggest`, `apply`) so matching
@@ -301,6 +309,7 @@ tracks(id, path UNIQUE, title, artist, album, album_artist, genre, year,
 playlists(id, name, folder_id)
 playlist_folders(id, name, parent_id)
 playlist_tracks(playlist_id, track_id, position)
+saved_searches(id, name, query)
 ```
 
 ## Testing

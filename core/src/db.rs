@@ -91,6 +91,13 @@ fn migrate(conn: &Connection) -> Result<()> {
             name       TEXT NOT NULL,
             definition TEXT NOT NULL
         );
+
+        -- Named queries shown in the search box menu.
+        CREATE TABLE IF NOT EXISTS saved_searches (
+            id    INTEGER PRIMARY KEY,
+            name  TEXT NOT NULL,
+            query TEXT NOT NULL
+        );
         "#,
     )?;
 

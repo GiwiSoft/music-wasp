@@ -4,7 +4,8 @@ use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
 use musicwasp_core::tags::TagSnapshot;
 use musicwasp_core::{
-    AlbumGroup, Filter, Library, Player, Playlist, PlaylistFolder, SortKey, TagEdit, Track,
+    AlbumGroup, Filter, Library, Player, Playlist, PlaylistFolder, SavedSearch, SortKey, TagEdit,
+    Track,
 };
 use notify::Watcher as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -573,6 +574,16 @@ pub struct M3uDraft {
     pub status: Option<String>,
 }
 
+/// Editing state for a named search.
+#[derive(Debug, Clone)]
+pub struct SavedSearchDraft {
+    /// `Some(id)` edits an existing saved search.
+    pub id: Option<i64>,
+    pub name: String,
+    pub query: String,
+    pub status: Option<String>,
+}
+
 /// Small in-app image chooser for replacing album covers.
 pub struct CoverPickerState {
     pub album: String,
@@ -1039,6 +1050,8 @@ pub struct App {
     pub playlist_dialog: Option<String>,
     pub folder_dialog: Option<FolderDraft>,
     pub m3u_dialog: Option<M3uDraft>,
+    pub saved_searches: Vec<SavedSearch>,
+    pub saved_search_dialog: Option<SavedSearchDraft>,
     pub picker: Option<FolderPicker>,
     pub autotag: Option<AutoTagState>,
     pub show_hygiene: bool,
@@ -1201,6 +1214,8 @@ impl App {
             playlist_dialog: None,
             folder_dialog: None,
             m3u_dialog: None,
+            saved_searches: Vec::new(),
+            saved_search_dialog: None,
             picker: None,
             autotag: None,
             show_hygiene: false,
@@ -1353,6 +1368,7 @@ impl App {
         self.playlists = self.lib.playlists().unwrap_or_default();
         self.playlist_folders = self.lib.playlist_folders().unwrap_or_default();
         self.smart_playlists = self.lib.smart_playlists().unwrap_or_default();
+        self.saved_searches = self.lib.saved_searches().unwrap_or_default();
         match self.view {
             View::Playlist(id) if !self.playlists.iter().any(|p| p.id == id) => {
                 self.view = View::Library;
@@ -1749,6 +1765,107 @@ impl App {
                     }
                 }
             }
+        }
+    }
+
+    // ---- saved searches ----
+
+    /// Apply a search string from a saved search or the UI. Column-browser
+    /// selections are cleared so the saved query gives a reproducible result.
+    pub fn apply_search(&mut self, query: &str) {
+        self.search = query.to_string();
+        self.sel_genre = None;
+        self.sel_artist = None;
+        self.sel_album = None;
+        self.mark_browser_dirty();
+        self.mark_tracks_dirty();
+    }
+
+    pub fn open_save_search_dialog(&mut self) {
+        if self.search.trim().is_empty() {
+            self.message = "type a search first".to_string();
+            return;
+        }
+        let count = self.saved_searches.len() + 1;
+        self.saved_search_dialog = Some(SavedSearchDraft {
+            id: None,
+            name: format!("Search {count}"),
+            query: self.search.clone(),
+            status: None,
+        });
+    }
+
+    pub fn edit_saved_search(&mut self, id: i64) {
+        let Some(saved) = self
+            .saved_searches
+            .iter()
+            .find(|saved| saved.id == id)
+            .cloned()
+        else {
+            self.message = "that saved search no longer exists".to_string();
+            return;
+        };
+        self.saved_search_dialog = Some(SavedSearchDraft {
+            id: Some(id),
+            name: saved.name,
+            query: saved.query,
+            status: None,
+        });
+    }
+
+    pub fn commit_saved_search_dialog(&mut self) {
+        let Some(mut draft) = self.saved_search_dialog.clone() else {
+            return;
+        };
+        let name = draft.name.trim().to_string();
+        let query = draft.query.trim().to_string();
+        if name.is_empty() {
+            draft.status = Some("give the search a name".to_string());
+            self.saved_search_dialog = Some(draft);
+            return;
+        }
+        if query.is_empty() {
+            draft.status = Some("the query cannot be empty".to_string());
+            self.saved_search_dialog = Some(draft);
+            return;
+        }
+        let result = match draft.id {
+            Some(id) => self.lib.update_saved_search(id, &name, &query),
+            None => self.lib.create_saved_search(&name, &query).map(|_| ()),
+        };
+        match result {
+            Ok(()) => {
+                self.message = if draft.id.is_some() {
+                    format!("saved search \"{name}\" updated")
+                } else {
+                    format!("saved search \"{name}\" saved")
+                };
+                self.saved_search_dialog = None;
+                self.saved_searches = self.lib.saved_searches().unwrap_or_default();
+                if draft.id.is_some() {
+                    self.apply_search(&query);
+                }
+            }
+            Err(e) => {
+                draft.status = Some(format!("save failed: {e}"));
+                self.saved_search_dialog = Some(draft);
+            }
+        }
+    }
+
+    pub fn delete_saved_search(&mut self, id: i64) {
+        let name = self
+            .saved_searches
+            .iter()
+            .find(|saved| saved.id == id)
+            .map(|saved| saved.name.clone())
+            .unwrap_or_else(|| "search".to_string());
+        match self.lib.delete_saved_search(id) {
+            Ok(()) => {
+                self.saved_searches = self.lib.saved_searches().unwrap_or_default();
+                self.message = format!("saved search \"{name}\" deleted");
+            }
+            Err(e) => self.message = format!("delete saved search failed: {e}"),
         }
     }
 
@@ -4107,6 +4224,7 @@ impl eframe::App for App {
         crate::ui::playlist_dialog(self, &ctx);
         crate::ui::folder_dialog(self, &ctx);
         crate::ui::m3u_dialog(self, &ctx);
+        crate::ui::saved_search_dialog(self, &ctx);
         crate::ui::smart_dialog(self, &ctx);
         crate::ui::settings_window(self, &ctx);
         crate::ui::hygiene_window(self, &ctx);

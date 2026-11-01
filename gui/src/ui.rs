@@ -301,12 +301,17 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             ui.label(RichText::new(view_label).size(12.0).color(th::text()));
             ui.separator();
 
-            ui.label(icons::text(icons::MAGNIFYING_GLASS, 13.0).color(th::text_dim()));
+            ui.label(icons::text(icons::MAGNIFYING_GLASS, 13.0).color(th::text_dim()))
+                .on_hover_text(
+                    "Advanced search: artist:\"radiohead\" year:1997\n\
+                     Fields: title, artist, album, albumartist, genre, format,\n\
+                     year, track, disc, duration. Use >, <, >=, <= or 1990..1999.",
+                );
             let search = ui.add_sized(
                 [180.0, 24.0],
                 egui::TextEdit::singleline(&mut app.search)
                     .id(egui::Id::new("search_box"))
-                    .hint_text("search title, artist, album…"),
+                    .hint_text("search or artist:\"radiohead\" year:1997"),
             );
             if search.changed() {
                 app.mark_tracks_dirty();
@@ -314,6 +319,54 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             if app.focus_search {
                 search.request_focus();
                 app.focus_search = false;
+            }
+
+            let mut save_search = false;
+            let mut apply_saved: Option<String> = None;
+            let mut edit_saved: Option<i64> = None;
+            let mut delete_saved: Option<i64> = None;
+            let saved = app.saved_searches.clone();
+            ui.menu_button(icons::text(icons::BOOKMARK_SIMPLE, 14.0), |ui| {
+                if ui.button("Save current search…").clicked() {
+                    save_search = true;
+                    ui.close();
+                }
+                if !saved.is_empty() {
+                    ui.separator();
+                }
+                for saved in &saved {
+                    let response = ui
+                        .button(format!("{} {}", icons::STAR.as_str(), saved.name))
+                        .on_hover_text(&saved.query);
+                    if response.clicked() {
+                        apply_saved = Some(saved.query.clone());
+                        ui.close();
+                    }
+                    response.context_menu(|ui| {
+                        if ui.button("Edit…").clicked() {
+                            edit_saved = Some(saved.id);
+                            ui.close();
+                        }
+                        if ui.button("Delete").clicked() {
+                            delete_saved = Some(saved.id);
+                            ui.close();
+                        }
+                    });
+                }
+            })
+            .response
+            .on_hover_text("Saved searches");
+            if save_search {
+                app.open_save_search_dialog();
+            }
+            if let Some(query) = apply_saved {
+                app.apply_search(&query);
+            }
+            if let Some(id) = edit_saved {
+                app.edit_saved_search(id);
+            }
+            if let Some(id) = delete_saved {
+                app.delete_saved_search(id);
             }
 
             ui.separator();
@@ -2827,6 +2880,82 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
         app.m3u_dialog = None;
     } else {
         app.m3u_dialog = Some(draft);
+    }
+}
+
+/// Create or edit a named search.
+pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
+    let Some(mut draft) = app.saved_search_dialog.clone() else {
+        return;
+    };
+
+    let editing = draft.id.is_some();
+    let mut save = false;
+    let mut cancel = false;
+    egui::Window::new(if editing {
+        "Edit saved search"
+    } else {
+        "Save search"
+    })
+    .collapsible(false)
+    .resizable(false)
+    .default_width(460.0)
+    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+    .show(ctx, |ui| {
+        ui.label(RichText::new("Name").size(10.5));
+        let name_resp = ui.add_sized(
+            [440.0, 22.0],
+            egui::TextEdit::singleline(&mut draft.name).hint_text("e.g. Radiohead 1997"),
+        );
+        ui.add_space(6.0);
+        ui.label(RichText::new("Query").size(10.5));
+        let query_resp = ui.add_sized(
+            [440.0, 22.0],
+            egui::TextEdit::singleline(&mut draft.query)
+                .hint_text("artist:\"radiohead\" year:1997"),
+        );
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new(
+                "Fields: title, artist, album, albumartist, genre, format, \
+                 year, track, disc, duration.",
+            )
+            .size(10.0)
+            .color(th::text_dim()),
+        );
+
+        if let Some(error) = &draft.status {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(format!("{} {error}", icons::WARNING.as_str()))
+                    .size(10.5)
+                    .color(Color32::from_rgb(230, 120, 120)),
+            );
+        }
+
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            if icons::button(ui, icons::BOOKMARK_SIMPLE, "Save").clicked() {
+                save = true;
+            }
+            if icons::button(ui, icons::X, "Cancel").clicked() {
+                cancel = true;
+            }
+        });
+        if (name_resp.has_focus() || query_resp.has_focus())
+            && ui.input(|i| i.key_pressed(egui::Key::Enter))
+        {
+            save = true;
+        }
+    });
+
+    if save {
+        app.saved_search_dialog = Some(draft);
+        app.commit_saved_search_dialog();
+    } else if cancel {
+        app.saved_search_dialog = None;
+    } else {
+        app.saved_search_dialog = Some(draft);
     }
 }
 
