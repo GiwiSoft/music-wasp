@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use musicwasp_core::{db, library, Player};
+use musicwasp_core::{db, library, m3u, playlist, Player};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -54,6 +54,51 @@ enum Commands {
     },
     /// Show library statistics
     Stats,
+    /// Manage playlists, folders and M3U files
+    Playlist {
+        #[command(subcommand)]
+        command: PlaylistCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum PlaylistCommand {
+    /// List playlists and their folders
+    List,
+    /// Create a playlist from comma-separated track ids
+    Create {
+        name: String,
+        #[arg(long, value_delimiter = ',')]
+        ids: Vec<i64>,
+        /// Folder id or name
+        #[arg(long)]
+        folder: Option<String>,
+    },
+    /// Import an M3U/M3U8 file (audio files are indexed automatically)
+    Import {
+        file: PathBuf,
+        /// Override the playlist name (defaults to the file name)
+        #[arg(long)]
+        name: Option<String>,
+        /// Folder id or name
+        #[arg(long)]
+        folder: Option<String>,
+    },
+    /// Export a playlist by id or name
+    Export {
+        /// Playlist id or exact name
+        playlist: String,
+        output: PathBuf,
+    },
+    /// Create a playlist folder
+    FolderCreate {
+        name: String,
+        /// Parent folder id or name
+        #[arg(long)]
+        parent: Option<String>,
+    },
+    /// List playlist folders
+    Folders,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -216,6 +261,77 @@ fn main() -> anyhow::Result<()> {
                 eprintln!("  {error}");
             }
         }
+        Commands::Playlist { command } => match command {
+            PlaylistCommand::List => {
+                let folders = playlist::list_folders(&conn)?;
+                if !folders.is_empty() {
+                    println!("folders:");
+                    for folder in &folders {
+                        println!("  {:>4}  {}", folder.id, folder_label(&folders, folder.id));
+                    }
+                }
+                let playlists = playlist::list(&conn)?;
+                if playlists.is_empty() {
+                    println!("no playlists");
+                } else {
+                    println!("{:>4}  {:<32} {:>5}  folder", "id", "name", "tracks");
+                    for item in playlists {
+                        let folder = item
+                            .folder_id
+                            .map(|id| folder_label(&folders, id))
+                            .unwrap_or_default();
+                        println!(
+                            "{:>4}  {:<32} {:>5}  {}",
+                            item.id,
+                            trunc(&item.name, 32),
+                            item.count,
+                            folder
+                        );
+                    }
+                }
+            }
+            PlaylistCommand::Create { name, ids, folder } => {
+                let folder_id = resolve_folder(&conn, folder.as_deref())?;
+                let id = playlist::create(&conn, &name, &ids)?;
+                if folder_id.is_some() {
+                    playlist::set_folder(&conn, id, folder_id)?;
+                }
+                println!("created playlist {id}: {name} ({} tracks)", ids.len());
+            }
+            PlaylistCommand::Import { file, name, folder } => {
+                let folder_id = resolve_folder(&conn, folder.as_deref())?;
+                let report = m3u::import(&conn, &file, name.as_deref(), folder_id)?;
+                println!(
+                    "imported \"{}\" (id {}): {} track(s)",
+                    report.name, report.playlist_id, report.added
+                );
+                if report.missing > 0 {
+                    println!("  {} path(s) missing", report.missing);
+                }
+                if report.unsupported > 0 {
+                    println!("  {} path(s) not audio or unsupported", report.unsupported);
+                }
+            }
+            PlaylistCommand::Export { playlist, output } => {
+                let id = resolve_playlist(&conn, &playlist)?;
+                let count = m3u::export(&conn, id, &output)?;
+                println!("exported {count} track(s) to {}", output.display());
+            }
+            PlaylistCommand::FolderCreate { name, parent } => {
+                let parent_id = resolve_folder(&conn, parent.as_deref())?;
+                let id = playlist::create_folder(&conn, &name, parent_id)?;
+                println!("created folder {id}: {name}");
+            }
+            PlaylistCommand::Folders => {
+                let folders = playlist::list_folders(&conn)?;
+                if folders.is_empty() {
+                    println!("no playlist folders");
+                }
+                for folder in &folders {
+                    println!("{:>4}  {}", folder.id, folder_label(&folders, folder.id));
+                }
+            }
+        },
         Commands::Stats => {
             let s = library::stats(&conn)?;
             println!("tracks:   {}", s.tracks);
@@ -236,6 +352,58 @@ fn trunc(s: &str, n: usize) -> String {
     } else {
         s.chars().take(n.saturating_sub(1)).collect::<String>() + "…"
     }
+}
+
+fn resolve_playlist(conn: &rusqlite::Connection, value: &str) -> anyhow::Result<i64> {
+    let items = playlist::list(conn)?;
+    if let Ok(id) = value.parse::<i64>() {
+        if items.iter().any(|item| item.id == id) {
+            return Ok(id);
+        }
+    }
+    items
+        .into_iter()
+        .find(|item| item.name.eq_ignore_ascii_case(value))
+        .map(|item| item.id)
+        .ok_or_else(|| anyhow::anyhow!("no playlist with id or name {value:?}"))
+}
+
+fn resolve_folder(conn: &rusqlite::Connection, value: Option<&str>) -> anyhow::Result<Option<i64>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let folders = playlist::list_folders(conn)?;
+    if let Ok(id) = value.parse::<i64>() {
+        if folders.iter().any(|folder| folder.id == id) {
+            return Ok(Some(id));
+        }
+    }
+    folders
+        .iter()
+        .find(|folder| {
+            folder.name.eq_ignore_ascii_case(value)
+                || folder_label(&folders, folder.id).eq_ignore_ascii_case(value)
+        })
+        .map(|folder| Some(folder.id))
+        .ok_or_else(|| anyhow::anyhow!("no playlist folder with id or name {value:?}"))
+}
+
+fn folder_label(folders: &[playlist::PlaylistFolder], folder_id: i64) -> String {
+    let mut names = Vec::new();
+    let mut current = Some(folder_id);
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(id) = current {
+        if !seen.insert(id) {
+            break;
+        }
+        let Some(folder) = folders.iter().find(|folder| folder.id == id) else {
+            break;
+        };
+        names.push(folder.name.clone());
+        current = folder.parent_id;
+    }
+    names.reverse();
+    names.join(" / ")
 }
 
 fn fmt_time(secs: u64) -> String {

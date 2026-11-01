@@ -142,6 +142,45 @@ impl Library {
         crate::playlist::move_tracks(&self.conn, playlist_id, moving, before)
     }
 
+    // ---- playlist folders ----
+
+    pub fn playlist_folders(&self) -> Result<Vec<crate::playlist::PlaylistFolder>> {
+        crate::playlist::list_folders(&self.conn)
+    }
+
+    pub fn create_playlist_folder(&self, name: &str, parent_id: Option<i64>) -> Result<i64> {
+        crate::playlist::create_folder(&self.conn, name, parent_id)
+    }
+
+    pub fn rename_playlist_folder(&self, folder_id: i64, name: &str) -> Result<()> {
+        crate::playlist::rename_folder(&self.conn, folder_id, name)
+    }
+
+    pub fn delete_playlist_folder(&self, folder_id: i64) -> Result<()> {
+        crate::playlist::delete_folder(&self.conn, folder_id)
+    }
+
+    pub fn move_playlist_to_folder(&self, playlist_id: i64, folder_id: Option<i64>) -> Result<()> {
+        crate::playlist::move_playlist_to_folder(&self.conn, playlist_id, folder_id)
+    }
+
+    // ---- M3U playlists ----
+
+    /// Import an M3U/M3U8 file, indexing missing audio on the way.
+    pub fn import_m3u(
+        &self,
+        path: &Path,
+        name: Option<&str>,
+        folder_id: Option<i64>,
+    ) -> Result<crate::m3u::ImportReport> {
+        crate::m3u::import(&self.conn, path, name, folder_id)
+    }
+
+    /// Write a playlist as M3U/M3U8. Returns the number of tracks written.
+    pub fn export_m3u(&self, playlist_id: i64, path: &Path) -> Result<usize> {
+        crate::m3u::export(&self.conn, playlist_id, path)
+    }
+
     // ---- smart playlists ----
 
     pub fn smart_playlists(&self) -> Result<Vec<crate::smart::SmartPlaylist>> {

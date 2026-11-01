@@ -10,6 +10,113 @@ pub struct Playlist {
     pub id: i64,
     pub name: String,
     pub count: u32,
+    /// Owning folder, or `None` when the playlist sits at the root.
+    pub folder_id: Option<i64>,
+}
+
+/// A user-created folder for grouping playlists. Folders may be nested.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaylistFolder {
+    pub id: i64,
+    pub name: String,
+    pub parent_id: Option<i64>,
+}
+
+pub fn list_folders(conn: &Connection) -> Result<Vec<PlaylistFolder>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, parent_id
+         FROM playlist_folders
+         ORDER BY name COLLATE NOCASE",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(PlaylistFolder {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            parent_id: r.get(2)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn create_folder(conn: &Connection, name: &str, parent_id: Option<i64>) -> Result<i64> {
+    let name = name.trim();
+    anyhow::ensure!(!name.is_empty(), "folder name cannot be empty");
+    if let Some(parent) = parent_id {
+        anyhow::ensure!(folder_exists(conn, parent)?, "parent folder does not exist");
+    }
+    conn.execute(
+        "INSERT INTO playlist_folders (name, parent_id) VALUES (?1, ?2)",
+        params![name, parent_id],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn rename_folder(conn: &Connection, folder_id: i64, name: &str) -> Result<()> {
+    let name = name.trim();
+    anyhow::ensure!(!name.is_empty(), "folder name cannot be empty");
+    let changed = conn.execute(
+        "UPDATE playlist_folders SET name = ?1 WHERE id = ?2",
+        params![name, folder_id],
+    )?;
+    anyhow::ensure!(changed > 0, "folder does not exist");
+    Ok(())
+}
+
+/// Delete a folder without losing what it contains: child playlists and child
+/// folders move up to the deleted folder's parent (the root for top folders).
+pub fn delete_folder(conn: &Connection, folder_id: i64) -> Result<()> {
+    let parent_id: Option<i64> = conn
+        .query_row(
+            "SELECT parent_id FROM playlist_folders WHERE id = ?1",
+            params![folder_id],
+            |r| r.get(0),
+        )
+        .map_err(|_| anyhow::anyhow!("folder does not exist"))?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "UPDATE playlists SET folder_id = ?1 WHERE folder_id = ?2",
+        params![parent_id, folder_id],
+    )?;
+    tx.execute(
+        "UPDATE playlist_folders SET parent_id = ?1 WHERE parent_id = ?2",
+        params![parent_id, folder_id],
+    )?;
+    tx.execute(
+        "DELETE FROM playlist_folders WHERE id = ?1",
+        params![folder_id],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Put a playlist in `folder_id`, or back at the root when it is `None`.
+pub fn set_folder(conn: &Connection, playlist_id: i64, folder_id: Option<i64>) -> Result<()> {
+    if let Some(folder) = folder_id {
+        anyhow::ensure!(folder_exists(conn, folder)?, "folder does not exist");
+    }
+    let changed = conn.execute(
+        "UPDATE playlists SET folder_id = ?1 WHERE id = ?2",
+        params![folder_id, playlist_id],
+    )?;
+    anyhow::ensure!(changed > 0, "playlist does not exist");
+    Ok(())
+}
+
+pub fn move_playlist_to_folder(
+    conn: &Connection,
+    playlist_id: i64,
+    folder_id: Option<i64>,
+) -> Result<()> {
+    set_folder(conn, playlist_id, folder_id)
+}
+
+fn folder_exists(conn: &Connection, folder_id: i64) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM playlist_folders WHERE id = ?1",
+        params![folder_id],
+        |r| r.get(0),
+    )?;
+    Ok(count > 0)
 }
 
 pub fn create(conn: &Connection, name: &str, track_ids: &[i64]) -> Result<i64> {
@@ -29,7 +136,7 @@ pub fn create(conn: &Connection, name: &str, track_ids: &[i64]) -> Result<i64> {
 
 pub fn list(conn: &Connection) -> Result<Vec<Playlist>> {
     let mut stmt = conn.prepare(
-        "SELECT p.id, p.name, COUNT(pt.track_id)
+        "SELECT p.id, p.name, COUNT(pt.track_id), p.folder_id
          FROM playlists p
          LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
          GROUP BY p.id
@@ -40,6 +147,7 @@ pub fn list(conn: &Connection) -> Result<Vec<Playlist>> {
             id: r.get(0)?,
             name: r.get(1)?,
             count: r.get(2)?,
+            folder_id: r.get(3)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

@@ -153,6 +153,103 @@ fn reorder_and_remove_keep_positions_dense() {
     assert_eq!(order(), vec![ids[1], ids[3], ids[0]]);
 }
 
+#[test]
+fn playlist_folders_group_nest_and_delete_without_losing_playlists() {
+    let dir = tempfile::tempdir().unwrap();
+    let lib = Library::open_at(&dir.path().join("library.db")).unwrap();
+
+    let root = lib.create_playlist_folder("Rock", None).unwrap();
+    let sub = lib.create_playlist_folder("Live", Some(root)).unwrap();
+    let first = lib.create_playlist("First", &[]).unwrap();
+    let second = lib.create_playlist("Second", &[]).unwrap();
+
+    lib.move_playlist_to_folder(first, Some(sub)).unwrap();
+    lib.move_playlist_to_folder(second, Some(root)).unwrap();
+
+    let folders = lib.playlist_folders().unwrap();
+    assert_eq!(folders.len(), 2);
+    let live = folders.iter().find(|folder| folder.id == sub).unwrap();
+    assert_eq!(live.name, "Live");
+    assert_eq!(live.parent_id, Some(root));
+
+    let playlists = lib.playlists().unwrap();
+    assert_eq!(
+        playlists
+            .iter()
+            .find(|playlist| playlist.id == first)
+            .unwrap()
+            .folder_id,
+        Some(sub)
+    );
+
+    // Deleting a folder promotes its playlists and nested folders one level.
+    lib.delete_playlist_folder(root).unwrap();
+    let folders = lib.playlist_folders().unwrap();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0].id, sub);
+    assert_eq!(folders[0].parent_id, None);
+    let playlists = lib.playlists().unwrap();
+    assert_eq!(
+        playlists
+            .iter()
+            .find(|playlist| playlist.id == first)
+            .unwrap()
+            .folder_id,
+        Some(sub)
+    );
+    assert_eq!(
+        playlists
+            .iter()
+            .find(|playlist| playlist.id == second)
+            .unwrap()
+            .folder_id,
+        None
+    );
+
+    lib.rename_playlist_folder(sub, "Concerts").unwrap();
+    assert_eq!(lib.playlist_folders().unwrap()[0].name, "Concerts");
+
+    // Moving back to the root and deleting the last folder leaves playlists.
+    lib.move_playlist_to_folder(first, None).unwrap();
+    lib.delete_playlist_folder(sub).unwrap();
+    assert!(lib.playlist_folders().unwrap().is_empty());
+    assert_eq!(lib.playlists().unwrap().len(), 2);
+    assert!(lib
+        .playlists()
+        .unwrap()
+        .iter()
+        .all(|playlist| playlist.folder_id.is_none()));
+}
+
+#[test]
+fn playlist_folder_names_must_not_be_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = test_conn(&dir);
+    assert!(playlist::create_folder(&conn, "  ", None).is_err());
+    assert!(playlist::rename_folder(&conn, 999, "Nope").is_err());
+}
+
+#[test]
+fn old_databases_gain_the_playlist_folder_column() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.db");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE playlists (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+             INSERT INTO playlists (name) VALUES ('Old');",
+        )
+        .unwrap();
+    }
+
+    let lib = Library::open_at(&path).unwrap();
+    assert_eq!(lib.playlists().unwrap()[0].folder_id, None);
+    let folder = lib.create_playlist_folder("New", None).unwrap();
+    lib.move_playlist_to_folder(lib.playlists().unwrap()[0].id, Some(folder))
+        .unwrap();
+    assert_eq!(lib.playlists().unwrap()[0].folder_id, Some(folder));
+}
+
 fn test_conn(dir: &tempfile::TempDir) -> rusqlite::Connection {
     musicwasp_core::db::open_at(&dir.path().join("library.db")).unwrap()
 }

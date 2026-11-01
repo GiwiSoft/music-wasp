@@ -3,7 +3,9 @@ use musicwasp_core::autotag::{self, Candidate, Cover, LocalTrack, Release};
 use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
 use musicwasp_core::tags::TagSnapshot;
-use musicwasp_core::{AlbumGroup, Filter, Library, Player, Playlist, SortKey, TagEdit, Track};
+use musicwasp_core::{
+    AlbumGroup, Filter, Library, Player, Playlist, PlaylistFolder, SortKey, TagEdit, Track,
+};
 use notify::Watcher as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -50,6 +52,12 @@ pub enum SettingsTab {
 pub struct DragTracks {
     pub ids: Vec<i64>,
     pub from_playlist: Option<i64>,
+}
+
+/// Drag payload for moving a playlist into a folder.
+#[derive(Debug, Clone, Copy)]
+pub struct DragPlaylist {
+    pub id: i64,
 }
 
 /// Drag payload for reordering the play queue.
@@ -301,6 +309,7 @@ pub enum RenameTarget {
     Track { id: i64, field: TrackField },
     Playlist(i64),
     Smart(i64),
+    Folder(i64),
 }
 
 impl RenameTarget {
@@ -309,6 +318,7 @@ impl RenameTarget {
             RenameTarget::Track { field, .. } => format!("Rename {}", field.label().to_lowercase()),
             RenameTarget::Playlist(_) => "Rename playlist".to_string(),
             RenameTarget::Smart(_) => "Rename smart playlist".to_string(),
+            RenameTarget::Folder(_) => "Rename folder".to_string(),
         }
     }
 }
@@ -534,6 +544,35 @@ impl FolderPicker {
     }
 }
 
+/// New-folder dialog state.
+#[derive(Debug, Clone)]
+pub struct FolderDraft {
+    pub name: String,
+    /// Folder that will contain the new folder; `None` creates a root folder.
+    pub parent_id: Option<i64>,
+    pub status: Option<String>,
+}
+
+/// What a playlist transfer dialog is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum M3uMode {
+    Import,
+    /// Export the playlist with this id.
+    Export(i64),
+}
+
+/// Path dialog for importing and exporting M3U playlists.
+#[derive(Debug, Clone)]
+pub struct M3uDraft {
+    pub mode: M3uMode,
+    pub path: String,
+    /// Optional name override when importing.
+    pub name: String,
+    /// Destination folder when importing.
+    pub folder_id: Option<i64>,
+    pub status: Option<String>,
+}
+
 /// Small in-app image chooser for replacing album covers.
 pub struct CoverPickerState {
     pub album: String,
@@ -594,6 +633,24 @@ fn is_image_path(path: &Path) -> bool {
                 "jpg" | "jpeg" | "png" | "webp" | "bmp" | "gif" | "tif" | "tiff"
             )
         })
+}
+
+/// Turn a playlist name into a portable file name for M3U export.
+fn sanitize_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let cleaned = cleaned.trim().trim_matches('.').trim();
+    if cleaned.is_empty() {
+        "playlist".to_string()
+    } else {
+        cleaned.to_string()
+    }
 }
 
 /// Result of a background Cover Art Archive lookup.
@@ -976,9 +1033,12 @@ pub struct App {
     pub os_drop_hover: Option<Option<i64>>,
     pub view: View,
     pub playlists: Vec<Playlist>,
+    pub playlist_folders: Vec<PlaylistFolder>,
     pub smart_playlists: Vec<SmartPlaylist>,
     pub smart_dialog: Option<SmartDraft>,
     pub playlist_dialog: Option<String>,
+    pub folder_dialog: Option<FolderDraft>,
+    pub m3u_dialog: Option<M3uDraft>,
     pub picker: Option<FolderPicker>,
     pub autotag: Option<AutoTagState>,
     pub show_hygiene: bool,
@@ -1135,9 +1195,12 @@ impl App {
             os_drop_hover: None,
             view: session.view.into(),
             playlists: Vec::new(),
+            playlist_folders: Vec::new(),
             smart_playlists: Vec::new(),
             smart_dialog: None,
             playlist_dialog: None,
+            folder_dialog: None,
+            m3u_dialog: None,
             picker: None,
             autotag: None,
             show_hygiene: false,
@@ -1288,6 +1351,7 @@ impl App {
             }
         }
         self.playlists = self.lib.playlists().unwrap_or_default();
+        self.playlist_folders = self.lib.playlist_folders().unwrap_or_default();
         self.smart_playlists = self.lib.smart_playlists().unwrap_or_default();
         match self.view {
             View::Playlist(id) if !self.playlists.iter().any(|p| p.id == id) => {
@@ -1453,6 +1517,241 @@ impl App {
         }
     }
 
+    // ---- playlist folders ----
+
+    pub fn open_new_folder(&mut self, parent_id: Option<i64>) {
+        self.folder_dialog = Some(FolderDraft {
+            name: String::new(),
+            parent_id,
+            status: None,
+        });
+    }
+
+    pub fn commit_folder_dialog(&mut self) {
+        let Some(mut draft) = self.folder_dialog.clone() else {
+            return;
+        };
+        let name = draft.name.trim().to_string();
+        if name.is_empty() {
+            draft.status = Some("give the folder a name".to_string());
+            self.folder_dialog = Some(draft);
+            return;
+        }
+        match self.lib.create_playlist_folder(&name, draft.parent_id) {
+            Ok(_) => {
+                self.message = format!("folder \"{name}\" created");
+                self.folder_dialog = None;
+                self.mark_browser_dirty();
+            }
+            Err(e) => {
+                draft.status = Some(format!("create failed: {e}"));
+                self.folder_dialog = Some(draft);
+            }
+        }
+    }
+
+    pub fn delete_playlist_folder(&mut self, folder_id: i64) {
+        let name = self
+            .playlist_folders
+            .iter()
+            .find(|folder| folder.id == folder_id)
+            .map(|folder| folder.name.clone())
+            .unwrap_or_else(|| "folder".to_string());
+        match self.lib.delete_playlist_folder(folder_id) {
+            Ok(()) => {
+                self.message = format!("folder \"{name}\" deleted; its playlists moved up");
+                self.mark_browser_dirty();
+            }
+            Err(e) => self.message = format!("delete folder failed: {e}"),
+        }
+    }
+
+    pub fn move_playlist_to_folder(&mut self, playlist_id: i64, folder_id: Option<i64>) {
+        match self.lib.move_playlist_to_folder(playlist_id, folder_id) {
+            Ok(()) => {
+                self.message = if folder_id.is_some() {
+                    "playlist moved to folder".to_string()
+                } else {
+                    "playlist moved to the top level".to_string()
+                };
+                self.mark_browser_dirty();
+            }
+            Err(e) => self.message = format!("move failed: {e}"),
+        }
+    }
+
+    /// Full `Parent / Child` path for menus. Unknown ids render as `Folder`.
+    pub fn playlist_folder_path(&self, folder_id: i64) -> String {
+        let mut names = Vec::new();
+        let mut current = Some(folder_id);
+        let mut seen = BTreeSet::new();
+        while let Some(id) = current {
+            if !seen.insert(id) {
+                break;
+            }
+            let Some(folder) = self.playlist_folders.iter().find(|folder| folder.id == id) else {
+                break;
+            };
+            names.push(folder.name.clone());
+            current = folder.parent_id;
+        }
+        names.reverse();
+        names.join(" / ")
+    }
+
+    pub fn start_rename_folder(&mut self, folder_id: i64) {
+        let Some(folder) = self
+            .playlist_folders
+            .iter()
+            .find(|folder| folder.id == folder_id)
+            .cloned()
+        else {
+            self.message = "that folder no longer exists".to_string();
+            return;
+        };
+        self.rename = Some(RenameState {
+            target: RenameTarget::Folder(folder_id),
+            text: folder.name,
+            error: None,
+            request_focus: true,
+        });
+    }
+
+    pub fn start_rename_playlist(&mut self, playlist_id: i64) {
+        let Some(playlist) = self
+            .playlists
+            .iter()
+            .find(|playlist| playlist.id == playlist_id)
+            .cloned()
+        else {
+            self.message = "that playlist no longer exists".to_string();
+            return;
+        };
+        self.rename = Some(RenameState {
+            target: RenameTarget::Playlist(playlist_id),
+            text: playlist.name,
+            error: None,
+            request_focus: true,
+        });
+    }
+
+    // ---- M3U import / export ----
+
+    pub fn open_m3u_import(&mut self) {
+        self.m3u_dialog = Some(M3uDraft {
+            mode: M3uMode::Import,
+            path: String::new(),
+            name: String::new(),
+            folder_id: None,
+            status: None,
+        });
+    }
+
+    pub fn open_m3u_export(&mut self, playlist_id: i64) {
+        let Some(playlist) = self
+            .playlists
+            .iter()
+            .find(|playlist| playlist.id == playlist_id)
+        else {
+            self.message = "that playlist no longer exists".to_string();
+            return;
+        };
+        let dir = dirs::audio_dir()
+            .or_else(dirs::home_dir)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let file = format!("{}.m3u8", sanitize_file_name(&playlist.name));
+        self.m3u_dialog = Some(M3uDraft {
+            mode: M3uMode::Export(playlist_id),
+            path: dir.join(file).to_string_lossy().to_string(),
+            name: playlist.name.clone(),
+            folder_id: None,
+            status: None,
+        });
+    }
+
+    /// Import one M3U file and return the summary message. Used by the dialog
+    /// and by OS file drops.
+    pub fn import_m3u_file(
+        &mut self,
+        path: &Path,
+        folder_id: Option<i64>,
+    ) -> Result<String, String> {
+        let report = self
+            .lib
+            .import_m3u(path, None, folder_id)
+            .map_err(|e| e.to_string())?;
+        let mut summary = format!("imported \"{}\" ({} track(s))", report.name, report.added);
+        if report.missing > 0 {
+            summary.push_str(&format!(", {} missing", report.missing));
+        }
+        if report.unsupported > 0 {
+            summary.push_str(&format!(", {} skipped", report.unsupported));
+        }
+        self.view = View::Playlist(report.playlist_id);
+        self.mark_browser_dirty();
+        self.mark_tracks_dirty();
+        Ok(summary)
+    }
+
+    pub fn commit_m3u_dialog(&mut self) {
+        let Some(mut draft) = self.m3u_dialog.clone() else {
+            return;
+        };
+        let raw_path = draft.path.trim().to_string();
+        if raw_path.is_empty() {
+            draft.status = Some("choose a playlist file".to_string());
+            self.m3u_dialog = Some(draft);
+            return;
+        }
+        let mut path = PathBuf::from(&raw_path);
+        match draft.mode {
+            M3uMode::Import => {
+                let name = draft.name.trim();
+                let result = self.lib.import_m3u(
+                    &path,
+                    if name.is_empty() { None } else { Some(name) },
+                    draft.folder_id,
+                );
+                match result {
+                    Ok(report) => {
+                        let mut summary =
+                            format!("imported \"{}\" ({} track(s))", report.name, report.added);
+                        if report.missing > 0 {
+                            summary.push_str(&format!(", {} missing", report.missing));
+                        }
+                        if report.unsupported > 0 {
+                            summary.push_str(&format!(", {} skipped", report.unsupported));
+                        }
+                        self.message = summary;
+                        self.m3u_dialog = None;
+                        self.view = View::Playlist(report.playlist_id);
+                        self.mark_browser_dirty();
+                        self.mark_tracks_dirty();
+                    }
+                    Err(e) => {
+                        draft.status = Some(format!("import failed: {e}"));
+                        self.m3u_dialog = Some(draft);
+                    }
+                }
+            }
+            M3uMode::Export(playlist_id) => {
+                if path.extension().is_none() {
+                    path.set_extension("m3u8");
+                }
+                match self.lib.export_m3u(playlist_id, &path) {
+                    Ok(count) => {
+                        self.message = format!("exported {count} track(s) to {}", path.display());
+                        self.m3u_dialog = None;
+                    }
+                    Err(e) => {
+                        draft.status = Some(format!("export failed: {e}"));
+                        self.m3u_dialog = Some(draft);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn delete_current_playlist(&mut self) {
         let result = match self.view {
             View::Playlist(id) => self.lib.delete_playlist(id),
@@ -1462,6 +1761,20 @@ impl App {
         match result {
             Ok(()) => {
                 self.view = View::Library;
+                self.message = "playlist deleted".to_string();
+                self.mark_browser_dirty();
+            }
+            Err(e) => self.message = format!("delete failed: {e}"),
+        }
+    }
+
+    pub fn delete_playlist_by_id(&mut self, playlist_id: i64) {
+        match self.lib.delete_playlist(playlist_id) {
+            Ok(()) => {
+                if matches!(self.view, View::Playlist(id) if id == playlist_id) {
+                    self.view = View::Library;
+                    self.mark_tracks_dirty();
+                }
                 self.message = "playlist deleted".to_string();
                 self.mark_browser_dirty();
             }
@@ -3231,6 +3544,30 @@ impl App {
         // visible immediately instead of waiting for the next input event.
         ctx.request_repaint();
 
+        // Dropping M3U files imports them wherever the pointer is; they are
+        // playlists, not audio to add to the row under the cursor.
+        let mut notes = Vec::new();
+        let mut audio_paths = Vec::new();
+        for path in paths {
+            if musicwasp_core::m3u::is_m3u_path(&path) {
+                match self.import_m3u_file(&path, None) {
+                    Ok(summary) => notes.push(summary),
+                    Err(error) => notes.push(format!("{}: {error}", path.display())),
+                }
+            } else {
+                audio_paths.push(path);
+            }
+        }
+        if !notes.is_empty() {
+            self.message = notes.join("; ");
+            ctx.request_repaint();
+        }
+        if audio_paths.is_empty() {
+            self.os_drop_hover = None;
+            return;
+        }
+        let paths = audio_paths;
+
         let pointer_target = pointer.and_then(|pos| {
             self.os_drop_zones
                 .iter()
@@ -3343,6 +3680,12 @@ impl App {
                 .find(|p| p.id == *id)
                 .map(|p| p.name.clone())
                 .unwrap_or_default(),
+            RenameTarget::Folder(id) => self
+                .playlist_folders
+                .iter()
+                .find(|folder| folder.id == *id)
+                .map(|folder| folder.name.clone())
+                .unwrap_or_default(),
         };
 
         self.rename = Some(RenameState {
@@ -3404,6 +3747,15 @@ impl App {
                         .map_err(|e| e.to_string())
                 }
             }
+            RenameTarget::Folder(id) => {
+                if text.is_empty() {
+                    Err("the new name cannot be empty".to_string())
+                } else {
+                    self.lib
+                        .rename_playlist_folder(*id, &text)
+                        .map_err(|e| e.to_string())
+                }
+            }
         };
 
         match result {
@@ -3412,6 +3764,7 @@ impl App {
                     RenameTarget::Track { field, .. } => {
                         format!("{} updated", field.label().to_lowercase())
                     }
+                    RenameTarget::Folder(_) => "folder renamed".to_string(),
                     _ => "playlist renamed".to_string(),
                 };
                 self.mark_browser_dirty();
@@ -3752,6 +4105,8 @@ impl eframe::App for App {
         self.handle_os_drop(&ctx);
         crate::ui::tag_editor(self, &ctx);
         crate::ui::playlist_dialog(self, &ctx);
+        crate::ui::folder_dialog(self, &ctx);
+        crate::ui::m3u_dialog(self, &ctx);
         crate::ui::smart_dialog(self, &ctx);
         crate::ui::settings_window(self, &ctx);
         crate::ui::hygiene_window(self, &ctx);
@@ -4014,12 +4369,20 @@ mod tests {
     use super::{
         apply_click, auto_number_tracks, best_release_track, clamp_seek, common_fields,
         list_subdirs, mapping_matches, normalize_case_value, queue_insert_next, queue_reorder,
-        remove_tracks_from_queue, restore_queue, suggested_mappings, BatchCase, BatchField,
-        TrackField,
+        remove_tracks_from_queue, restore_queue, sanitize_file_name, suggested_mappings, BatchCase,
+        BatchField, TrackField,
     };
     use musicwasp_core::autotag::{Release, ReleaseTrack};
     use musicwasp_core::{TagEdit, Track};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn m3u_export_names_are_portable() {
+        assert_eq!(sanitize_file_name("Road trip"), "Road trip");
+        assert_eq!(sanitize_file_name("AC/DC: live?"), "AC_DC_ live_");
+        assert_eq!(sanitize_file_name("..."), "playlist");
+        assert_eq!(sanitize_file_name("  "), "playlist");
+    }
 
     #[test]
     fn renaming_numeric_fields_validates_ranges() {

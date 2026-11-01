@@ -32,6 +32,8 @@ This is an early but working project, not a finished product. What runs today:
 | Auto-tagging | search MusicBrainz by artist + album; preview a file-to-release-track table with per-row overrides and tag diffs; match by disc/track/title/duration, write title/artist/album/album artist/year/genre/track/disc and embed the front cover; every write keeps a pre-write snapshot for Undo |
 | File drops | drop audio files or folders from the OS file manager onto a playlist, **All music**, or an open playlist’s track list to import and add them |
 | Playlists | save the current view or selection as a playlist, reorder by drag or Up/Down, remove tracks, drag rows onto another playlist to move them |
+| Playlist folders | group playlists in nested folders; create, rename, delete, drag a playlist into a folder, or use the context menu |
+| M3U import / export | import `.m3u` / `.m3u8` files (relative paths resolved, missing audio skipped, new files indexed) and export any playlist with `#EXTINF` metadata |
 | Smart playlists | editable rule sets (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
 | Skins | five palettes (MusicWasp Dark, Midnight, Forest, Mono, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
@@ -131,11 +133,15 @@ icon before the app starts.
    fields are left untouched in every file. The **Batch actions** section writes immediately:
    auto-number tracks (per disc), normalize case (title/lower/UPPER), clear a chosen field, or copy
    a field from the first selected track. All batch actions are covered by the same Undo snapshot.
-8. The plus button next to **PLAYLISTS** saves the current selection (or the whole view) as a
-   playlist; the sparkle button creates a smart playlist from rules. Right-click a smart playlist
-   and choose **Edit rules…** to change its rules, sort, limit or name. Inside a playlist, drag rows to reorder, use
-   **Remove**/`Delete` to drop tracks, **Up**/**Down** (or `Alt`+arrows) to nudge a selection, and
-   drag rows onto another playlist to move them there.
+8. The plus menu next to **PLAYLISTS** saves the current selection (or the whole view) as a
+   playlist, and also creates a playlist folder or imports an M3U/M3U8 file; the sparkle button
+   creates a smart playlist from rules. Right-click a playlist for
+   **Rename**, **Export M3U…**, **Move to folder** and **Delete**; drag a playlist onto a folder to
+   move it. Right-click a folder to create a subfolder, rename it or delete it (its contents move up
+   one level). Right-click a smart playlist and choose **Edit rules…** to change its rules, sort,
+   limit or name. Inside a playlist, drag rows to reorder, use **Remove**/`Delete` to drop tracks,
+   **Up**/**Down** (or `Alt`+arrows) to nudge a selection, and drag rows onto another playlist to
+   move them there. Dropping M3U files from the file manager imports them too.
 9. The monitor button in the toolbar switches to a plain now-playing view with large cover,
    transport, seek, volume and the next track. Press it again to return to the library.
 10. Click a track cell (title, artist, album, genre, year, track no) and press `F2` to rename that
@@ -233,6 +239,10 @@ musicwasp-cli scan ~/Music --rescan # re-read tags even for unchanged files
 musicwasp-cli list --filter "floyd"
 musicwasp-cli play 42               # play library track 42
 musicwasp-cli stats
+musicwasp-cli playlist list
+musicwasp-cli playlist import ~/Music/mix.m3u8 --folder Roadtrip
+musicwasp-cli playlist export 3 ~/Music/roadtrip.m3u8
+musicwasp-cli playlist folder-create "Roadtrip"
 
 # auto-tag by album: search, then apply the best match to tracks 1-12
 musicwasp-cli autotag -r "Radiohead" -l "OK Computer"
@@ -267,7 +277,10 @@ cli/    musicwasp-cli    headless library tool
   clipping at extreme settings.
 - **`core::tags`** writes through `lofty`, then the row is re-read so the UI never shows stale data.
 - **`core::playlist`** is a plain join table; playlist order is explicit, and move/remove keep
-  positions dense so reordering is a single ordered rewrite.
+  positions dense so reordering is a single ordered rewrite. Playlist folders are a small
+  self-referencing tree; deleting a folder promotes its children instead of hiding them.
+- **`core::m3u`** parses `#EXTINF` metadata, resolves relative and `file://` paths, imports missing
+  audio through the normal tag reader, and exports absolute paths with `#EXTINF` for other players.
 - **`core::smart`** stores a JSON rule set and compiles it to one parameterised SELECT, with the
   field/operator names coming from enums rather than user text.
 - **`core::autotag`** is split into pure steps (`search`, `fetch`, `suggest`, `apply`) so matching
@@ -285,7 +298,8 @@ Database schema (SQLite, `PRAGMA journal_mode=WAL`):
 tracks(id, path UNIQUE, title, artist, album, album_artist, genre, year,
        track_no, disc_no, duration_secs, sample_rate, bitrate, channels,
        format, size_bytes, mtime, added_at)
-playlists(id, name)
+playlists(id, name, folder_id)
+playlist_folders(id, name, parent_id)
 playlist_tracks(playlist_id, track_id, position)
 ```
 

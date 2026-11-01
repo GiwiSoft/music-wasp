@@ -2161,6 +2161,7 @@ dependencies = [
  "clap",
  "dirs",
  "musicwasp-core",
+ "rusqlite",
  "tracing",
  "tracing-subscriber",
 ]

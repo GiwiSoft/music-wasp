@@ -64,9 +64,18 @@ fn migrate(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
         CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre);
 
+        -- Optional hierarchy for grouping playlists. Folders can be nested;
+        -- deleting a folder moves its children up one level.
+        CREATE TABLE IF NOT EXISTS playlist_folders (
+            id        INTEGER PRIMARY KEY,
+            name      TEXT NOT NULL,
+            parent_id INTEGER REFERENCES playlist_folders(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS playlists (
-            id   INTEGER PRIMARY KEY,
-            name TEXT NOT NULL
+            id        INTEGER PRIMARY KEY,
+            name      TEXT NOT NULL,
+            folder_id INTEGER REFERENCES playlist_folders(id) ON DELETE SET NULL
         );
         CREATE TABLE IF NOT EXISTS playlist_tracks (
             playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
@@ -84,5 +93,31 @@ fn migrate(conn: &Connection) -> Result<()> {
         );
         "#,
     )?;
+
+    // Databases created before playlist folders existed need the column added
+    // in place. `CREATE TABLE IF NOT EXISTS` above cannot change them.
+    if !has_column(conn, "playlists", "folder_id")? {
+        conn.execute(
+            "ALTER TABLE playlists ADD COLUMN folder_id INTEGER
+             REFERENCES playlist_folders(id) ON DELETE SET NULL",
+            [],
+        )?;
+    }
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_playlists_folder ON playlists(folder_id)",
+        [],
+    )?;
     Ok(())
+}
+
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
