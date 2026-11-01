@@ -215,11 +215,12 @@ pub enum TrackColumn {
     Genre,
     Year,
     Duration,
+    Rating,
     Format,
 }
 
 impl TrackColumn {
-    pub const ALL: [TrackColumn; 8] = [
+    pub const ALL: [TrackColumn; 9] = [
         TrackColumn::Number,
         TrackColumn::Title,
         TrackColumn::Artist,
@@ -227,6 +228,7 @@ impl TrackColumn {
         TrackColumn::Genre,
         TrackColumn::Year,
         TrackColumn::Duration,
+        TrackColumn::Rating,
         TrackColumn::Format,
     ];
 
@@ -239,6 +241,7 @@ impl TrackColumn {
             TrackColumn::Genre => tr("Genre"),
             TrackColumn::Year => tr("Year"),
             TrackColumn::Duration => tr("Time"),
+            TrackColumn::Rating => tr("Rating"),
             TrackColumn::Format => tr("Format"),
         }
     }
@@ -252,6 +255,7 @@ impl TrackColumn {
             TrackColumn::Genre => 110.0,
             TrackColumn::Year => 52.0,
             TrackColumn::Duration => 52.0,
+            TrackColumn::Rating => 90.0,
             TrackColumn::Format => 78.0,
         }
     }
@@ -265,6 +269,7 @@ impl TrackColumn {
             TrackColumn::Genre => 60.0,
             TrackColumn::Year => 36.0,
             TrackColumn::Duration => 36.0,
+            TrackColumn::Rating => 70.0,
             TrackColumn::Format => 50.0,
         }
     }

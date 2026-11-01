@@ -154,14 +154,14 @@ pub fn list(conn: &Connection) -> Result<Vec<Playlist>> {
 }
 
 pub fn tracks(conn: &Connection, playlist_id: i64) -> Result<Vec<Track>> {
-    let mut stmt = conn.prepare(
-        "SELECT t.id, t.path, t.title, t.artist, t.album, t.album_artist, t.genre, t.year,
-                t.track_no, t.disc_no, t.duration_secs, t.sample_rate, t.bitrate, t.format
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {}
          FROM playlist_tracks pt
          JOIN tracks t ON t.id = pt.track_id
          WHERE pt.playlist_id = ?1
          ORDER BY pt.position",
-    )?;
+        crate::library::TRACK_COLUMNS
+    ))?;
     let rows = stmt.query_map(params![playlist_id], crate::library::row_to_track)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }

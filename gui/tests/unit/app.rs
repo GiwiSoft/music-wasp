@@ -4,7 +4,6 @@ use super::{
     remove_tracks_from_queue, restore_queue, sanitize_file_name, suggested_mappings, BatchCase,
     BatchField, CoverCache, TrackField,
 };
-use crate::i18n::tr;
 use musicwasp_core::autotag::{Release, ReleaseTrack};
 use musicwasp_core::{TagEdit, Track};
 use std::collections::BTreeSet;
@@ -204,6 +203,11 @@ fn track(title: &str, artist: &str, album: &str, year: Option<i32>) -> Track {
         sample_rate: 0,
         bitrate: 0,
         format: String::new(),
+        rating: 0,
+        play_count: 0,
+        skip_count: 0,
+        last_played: None,
+        date_added: 0,
     }
 }
 
@@ -212,7 +216,7 @@ fn release_track(disc: u32, number: u32, title: &str) -> ReleaseTrack {
         disc,
         number,
         title: title.into(),
-        artist: tr("Artist").into(),
+        artist: "Artist".into(),
         length_ms: Some(200_000),
     }
 }
@@ -222,8 +226,8 @@ fn single_file_tagging_picks_the_right_release_track() {
     let release = Release {
         id: "r".into(),
         title: "Album".into(),
-        artist: tr("Artist").into(),
-        album_artist: tr("Artist").into(),
+        artist: "Artist".into(),
+        album_artist: "Artist".into(),
         year: None,
         genre: None,
         tracks: vec![
@@ -234,7 +238,7 @@ fn single_file_tagging_picks_the_right_release_track() {
         has_front_cover: false,
     };
 
-    let mut local = track("Wrong local title", tr("Artist"), "Album", None);
+    let mut local = track("Wrong local title", "Artist", "Album", None);
     local.track_no = Some(2);
     local.disc_no = Some(1);
     assert_eq!(best_release_track(&local, &release), 1);
@@ -254,8 +258,8 @@ fn album_preview_maps_by_track_number_and_exposes_diffs() {
     let release = Release {
         id: "r".into(),
         title: "Album".into(),
-        artist: tr("Artist").into(),
-        album_artist: tr("Artist").into(),
+        artist: "Artist".into(),
+        album_artist: "Artist".into(),
         year: Some(2000),
         genre: None,
         tracks: vec![
@@ -265,9 +269,9 @@ fn album_preview_maps_by_track_number_and_exposes_diffs() {
         has_front_cover: false,
     };
 
-    let mut second = track("Wrong two", tr("Artist"), "Album", None);
+    let mut second = track("Wrong two", "Artist", "Album", None);
     second.track_no = Some(2);
-    let mut first = track("Wrong one", tr("Artist"), "Album", None);
+    let mut first = track("Wrong one", "Artist", "Album", None);
     first.track_no = Some(1);
 
     let mut mappings = suggested_mappings(&[second, first], &release);
@@ -277,7 +281,7 @@ fn album_preview_maps_by_track_number_and_exposes_diffs() {
     let changes = mappings[1].changes(&release);
     assert!(changes
         .iter()
-        .any(|(field, _, new)| *field == tr("Title") && new == "First Song"));
+        .any(|(field, _, new)| *field == "Title" && new == "First Song"));
 
     // A manual override changes what gets written; skip removes the row.
     mappings[0].release_index = Some(0);

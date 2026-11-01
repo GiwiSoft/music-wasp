@@ -149,5 +149,14 @@
   "Play queue": "Warteschlange",
   "Album grid": "Albumraster",
   "Equalizer": "Equalizer",
-  "Undo last tag write": "Letzte Tag-Änderung rückgängig"
+  "Undo last tag write": "Letzte Tag-Änderung rückgängig",
+  "Sort by": "Sortieren nach",
+  "Play count": "Wiedergaben",
+  "Last played": "Zuletzt gespielt",
+  "Play history": "Hörverlauf",
+  "Never played": "Nie gespielt",
+  "Not played in 90 days": "Seit 90 Tagen nicht gespielt",
+  "Clear play filters": "Hörfilter löschen",
+  "Rating": "Bewertung",
+  "Date added": "Hinzugefügt am"
 }

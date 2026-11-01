@@ -149,5 +149,14 @@
   "Play queue": "File de lecture",
   "Album grid": "Grille d'albums",
   "Equalizer": "Égaliseur",
-  "Undo last tag write": "Annuler la dernière écriture"
+  "Undo last tag write": "Annuler la dernière écriture",
+  "Sort by": "Trier par",
+  "Play count": "Nombre de lectures",
+  "Last played": "Dernière lecture",
+  "Play history": "Historique d'écoute",
+  "Never played": "Jamais lues",
+  "Not played in 90 days": "Pas lues depuis 90 jours",
+  "Clear play filters": "Effacer les filtres d'écoute",
+  "Rating": "Note",
+  "Date added": "Date d'ajout"
 }

@@ -1131,6 +1131,9 @@ pub struct App {
     pub sort: SortKey,
     pub sort_asc: bool,
     pub search: String,
+    /// Optional play-history filters, toggled from the main menu.
+    pub filter_never_played: bool,
+    pub filter_not_played_90: bool,
     /// Selected track ids; several at once for batch operations.
     pub selected: BTreeSet<i64>,
     /// Track the next shift-click extends from.
@@ -1333,6 +1336,8 @@ impl App {
             sort: SortKey::Artist,
             sort_asc: true,
             search: session.search.clone(),
+            filter_never_played: false,
+            filter_not_played_90: false,
             selected: session.selected.iter().copied().collect(),
             anchor,
             queue: session.queue.clone(),
@@ -1493,6 +1498,12 @@ impl App {
             artist: self.sel_artist.clone(),
             album: self.sel_album.clone(),
             text: self.search.clone(),
+            never_played: self.filter_never_played,
+            not_played_days: if self.filter_not_played_90 {
+                Some(90)
+            } else {
+                None
+            },
         }
     }
 
@@ -3006,6 +3017,9 @@ impl App {
             return;
         };
         self.finish_scrobble();
+        if let Err(error) = self.lib.record_play(id) {
+            eprintln!("MusicWasp: could not record play for track {id}: {error}");
+        }
         if let Some(p) = &self.player {
             p.load_and_play(&path);
         }
@@ -3013,15 +3027,44 @@ impl App {
         self.selected.clear();
         self.selected.insert(id);
         self.anchor = Some(id);
+        self.mark_tracks_dirty();
     }
 
     pub fn play_from_list(&mut self, index: usize) {
+        let target = self.tracks.get(index).map(|track| track.id);
+        let current = self.queue_pos.and_then(|pos| self.queue.get(pos).copied());
+        if current.is_some() && current != target {
+            self.record_current_skip();
+        }
         self.queue = self.tracks.iter().map(|t| t.id).collect();
         if self.queue.is_empty() {
             return;
         }
         self.queue_pos = Some(index.min(self.queue.len() - 1));
         self.play_loaded();
+    }
+
+    /// Set a star rating from the track table or now-playing view.
+    pub fn set_track_rating(&mut self, track_id: i64, rating: u8) {
+        if let Err(error) = self.lib.set_rating(track_id, rating) {
+            self.message = format!("could not save rating: {error}");
+            return;
+        }
+        if let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) {
+            track.rating = rating.min(5);
+        }
+        self.mark_tracks_dirty();
+    }
+
+    fn record_current_skip(&mut self) {
+        let Some(pos) = self.queue_pos else { return };
+        let Some(id) = self.queue.get(pos).copied() else {
+            return;
+        };
+        if let Err(error) = self.lib.record_skip(id) {
+            eprintln!("MusicWasp: could not record skip for track {id}: {error}");
+        }
+        self.mark_tracks_dirty();
     }
 
     /// Add tracks to the end of the play queue.
@@ -3064,6 +3107,9 @@ impl App {
     pub fn queue_jump(&mut self, index: usize) {
         if index >= self.queue.len() {
             return;
+        }
+        if self.queue_pos != Some(index) {
+            self.record_current_skip();
         }
         self.queue_pos = Some(index);
         self.play_loaded();
@@ -3130,9 +3176,16 @@ impl App {
     }
 
     pub fn next_track(&mut self) {
+        self.next_track_inner(true);
+    }
+
+    fn next_track_inner(&mut self, count_skip: bool) {
         let Some(pos) = self.queue_pos else { return };
         if self.queue.is_empty() {
             return;
+        }
+        if count_skip {
+            self.record_current_skip();
         }
         let next = if self.shuffle && self.queue.len() > 1 {
             // Deterministic-enough shuffle without pulling in rand: step by a
@@ -3157,6 +3210,7 @@ impl App {
         if self.queue.is_empty() {
             return;
         }
+        self.record_current_skip();
         let prev = if pos > 0 {
             pos - 1
         } else {
@@ -3243,6 +3297,13 @@ impl App {
                     self.queue_pos = Some(position);
                 }
                 self.playing_id = Some(track.id);
+                if let Err(error) = self.lib.record_play(track.id) {
+                    eprintln!(
+                        "MusicWasp: could not record play for track {}: {error}",
+                        track.id
+                    );
+                }
+                self.mark_tracks_dirty();
             }
             self.gapless_for = None;
             self.art_key = None;
@@ -3372,7 +3433,7 @@ impl App {
     pub fn on_track_finished(&mut self) {
         match self.repeat {
             RepeatMode::One => self.play_loaded(),
-            _ => self.next_track(),
+            _ => self.next_track_inner(false),
         }
     }
 

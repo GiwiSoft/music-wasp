@@ -16,10 +16,12 @@ pub enum Field {
     Year,
     Duration,
     Added,
+    Rating,
+    PlayCount,
 }
 
 impl Field {
-    pub const ALL: [Field; 7] = [
+    pub const ALL: [Field; 9] = [
         Field::Title,
         Field::Artist,
         Field::Album,
@@ -27,6 +29,8 @@ impl Field {
         Field::Year,
         Field::Duration,
         Field::Added,
+        Field::Rating,
+        Field::PlayCount,
     ];
 
     pub fn label(self) -> &'static str {
@@ -38,6 +42,8 @@ impl Field {
             Field::Year => "Year",
             Field::Duration => "Duration (s)",
             Field::Added => "Date added",
+            Field::Rating => "Rating",
+            Field::PlayCount => "Play count",
         }
     }
 
@@ -49,12 +55,17 @@ impl Field {
             Field::Genre => "genre",
             Field::Year => "year",
             Field::Duration => "duration_secs",
-            Field::Added => "added_at",
+            Field::Added => "date_added",
+            Field::Rating => "rating",
+            Field::PlayCount => "play_count",
         }
     }
 
     pub fn is_numeric(self) -> bool {
-        matches!(self, Field::Year | Field::Duration | Field::Added)
+        matches!(
+            self,
+            Field::Year | Field::Duration | Field::Added | Field::Rating | Field::PlayCount
+        )
     }
 }
 
@@ -275,11 +286,7 @@ pub fn update_definition(
 
 /// Evaluate a definition into tracks.
 pub fn evaluate(conn: &Connection, definition: &Definition) -> Result<Vec<Track>> {
-    let mut sql = String::from(
-        "SELECT id, path, title, artist, album, album_artist, genre, year, track_no,
-                disc_no, duration_secs, sample_rate, bitrate, format
-         FROM tracks",
-    );
+    let mut sql = format!("SELECT {} FROM tracks", crate::library::TRACK_COLUMNS);
     let mut args: Vec<Value> = Vec::new();
     let mut clauses = Vec::new();
 
@@ -365,6 +372,11 @@ mod tests {
             sample_rate: 44_100,
             bitrate: 320,
             format: "MPEG".into(),
+            rating: 0,
+            play_count: 0,
+            skip_count: 0,
+            last_played: None,
+            date_added: 0,
         }
     }
 

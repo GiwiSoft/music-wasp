@@ -59,11 +59,19 @@ fn migrate(conn: &Connection) -> Result<()> {
             format        TEXT NOT NULL DEFAULT '',
             size_bytes    INTEGER NOT NULL DEFAULT 0,
             mtime         INTEGER NOT NULL DEFAULT 0,
-            added_at      INTEGER NOT NULL DEFAULT (unixepoch())
+            added_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+            rating        INTEGER NOT NULL DEFAULT 0,
+            play_count    INTEGER NOT NULL DEFAULT 0,
+            skip_count    INTEGER NOT NULL DEFAULT 0,
+            last_played   INTEGER,
+            date_added    INTEGER NOT NULL DEFAULT (unixepoch())
         );
         CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
         CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
         CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre);
+        CREATE INDEX IF NOT EXISTS idx_tracks_rating ON tracks(rating);
+        CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON tracks(play_count);
+        CREATE INDEX IF NOT EXISTS idx_tracks_last_played ON tracks(last_played);
 
         -- Optional hierarchy for grouping playlists. Folders can be nested;
         -- deleting a folder moves its children up one level.
@@ -113,6 +121,51 @@ fn migrate(conn: &Connection) -> Result<()> {
     }
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_playlists_folder ON playlists(folder_id)",
+        [],
+    )?;
+
+    // Playback statistics were added after the first schema. Keep these
+    // additive migrations so old libraries keep their rows and tags.
+    for (column, ddl) in [
+        (
+            "rating",
+            "ALTER TABLE tracks ADD COLUMN rating INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "play_count",
+            "ALTER TABLE tracks ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "skip_count",
+            "ALTER TABLE tracks ADD COLUMN skip_count INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "last_played",
+            "ALTER TABLE tracks ADD COLUMN last_played INTEGER",
+        ),
+        (
+            "date_added",
+            "ALTER TABLE tracks ADD COLUMN date_added INTEGER NOT NULL DEFAULT 0",
+        ),
+    ] {
+        if !has_column(conn, "tracks", column)? {
+            conn.execute(ddl, [])?;
+        }
+    }
+    conn.execute(
+        "UPDATE tracks SET date_added = added_at WHERE date_added = 0",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tracks_rating ON tracks(rating)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON tracks(play_count)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tracks_last_played ON tracks(last_played)",
         [],
     )?;
     Ok(())

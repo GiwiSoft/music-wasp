@@ -315,6 +315,40 @@ fn custom_skin_json_adds_a_theme_and_icon() {
 }
 
 #[test]
+fn star_rating_from_the_track_list_is_saved() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[SeedTrack {
+            file: "one.wav",
+            title: "Rated",
+            artist: "Artist",
+            album: "Album",
+            year: 2026,
+            track_no: 1,
+        }],
+    );
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.get_by_label("Rate 4 star(s)").click_accesskit();
+    harness.run_steps(2);
+
+    assert_eq!(harness.state().tracks[0].rating, 4);
+    let stored = harness
+        .state()
+        .lib
+        .query(
+            &musicwasp_core::Filter::default(),
+            musicwasp_core::SortKey::Title,
+            true,
+        )
+        .unwrap();
+    assert_eq!(stored[0].rating, 4);
+}
+
+#[test]
 fn folder_context_menu_creates_a_playlist_in_that_folder() {
     let dir = tempfile::tempdir().unwrap();
     let _env = TestEnv::new(dir.path());

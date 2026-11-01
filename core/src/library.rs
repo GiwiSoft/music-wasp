@@ -97,6 +97,20 @@ impl Library {
         remove_tracks(&self.conn, ids)
     }
 
+    /// Set a 0..5 star rating for one track.
+    pub fn set_rating(&self, track_id: i64, rating: u8) -> Result<()> {
+        set_rating(&self.conn, track_id, rating)
+    }
+
+    /// Record a started/completed play and update `last_played`.
+    pub fn record_play(&self, track_id: i64) -> Result<()> {
+        record_play(&self.conn, track_id)
+    }
+
+    pub fn record_skip(&self, track_id: i64) -> Result<()> {
+        record_skip(&self.conn, track_id)
+    }
+
     pub fn scan(&self, root: &Path, rescan: bool) -> Result<usize> {
         scan(&self.conn, root, rescan)
     }
@@ -317,6 +331,11 @@ pub struct Track {
     pub sample_rate: u32,
     pub bitrate: u32,
     pub format: String,
+    pub rating: u8,
+    pub play_count: u32,
+    pub skip_count: u32,
+    pub last_played: Option<i64>,
+    pub date_added: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -346,6 +365,10 @@ pub struct Filter {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub text: String,
+    /// Only tracks that have never been played.
+    pub never_played: bool,
+    /// Only tracks whose last play is older than this many days, or never.
+    pub not_played_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -357,6 +380,9 @@ pub enum SortKey {
     Year,
     Duration,
     Added,
+    Rating,
+    PlayCount,
+    LastPlayed,
 }
 
 impl SortKey {
@@ -368,13 +394,18 @@ impl SortKey {
             SortKey::Genre => "genre",
             SortKey::Year => "year",
             SortKey::Duration => "duration_secs",
-            SortKey::Added => "added_at",
+            SortKey::Added => "date_added",
+            SortKey::Rating => "rating",
+            SortKey::PlayCount => "play_count",
+            SortKey::LastPlayed => "last_played",
         }
     }
 }
 
-const TRACK_COLUMNS: &str = "id, path, title, artist, album, album_artist, genre, year, track_no,
-     disc_no, duration_secs, sample_rate, bitrate, format";
+pub(crate) const TRACK_COLUMNS: &str =
+    "id, path, title, artist, album, album_artist, genre, year, track_no,
+     disc_no, duration_secs, sample_rate, bitrate, format,
+     rating, play_count, skip_count, last_played, date_added";
 
 pub(crate) fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
     Ok(Track {
@@ -392,6 +423,11 @@ pub(crate) fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         sample_rate: r.get(11)?,
         bitrate: r.get(12)?,
         format: r.get(13)?,
+        rating: r.get(14)?,
+        play_count: r.get(15)?,
+        skip_count: r.get(16)?,
+        last_played: r.get(17)?,
+        date_added: r.get(18)?,
     })
 }
 
@@ -447,6 +483,14 @@ pub fn query(conn: &Connection, filter: &Filter, sort: SortKey, asc: bool) -> Re
                 args.push(Value::Integer(to));
             }
         }
+    }
+
+    if filter.never_played {
+        sql.push_str(" AND play_count = 0");
+    }
+    if let Some(days) = filter.not_played_days {
+        sql.push_str(" AND (last_played IS NULL OR last_played < unixepoch() - ?)");
+        args.push(Value::Integer(i64::from(days) * 86_400));
     }
 
     sql.push_str(&format!(
@@ -507,6 +551,35 @@ pub fn remove_tracks(conn: &Connection, ids: &[i64]) -> Result<usize> {
     let placeholders = vec!["?"; ids.len()].join(",");
     let sql = format!("DELETE FROM tracks WHERE id IN ({placeholders})");
     Ok(conn.execute(&sql, params_from_iter(ids.iter()))?)
+}
+
+/// Set a 0..5 star rating. Values outside the range are clamped.
+pub fn set_rating(conn: &Connection, track_id: i64, rating: u8) -> Result<()> {
+    let rating = rating.min(5) as i64;
+    conn.execute(
+        "UPDATE tracks SET rating = ?1 WHERE id = ?2",
+        params![rating, track_id],
+    )?;
+    Ok(())
+}
+
+/// Count a play and update the last-played timestamp.
+pub fn record_play(conn: &Connection, track_id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks
+         SET play_count = play_count + 1, last_played = unixepoch()
+         WHERE id = ?1",
+        params![track_id],
+    )?;
+    Ok(())
+}
+
+pub fn record_skip(conn: &Connection, track_id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks SET skip_count = skip_count + 1 WHERE id = ?1",
+        params![track_id],
+    )?;
+    Ok(())
 }
 
 /// Groups of tracks that look like the same recording: same artist, title and
@@ -841,8 +914,9 @@ where
     let mut stmt = conn.prepare_cached(
         r#"INSERT INTO tracks
              (path, title, artist, album, album_artist, genre, year, track_no, disc_no,
-              duration_secs, sample_rate, bitrate, channels, format, size_bytes, mtime)
-           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
+              duration_secs, sample_rate, bitrate, channels, format, size_bytes, mtime,
+              date_added)
+           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,unixepoch())
            ON CONFLICT(path) DO UPDATE SET
              title=excluded.title, artist=excluded.artist, album=excluded.album,
              album_artist=excluded.album_artist, genre=excluded.genre, year=excluded.year,
@@ -1007,8 +1081,9 @@ pub fn refresh_file(conn: &Connection, path: &Path) -> Result<()> {
     conn.execute(
         r#"INSERT INTO tracks
              (path, title, artist, album, album_artist, genre, year, track_no, disc_no,
-              duration_secs, sample_rate, bitrate, channels, format, size_bytes, mtime)
-           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
+              duration_secs, sample_rate, bitrate, channels, format, size_bytes, mtime,
+              date_added)
+           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,unixepoch())
            ON CONFLICT(path) DO UPDATE SET
              title=excluded.title, artist=excluded.artist, album=excluded.album,
              album_artist=excluded.album_artist, genre=excluded.genre, year=excluded.year,

@@ -97,6 +97,7 @@ fn column_config_round_trips_and_normalizes() {
             TrackColumn::Number,
             TrackColumn::Year,
             TrackColumn::Duration,
+            TrackColumn::Rating,
         ]
     );
 }
@@ -112,10 +113,10 @@ fn hiding_every_column_still_leaves_a_usable_table() {
     let format = order
         .iter()
         .position(|column| *column == TrackColumn::Format);
-    let duration = order
+    let rating = order
         .iter()
-        .position(|column| *column == TrackColumn::Duration);
-    assert_eq!(duration, format.map(|index| index + 1));
+        .position(|column| *column == TrackColumn::Rating);
+    assert_eq!(rating, format.map(|index| index + 1));
 
     columns.reset();
     assert_eq!(columns, ColumnConfig::default());

@@ -518,6 +518,56 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         app.show_equalizer = !app.show_equalizer;
                         ui.close();
                     }
+                    ui.separator();
+                    ui.menu_button(icons::with(icons::SORT_ASCENDING, tr("Sort by")), |ui| {
+                        for (key, label) in [
+                            (SortKey::Rating, tr("Rating")),
+                            (SortKey::PlayCount, tr("Play count")),
+                            (SortKey::LastPlayed, tr("Last played")),
+                            (SortKey::Added, tr("Date added")),
+                        ] {
+                            if ui
+                                .add(egui::Button::new(label).selected(app.sort == key))
+                                .clicked()
+                            {
+                                apply_sort(app, key);
+                                ui.close();
+                            }
+                        }
+                    });
+                    ui.menu_button(icons::with(icons::FADERS, tr("Play history")), |ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(tr("Never played"))
+                                    .selected(app.filter_never_played),
+                            )
+                            .clicked()
+                        {
+                            app.filter_never_played = !app.filter_never_played;
+                            app.mark_tracks_dirty();
+                            ui.close();
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new(tr("Not played in 90 days"))
+                                    .selected(app.filter_not_played_90),
+                            )
+                            .clicked()
+                        {
+                            app.filter_not_played_90 = !app.filter_not_played_90;
+                            app.mark_tracks_dirty();
+                            ui.close();
+                        }
+                        if app.filter_never_played || app.filter_not_played_90 {
+                            ui.separator();
+                            if ui.button(tr("Clear play filters")).clicked() {
+                                app.filter_never_played = false;
+                                app.filter_not_played_90 = false;
+                                app.mark_tracks_dirty();
+                                ui.close();
+                            }
+                        }
+                    });
                 });
                 let menu = menu.response;
                 menu.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tr("Main menu")));
@@ -1116,6 +1166,11 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                 })
                 .unwrap_or_else(|| "Pick a track in the library to start".to_string());
             ui.label(RichText::new(subtitle).size(14.0).color(th::text_dim()));
+            if let Some(track) = &current_track {
+                if let Some(rating) = rating_stars(ui, track.rating, true, 18.0) {
+                    app.set_track_rating(track.id, rating);
+                }
+            }
 
             ui.add_space(16.0);
             let seek_row = (avail.x * 0.46).clamp(360.0, 620.0);
@@ -1991,6 +2046,51 @@ fn track_art(
     }
 }
 
+/// Change the track-list sort, toggling direction when the key is already active.
+fn apply_sort(app: &mut App, key: SortKey) {
+    if app.sort == key {
+        app.sort_asc = !app.sort_asc;
+    } else {
+        app.sort = key;
+        app.sort_asc = true;
+    }
+    app.mark_tracks_dirty();
+}
+
+/// Five clickable stars. Returns the newly chosen rating (`0` clears it).
+fn rating_stars(ui: &mut egui::Ui, rating: u8, interactive: bool, size: f32) -> Option<u8> {
+    let mut selected = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 1.0;
+        for value in 1..=5u8 {
+            let filled = rating >= value;
+            let color = if filled { th::accent() } else { th::text_dim() };
+            let mut button = egui::Button::new(icons::text(icons::STAR, size).color(color))
+                .frame(false)
+                .min_size(egui::vec2(size + 1.0, size + 1.0));
+            if !interactive {
+                button = button.sense(egui::Sense::hover());
+            }
+            let response = ui.add(button);
+            response.widget_info(|| {
+                WidgetInfo::labeled(
+                    WidgetType::Button,
+                    interactive,
+                    format!("Rate {value} star(s)"),
+                )
+            });
+            if interactive
+                && response
+                    .on_hover_text(format!("Rate {value} star(s)"))
+                    .clicked()
+            {
+                selected = Some(if rating == value { 0 } else { value });
+            }
+        }
+    });
+    selected
+}
+
 pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     enum RowAct {
@@ -2040,6 +2140,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
     let (ctrl, shift) = (mods.ctrl || mods.command, mods.shift);
 
     let mut cell_focus: Option<TrackField> = None;
+    let mut rating_change: Option<(i64, u8)> = None;
 
     let panel = egui::CentralPanel::default().show(ui, |ui| {
         if let Some(playlist_id) = app.editable_playlist() {
@@ -2255,6 +2356,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                             TrackColumn::Genre => Some(SortKey::Genre),
                             TrackColumn::Year => Some(SortKey::Year),
                             TrackColumn::Duration => Some(SortKey::Duration),
+                            TrackColumn::Rating => Some(SortKey::Rating),
                             TrackColumn::Number | TrackColumn::Format => None,
                         };
                         header(ui, column.label(), key);
@@ -2391,6 +2493,14 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                                         )
                                         .truncate(),
                                     );
+                                });
+                            }
+                            TrackColumn::Rating => {
+                                row.col(|ui| {
+                                    if let Some(rating) = rating_stars(ui, track.rating, true, 13.0)
+                                    {
+                                        rating_change = Some((track.id, rating));
+                                    }
                                 });
                             }
                             TrackColumn::Format => {
@@ -2555,6 +2665,9 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
     });
 
     app.tracks = track_rows;
+    if let Some((track_id, rating)) = rating_change {
+        app.set_track_rating(track_id, rating);
+    }
 
     // The track list itself is a drop target too: the open playlist, or the
     // library when browsing all music.

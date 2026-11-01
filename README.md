@@ -17,7 +17,8 @@ This is an early but working project, not a finished product. What runs today:
 | :-- | :-- |
 | Library | incremental background scan of 18 audio formats, skips unchanged files by mtime + size, batches writes, tag reading via `lofty`, SQLite index |
 | Browsing | column browser (genre → artist → album) with foldable sections whose state is remembered, advanced field search, sortable table |
-| Track list | persisted column widths, drag/reorder/hide columns, and standard / compact / album-art row layouts |
+| Track list | persisted column widths, drag/reorder/hide columns, star ratings, and standard / compact / album-art row layouts |
+| Play history | 0–5 ratings, play and skip counts, last-played tracking, sort by rating / play count / last played, and never-played or 90-day filters |
 | Languages | English (default), French, German and Spanish UI; switch live under Settings → General |
 | Saved searches | name and reuse queries such as `artist:"radiohead" year:1997`, edit or delete them from the bookmark menu |
 | Selection | multi-select (`Ctrl`-click, `Shift`-click, `Ctrl+A`, `Esc`), drag tracks onto a playlist, right-click a row for play / rename / metadata / playlist actions |
@@ -37,7 +38,7 @@ This is an early but working project, not a finished product. What runs today:
 | Playlists | save the current view or selection as a playlist, reorder by drag or Up/Down, remove tracks, drag rows onto another playlist to move them |
 | Playlist folders | group playlists in nested folders; create, rename, delete, drag a playlist into a folder, or use the context menu |
 | M3U import / export | import `.m3u` / `.m3u8` files (relative paths resolved, missing audio skipped, new files indexed) and export any playlist with `#EXTINF` metadata |
-| Smart playlists | editable rule sets (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
+| Smart playlists | editable rule sets (field / operator / value, match all or any, sort, limit), including rating and play-count rules; re-evaluated from the database every time they open |
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
 | Skins | nine built-in palettes plus user skins from `skins.json`, with per-skin colours, glass backdrops, labels and logo/icon; picked from Settings and remembered |
 | Accessibility | logical Tab order, screen-reader labels for icon controls, larger text mode, high-contrast palette and visible focus rings |
@@ -124,7 +125,9 @@ icon before the app starts.
    query, apply a saved one, or right-click a saved entry to edit or delete it. The **main menu**
    (☰) opens the column manager: drag table dividers to resize, reorder or hide columns, reset them,
    and choose the Standard, Compact or Album art layout. Widths, order, visibility and layout persist
-   in `settings.json`.
+   in `settings.json`. Click the stars in the Rating column to set a 0–5 rating. The same main menu
+   has **Sort by** entries for rating, play count and last played, plus **Play history** filters for
+   never-played tracks and tracks not played in 90 days.
 3. Double-click a track, or select it and press `Enter`, to play. `Space` toggles pause. The
    **QUEUE** panel on the right shows the current track and **Up Next**: click an entry to jump to
    it, drag rows to reorder, right-click a row to remove it, or **Clear** everything after the
@@ -370,7 +373,8 @@ Database schema (SQLite, `PRAGMA journal_mode=WAL`):
 ```
 tracks(id, path UNIQUE, title, artist, album, album_artist, genre, year,
        track_no, disc_no, duration_secs, sample_rate, bitrate, channels,
-       format, size_bytes, mtime, added_at)
+       format, size_bytes, mtime, added_at, rating, play_count, skip_count,
+       last_played, date_added)
 playlists(id, name, folder_id)
 playlist_folders(id, name, parent_id)
 playlist_tracks(playlist_id, track_id, position)

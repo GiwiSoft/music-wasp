@@ -149,5 +149,14 @@
   "Play queue": "Cola de reproducción",
   "Album grid": "Cuadrícula de álbumes",
   "Equalizer": "Ecualizador",
-  "Undo last tag write": "Deshacer última edición de etiquetas"
+  "Undo last tag write": "Deshacer última edición de etiquetas",
+  "Sort by": "Ordenar por",
+  "Play count": "Reproducciones",
+  "Last played": "Última reproducción",
+  "Play history": "Historial de reproducción",
+  "Never played": "Nunca reproducidas",
+  "Not played in 90 days": "Sin reproducir en 90 días",
+  "Clear play filters": "Borrar filtros de reproducción",
+  "Rating": "Valoración",
+  "Date added": "Fecha de añadido"
 }
