@@ -22,3 +22,12 @@ tracing-subscriber = "0.3"
 opt-level = 3
 lto = "thin"
 strip = true
+
+# Temporary native-Wayland drag-and-drop support.
+# winit 0.30 has no Wayland file drops. This is the reviewed 0.30 backport
+# (rust-windowing/winit#4729). The egui-winit patch uses winit's data device
+# clipboard so Hyprland does not serve the selection to a second data device.
+# Remove both once winit and egui-winit release these changes.
+[patch.crates-io]
+winit = { git = "https://github.com/crmne/winit", rev = "7a962fd46470a137d9a7a1945bf5b5d0b95a002c" }
+egui-winit = { path = "patches/egui-winit" }

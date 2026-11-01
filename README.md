@@ -355,9 +355,10 @@ MUSICWASP_SCREENSHOT=/tmp/undo.png MUSICWASP_UNDO=1 cargo run -p musicwasp-gui
 
 `MUSICWASP_DATA_DIR=/some/dir` isolates a test library from your real one.
 
-On Wayland, winit has no native file drag-and-drop. MusicWasp therefore starts on X11
-(XWayland) when `DISPLAY` is available, which makes dropping files from the file manager work.
-Set `MUSICWASP_NATIVE_WAYLAND=1` to keep the native Wayland backend (drop will not work there).
+On Wayland, MusicWasp now uses the native backend and accepts file drops through winit's
+`wl_data_device` support. Text copy/paste uses winit's data device too, which matters on compositors
+such as Hyprland that only send the selection to a client's first data device. If a compositor
+misbehaves, `MUSICWASP_X11=1` forces the old X11/XWayland path for that launch.
 
 ## Roadmap
 

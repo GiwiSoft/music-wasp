@@ -12,7 +12,7 @@ mod ui_tests;
 use app::App;
 
 fn main() -> eframe::Result<()> {
-    prefer_x11_for_file_drop();
+    maybe_force_x11();
     // Screenshot runs need a predictable canvas and must not inherit a session.
     let screenshot = std::env::var_os("MUSICWASP_SCREENSHOT").is_some();
     let saved_window = if screenshot {
@@ -53,19 +53,16 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-/// winit 0.30 has no file drag and drop on its native Wayland backend. When
-/// XWayland is available, prefer X11 so drops from the file manager work.
-/// Set `MUSICWASP_NATIVE_WAYLAND=1` to keep the Wayland backend.
-fn prefer_x11_for_file_drop() {
-    let on_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
-        || std::env::var_os("WAYLAND_SOCKET").is_some();
-    let has_x11 = std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty());
-    let opt_out = std::env::var_os("MUSICWASP_NATIVE_WAYLAND").is_some();
-    if on_wayland && has_x11 && !opt_out {
-        eprintln!(
-            "MusicWasp: using X11 (XWayland) so file drag-and-drop works; \
-             set MUSICWASP_NATIVE_WAYLAND=1 to keep native Wayland."
-        );
+/// Native Wayland is the default and supports file drops through the patched
+/// winit backend. `MUSICWASP_X11=1` remains as a one-launch escape hatch for
+/// compositors with broken drag-and-drop or clipboard behaviour.
+fn maybe_force_x11() {
+    let force_x11 = std::env::var_os("MUSICWASP_X11").is_some_and(|value| {
+        let value = value.to_string_lossy();
+        !value.is_empty() && value != "0"
+    });
+    if force_x11 && std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty()) {
+        eprintln!("MusicWasp: MUSICWASP_X11=1, using X11/XWayland");
         std::env::remove_var("WAYLAND_DISPLAY");
         std::env::remove_var("WAYLAND_SOCKET");
     }

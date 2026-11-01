@@ -231,7 +231,7 @@
         <pre><code><span class="prompt">$</span> sudo apt install libasound2-dev pkg-config
 <span class="prompt">$</span> cargo build --release
 <span class="prompt">$</span> ./scripts/install-desktop.sh</code></pre>
-        <p>Release archives include the binaries, desktop entry, icon and install script. The app prefers XWayland so file-manager drag and drop works.</p>
+        <p>Release archives include the binaries, desktop entry, icon and install script. Native Wayland file drops and clipboard work through winit's data device; <code>MUSICWASP_X11=1</code> forces XWayland if needed.</p>
       </article>
       <article class="panel">
         <h3>Windows</h3>
