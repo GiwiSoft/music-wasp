@@ -276,6 +276,48 @@ fn playlist_tree(
     None
 }
 
+/// Folder picker + background scan controls, shown in Settings.
+fn scan_controls(app: &mut App, ui: &mut egui::Ui) {
+    let scanning = app.is_scanning();
+    ui.horizontal(|ui| {
+        let path = ui.add_sized(
+            [260.0, 24.0],
+            egui::TextEdit::singleline(&mut app.scan_path)
+                .id(egui::Id::new("scan_path"))
+                .hint_text(tr("folder to scan")),
+        );
+        let folder = icons::compact(ui, icons::FOLDER_OPEN, tr("Choose a music folder"));
+        if folder.clicked() {
+            app.open_picker();
+        }
+        path.labelled_by(folder.id);
+        if icons::button_enabled(
+            ui,
+            !scanning,
+            icons::ARROWS_CLOCKWISE,
+            if scanning {
+                tr("Indexing…")
+            } else {
+                tr("Scan")
+            },
+        )
+        .on_hover_text("Index new and changed tracks in the background")
+        .clicked()
+        {
+            app.scan_clicked();
+        }
+        if scanning {
+            let spinner = ui.add(egui::Spinner::new().size(14.0));
+            if let Some(label) = app.scan_progress_label() {
+                spinner.on_hover_text(label);
+            }
+            if icons::compact(ui, icons::X, "Stop indexing").clicked() {
+                app.cancel_scan();
+            }
+        }
+    });
+}
+
 pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
     egui::Panel::top("toolbar").show(ui, |ui| {
         ui.add_space(5.0);
@@ -385,141 +427,101 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                 app.delete_saved_search(id);
             }
 
-            ui.separator();
-            let scan_path = ui.add_sized(
-                [210.0, 24.0],
-                egui::TextEdit::singleline(&mut app.scan_path)
-                    .id(egui::Id::new("scan_path"))
-                    .hint_text(tr("folder to scan")),
-            );
-            let folder = icons::compact(ui, icons::FOLDER_OPEN, tr("Choose a music folder"));
-            if folder.clicked() {
-                app.open_picker();
-            }
-            scan_path.labelled_by(folder.id);
-            let scanning = app.is_scanning();
-            if icons::button_enabled(
-                ui,
-                !scanning,
-                icons::ARROWS_CLOCKWISE,
-                if scanning {
-                    tr("Indexing…")
-                } else {
-                    tr("Scan")
-                },
-            )
-            .on_hover_text("Index new and changed tracks in the background")
-            .clicked()
-            {
-                app.scan_clicked();
-            }
-            if scanning {
-                let spinner = ui.add(egui::Spinner::new().size(14.0));
-                if let Some(label) = app.scan_progress_label() {
-                    spinner.on_hover_text(label);
-                }
-                if icons::compact(ui, icons::X, "Stop indexing").clicked() {
-                    app.cancel_scan();
-                }
-            }
-
             let selected = app.selected_in_view().len();
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if icons::compact(
-                    ui,
-                    icons::GEAR,
-                    tr("Settings: skins, keyboard shortcuts and preferences"),
-                )
-                .clicked()
-                {
-                    app.show_settings = !app.show_settings;
-                }
-                if icons::compact(
-                    ui,
-                    icons::BROOM,
-                    tr("Library hygiene: missing files, duplicates, prune"),
-                )
-                .clicked()
-                {
-                    app.open_hygiene();
-                }
-                if app.tag_undo.is_some() {
-                    let count = app.tag_undo.as_ref().map_or(0, Vec::len);
-                    if icons::compact(
-                        ui,
-                        icons::ARROW_COUNTER_CLOCKWISE,
-                        &format!("Undo the last tag write ({count} file(s))"),
-                    )
-                    .clicked()
-                    {
-                        app.undo_last_tag_write();
+                let menu = ui.menu_button(icons::text(icons::LIST, 16.0), |ui| {
+                    let settings = ui.add(
+                        egui::Button::new(icons::with(icons::GEAR, tr("Settings")))
+                            .selected(app.show_settings),
+                    );
+                    if settings.clicked() {
+                        app.show_settings = !app.show_settings;
+                        ui.close();
                     }
-                }
-                if icons::toggle(
-                    ui,
-                    app.plain_view,
-                    icons::MONITOR_PLAY,
-                    if app.plain_view {
-                        tr("Back to the library")
-                    } else {
-                        tr("Plain now-playing view")
-                    },
-                )
-                .clicked()
-                {
-                    app.plain_view = !app.plain_view;
-                }
-                if !app.plain_view
-                    && icons::toggle(
-                        ui,
-                        app.settings.queue_open,
-                        icons::QUEUE,
-                        tr("Play queue: show or hide Up Next"),
-                    )
-                    .clicked()
-                {
-                    app.settings.queue_open = !app.settings.queue_open;
-                    app.persist_settings();
-                }
-                if icons::toggle(
-                    ui,
-                    app.show_columns,
-                    icons::COLUMNS,
-                    tr("Track columns, order and layout"),
-                )
-                .clicked()
-                {
-                    app.show_columns = !app.show_columns;
-                }
-                if icons::toggle(
-                    ui,
-                    app.album_view,
-                    if app.album_view {
-                        icons::LIST
-                    } else {
-                        icons::GRID_FOUR
-                    },
-                    if app.album_view {
-                        tr("Back to the track list")
-                    } else {
-                        tr("Album grid view")
-                    },
-                )
-                .clicked()
-                {
-                    app.toggle_album_view();
-                }
-                if icons::toggle(
-                    ui,
-                    app.show_equalizer,
-                    icons::SLIDERS,
-                    tr("Equalizer / DSP (Ctrl+E)"),
-                )
-                .clicked()
-                {
-                    app.show_equalizer = !app.show_equalizer;
-                }
+                    let hygiene = ui.add(
+                        egui::Button::new(icons::with(icons::BROOM, tr("Library hygiene")))
+                            .selected(app.show_hygiene),
+                    );
+                    if hygiene.clicked() {
+                        app.open_hygiene();
+                        ui.close();
+                    }
+                    if app.tag_undo.is_some() {
+                        let count = app.tag_undo.as_ref().map_or(0, Vec::len);
+                        let label = format!("{} ({count})", tr("Undo last tag write"));
+                        let undo = ui.add(egui::Button::new(icons::with(
+                            icons::ARROW_COUNTER_CLOCKWISE,
+                            &label,
+                        )));
+                        if undo.clicked() {
+                            app.undo_last_tag_write();
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                    let plain = ui.add(
+                        egui::Button::new(icons::with(
+                            icons::MONITOR_PLAY,
+                            if app.plain_view {
+                                tr("Back to the library")
+                            } else {
+                                tr("Plain now-playing view")
+                            },
+                        ))
+                        .selected(app.plain_view),
+                    );
+                    if plain.clicked() {
+                        app.plain_view = !app.plain_view;
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(
+                            !app.plain_view,
+                            egui::Button::new(icons::with(icons::QUEUE, tr("Play queue")))
+                                .selected(app.settings.queue_open),
+                        )
+                        .clicked()
+                    {
+                        app.settings.queue_open = !app.settings.queue_open;
+                        app.persist_settings();
+                        ui.close();
+                    }
+                    let columns = ui.add(
+                        egui::Button::new(icons::with(icons::COLUMNS, tr("Track columns")))
+                            .selected(app.show_columns),
+                    );
+                    if columns.clicked() {
+                        app.show_columns = !app.show_columns;
+                        ui.close();
+                    }
+                    let grid = ui.add(
+                        egui::Button::new(icons::with(
+                            icons::GRID_FOUR,
+                            if app.album_view {
+                                tr("Back to the track list")
+                            } else {
+                                tr("Album grid")
+                            },
+                        ))
+                        .selected(app.album_view),
+                    );
+                    if grid.clicked() {
+                        app.toggle_album_view();
+                        ui.close();
+                    }
+                    let eq = ui.add(
+                        egui::Button::new(icons::with(icons::SLIDERS, tr("Equalizer")))
+                            .selected(app.show_equalizer),
+                    );
+                    if eq.clicked() {
+                        app.show_equalizer = !app.show_equalizer;
+                        ui.close();
+                    }
+                });
+                let menu = menu.response;
+                menu.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tr("Main menu")));
+                menu.on_hover_text(tr("Main menu"));
                 ui.separator();
                 if !app.message.is_empty() {
                     if ui.available_width() > 180.0 {
@@ -3700,7 +3702,19 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
 
             if tab == SettingsTab::General {
                 ui.label(
-                    RichText::new(tr(tr("LANGUAGE")))
+                    RichText::new(tr("LIBRARY"))
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                scan_controls(app, ui);
+                if let Some(label) = app.scan_progress_label() {
+                    ui.label(RichText::new(label).size(9.5).color(th::text_dim()));
+                }
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(tr("LANGUAGE"))
                         .size(10.0)
                         .strong()
                         .color(th::text_dim()),
@@ -3724,7 +3738,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     });
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new(tr(tr("SKIN")))
+                    RichText::new(tr("SKIN"))
                         .size(10.0)
                         .strong()
                         .color(th::text_dim()),

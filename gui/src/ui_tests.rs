@@ -415,9 +415,8 @@ fn advanced_search_and_column_manager_update_the_ui() {
     let mut harness = harness();
     harness.run_steps(3);
 
-    assert!(harness.query_by_label("Scan").is_some());
+    assert!(harness.query_by_label("Main menu").is_some());
     assert!(harness.query_by_label("Saved searches").is_some());
-    assert!(harness.query_by_label_contains("Settings: skins").is_some());
 
     // Tab should start at Search, the first focusable control in the toolbar.
     harness.key_press(egui::Key::Tab);
@@ -478,12 +477,16 @@ fn advanced_search_and_column_manager_update_the_ui() {
         TrackLayout::Compact
     );
 
-    harness.get_by_label_contains("Settings: skins").click();
+    harness.get_by_label("Main menu").click_accesskit();
+    harness.run_steps(1);
+    harness.get_by_label_contains("Settings").click_accesskit();
     harness.run_steps(1);
     assert!(
         harness.state().show_settings,
         "settings window did not open"
     );
+    assert!(harness.query_by_label("Scan").is_some());
+    assert!(harness.query_by_label("Library").is_some());
     harness
         .get_by_role_and_label(Role::CheckBox, "Larger text and controls")
         .click_accesskit();

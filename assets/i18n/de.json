@@ -143,5 +143,11 @@
   "search or artist:\"radiohead\" year:1997": "suchen oder artist:\"radiohead\" year:1997",
   "KEYBOARD SHORTCUTS": "TASTATURKÜRZEL",
   "BATCH ACTIONS": "STAPELAKTIONEN",
-  "QUEUE": "WARTESCHLANGE"
+  "QUEUE": "WARTESCHLANGE",
+  "LIBRARY": "BIBLIOTHEK",
+  "Main menu": "Hauptmenü",
+  "Play queue": "Warteschlange",
+  "Album grid": "Albumraster",
+  "Equalizer": "Equalizer",
+  "Undo last tag write": "Letzte Tag-Änderung rückgängig"
 }

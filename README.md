@@ -112,23 +112,23 @@ icon before the app starts.
 
 ## Usage
 
-1. Start the GUI, pick a folder with the folder button (or type a path), press **Scan**. Indexing
-   runs in a background thread with live counts, batches its SQLite writes and can be stopped with
-   the X next to the spinner. Unchanged files are skipped using mtime and size, so repeat scans on a
+1. Start the GUI, open **Settings → General**, choose a folder with the folder button (or type a path),
+   press **Scan**. Indexing runs in a background thread with live counts, batches its SQLite writes and can be
+   stopped with the X next to the spinner. Unchanged files are skipped using mtime and size, so repeat scans on a
    large library only read new or edited files.
 2. Browse with the left columns (click an entry again to clear it). Click a section caret to fold it;
    the folded state is saved like the rest of the settings. Type in **Search** to filter across
    title, artist, album and genre. Field filters narrow it further, for example
    `artist:"radiohead" year:1997`, `genre:rock year:>=1990` or `year:1990..1999`; text fields
    accept `=` for an exact match. Use the bookmark button beside the search box to save the current
-   query, apply a saved one, or right-click a saved entry to edit or delete it. The **columns**
-   button in the toolbar opens the column manager: drag table dividers to resize, reorder or hide
-   columns, reset them, and choose the Standard, Compact or Album art layout. Widths, order,
-   visibility and layout persist in `settings.json`.
+   query, apply a saved one, or right-click a saved entry to edit or delete it. The **main menu**
+   (☰) opens the column manager: drag table dividers to resize, reorder or hide columns, reset them,
+   and choose the Standard, Compact or Album art layout. Widths, order, visibility and layout persist
+   in `settings.json`.
 3. Double-click a track, or select it and press `Enter`, to play. `Space` toggles pause. The
    **QUEUE** panel on the right shows the current track and **Up Next**: click an entry to jump to
    it, drag rows to reorder, right-click a row to remove it, or **Clear** everything after the
-   current track. Toggle the panel from the queue icon in the toolbar.
+   current track. Toggle the panel from the main menu (☰) → **Play queue**.
 4. Select tracks with `Ctrl`-click / `Shift`-click / `Ctrl+A`. Drag a selection onto a playlist in
    the sidebar to add it there, or right-click a track and use **Add to playlist**.
 5. Right-click any track for **Play now**, **Play next**, **Add to queue**, **Rename**, **Edit tags**,
@@ -140,8 +140,8 @@ icon before the app starts.
    or pick **skip** to leave that file untouched. Matching scores disc/track numbers, titles and
    durations before falling back to file order. **Apply to N track(s)** writes only the mapped rows
    and embeds the front cover by default. Before writing, the previous tags and embedded pictures
-   are saved; use **Undo last tag write** in the dialog or the counter-clockwise toolbar button to
-   restore them. The same undo snapshot is kept for editor and `F2` writes.
+   are saved; use **Undo last tag write** in the dialog or main menu (☰) → **Undo last tag write**
+   to restore them. The same undo snapshot is kept for editor and `F2` writes.
 7. Select one track and press **Edit tags** (`Ctrl+F2`) to fix metadata; saved straight into the file.
    Select several and the editor becomes a batch editor: shared values are pre-filled, empty
    fields are left untouched in every file. The **Batch actions** section writes immediately:
@@ -158,14 +158,14 @@ icon before the app starts.
    use **Remove**/`Delete` to drop tracks, **Up**/**Down** (or `Alt`+arrows) to nudge a selection,
    and drag rows onto another playlist to move them there. Dropping M3U files from the file manager
    imports them too.
-9. The monitor button in the toolbar switches to a plain now-playing view with large cover,
-   transport, seek, volume and the next track. Press it again to return to the library.
+9. The main menu (☰) → **Plain now-playing view** switches to a plain now-playing view with large
+   cover, transport, seek, volume and the next track. Choose it again to return to the library.
 10. Click a track cell (title, artist, album, genre, year, track no) and press `F2` to rename that
    field in place. Click a playlist first and `F2` renames the playlist itself.
-11. **Settings** (`Ctrl+,`) has three tabs: **General** for skins and folder watching,
-    **Keybindings** for shortcuts, and **About** with the project link and copyright. In
-    **Keybindings**, click a binding and press the new combination; `Delete` clears it, `Escape`
-    cancels, and conflicts are shown in red.
+11. **Settings** (`Ctrl+,`) has three tabs: **General** for library folders, scanning, language,
+    skins and folder watching, **Keybindings** for shortcuts, and **About** with the project link
+    and copyright. In **Keybindings**, click a binding and press the new combination; `Delete`
+    clears it, `Escape` cancels, and conflicts are shown in red.
 12. **EQ** (`Ctrl+E`) opens the 10-band equalizer. Pick a preset or move the sliders; the curve and
    the running track update immediately. Changes are saved to `settings.json` automatically.
 13. Pick a **Language** and a **Skin** in **Settings**. Languages are English (default), French,
@@ -180,11 +180,10 @@ icon before the app starts.
     window size/position. Playback always starts stopped, with no track loaded; press `Space` to
     play the current queue entry from the beginning. Session state is written every few seconds and
     again on exit.
-15. The broom button in the toolbar opens **Library hygiene**. It lists rows whose files are gone
-    and groups tracks that share artist/title/album. Tick rows (or use **Select all** / **Select all
-    but the first in each group**) and confirm **Remove from library**. Only database entries are
-    deleted: audio files stay on disk, and playlist entries disappear with the removed rows. Files
-    can be re-imported at any time.
+15. Main menu (☰) → **Library hygiene** lists rows whose files are gone and groups tracks that share
+    artist/title/album. Tick rows (or use **Select all** / **Select all but the first in each group**)
+    and confirm **Remove from library**. Only database entries are deleted: audio files stay on disk,
+    and playlist entries disappear with the removed rows. Files can be re-imported at any time.
 16. A successful background **Scan** also watches that folder. New audio files are imported
     automatically and tag changes made in another editor refresh their library rows. Toggle watching
     in **Settings**. Renames and deletions are not auto-pruned; **Library hygiene** reports those
@@ -193,7 +192,7 @@ icon before the app starts.
     media keys, GNOME/KDE media controls, the lock screen, `playerctl` and Bluetooth headset
     buttons control playback; track, position, volume, shuffle and repeat are published. Try
     `playerctl --player=musicwasp play-pause`.
-18. The grid button in the toolbar switches the track table to an **album grid**. Click a tile to
+18. Main menu (☰) → **Album grid** switches the track table to an **album grid**. Click a tile to
     open that album, or right-click it for **Fetch missing cover** (Cover Art Archive), **Replace
     cover…** (image picker, embedded into every track in the album) and **Save cover.jpg** beside
     the files. Sidecar covers are used automatically when a file has no embedded art.

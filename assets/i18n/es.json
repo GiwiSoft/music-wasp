@@ -143,5 +143,11 @@
   "search or artist:\"radiohead\" year:1997": "buscar o artist:\"radiohead\" year:1997",
   "KEYBOARD SHORTCUTS": "ATAJOS DE TECLADO",
   "BATCH ACTIONS": "ACCIONES POR LOTE",
-  "QUEUE": "COLA"
+  "QUEUE": "COLA",
+  "LIBRARY": "BIBLIOTECA",
+  "Main menu": "Menú principal",
+  "Play queue": "Cola de reproducción",
+  "Album grid": "Cuadrícula de álbumes",
+  "Equalizer": "Ecualizador",
+  "Undo last tag write": "Deshacer última edición de etiquetas"
 }

@@ -143,5 +143,11 @@
   "search or artist:\"radiohead\" year:1997": "rechercher ou artist:\"radiohead\" year:1997",
   "KEYBOARD SHORTCUTS": "RACCOURCIS CLAVIER",
   "BATCH ACTIONS": "ACTIONS PAR LOT",
-  "QUEUE": "FILE"
+  "QUEUE": "FILE",
+  "LIBRARY": "BIBLIOTHÈQUE",
+  "Main menu": "Menu principal",
+  "Play queue": "File de lecture",
+  "Album grid": "Grille d'albums",
+  "Equalizer": "Égaliseur",
+  "Undo last tag write": "Annuler la dernière écriture"
 }
