@@ -1943,7 +1943,7 @@ fn track_art(
     ui: &mut egui::Ui,
     track: &Track,
     ctx: &egui::Context,
-    covers: &mut HashMap<String, Option<egui::TextureHandle>>,
+    covers: &mut crate::app::CoverCache,
 ) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(38.0, 38.0), egui::Sense::hover());
     let key = crate::app::track_cover_key(track);

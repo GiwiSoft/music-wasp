@@ -10,7 +10,7 @@ use musicwasp_core::{
     ScanReport, SortKey, TagEdit, Track,
 };
 use notify::Watcher as _;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -759,16 +759,88 @@ pub(crate) fn track_cover_key(track: &Track) -> String {
     album_key(&track.album, artist)
 }
 
+/// Upper bound for cached album textures. At 180x180 RGBA this is roughly
+/// 25 MiB of CPU-side image data, plus the GPU copies.
+const ALBUM_COVER_CACHE_CAPACITY: usize = 192;
+
+/// Small LRU cache for album artwork. Negative results are cached too, so a
+/// coverless album is not re-read on every frame.
+pub(crate) struct CoverCache {
+    entries: HashMap<String, Option<egui::TextureHandle>>,
+    order: VecDeque<String>,
+    capacity: usize,
+}
+
+impl Default for CoverCache {
+    fn default() -> Self {
+        Self::with_capacity(ALBUM_COVER_CACHE_CAPACITY)
+    }
+}
+
+impl CoverCache {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+            capacity: capacity.max(1),
+        }
+    }
+
+    /// `Some(cached)` when the key is present, including a cached `None`.
+    pub(crate) fn get(&mut self, key: &str) -> Option<Option<egui::TextureHandle>> {
+        let value = self.entries.get(key)?.clone();
+        self.touch(key);
+        Some(value)
+    }
+
+    pub(crate) fn insert(&mut self, key: String, value: Option<egui::TextureHandle>) {
+        if self.entries.insert(key.clone(), value).is_none() {
+            self.order.push_back(key);
+        } else {
+            self.touch(&key);
+        }
+        while self.entries.len() > self.capacity {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            self.entries.remove(&oldest);
+        }
+    }
+
+    pub(crate) fn remove(&mut self, key: &str) {
+        self.entries.remove(key);
+        self.order.retain(|item| item != key);
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.order.clear();
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn touch(&mut self, key: &str) {
+        if let Some(index) = self.order.iter().position(|item| item == key) {
+            if let Some(item) = self.order.remove(index) {
+                self.order.push_back(item);
+            }
+        }
+    }
+}
+
 /// Load and cache a cover texture for one album. Shared by the album grid and
 /// the album-art track layout.
 pub(crate) fn load_cover_texture(
     ctx: &egui::Context,
-    covers: &mut HashMap<String, Option<egui::TextureHandle>>,
+    covers: &mut CoverCache,
     key: &str,
     path: &Path,
 ) -> Option<egui::TextureHandle> {
     if let Some(cached) = covers.get(key) {
-        return cached.clone();
+        return cached;
     }
 
     let texture = musicwasp_core::library::cover_art(path)
@@ -1125,7 +1197,7 @@ pub struct App {
     /// Album grid mode and its cached covers.
     pub album_view: bool,
     pub album_groups: Vec<AlbumGroup>,
-    pub(crate) album_covers: HashMap<String, Option<egui::TextureHandle>>,
+    pub(crate) album_covers: CoverCache,
     albums_dirty: bool,
     /// Track-list column settings window.
     pub show_columns: bool,
@@ -1307,7 +1379,7 @@ impl App {
             batch_copy: BatchField::default(),
             album_view: false,
             album_groups: Vec::new(),
-            album_covers: HashMap::new(),
+            album_covers: CoverCache::default(),
             albums_dirty: true,
             show_columns: false,
             columns_reset: false,
@@ -4776,11 +4848,30 @@ mod tests {
         apply_click, auto_number_tracks, best_release_track, clamp_seek, common_fields,
         list_subdirs, mapping_matches, normalize_case_value, queue_insert_next, queue_reorder,
         remove_tracks_from_queue, restore_queue, sanitize_file_name, suggested_mappings, BatchCase,
-        BatchField, TrackField,
+        BatchField, CoverCache, TrackField,
     };
     use musicwasp_core::autotag::{Release, ReleaseTrack};
     use musicwasp_core::{TagEdit, Track};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn cover_cache_evicts_the_least_recently_used_album() {
+        let mut cache = CoverCache::with_capacity(2);
+        cache.insert("a".to_string(), None);
+        cache.insert("b".to_string(), None);
+        assert!(cache.get("a").is_some(), "a is now recently used");
+        cache.insert("c".to_string(), None);
+
+        assert!(cache.get("a").is_some());
+        assert!(cache.get("b").is_none(), "b was least recently used");
+        assert!(cache.get("c").is_some());
+        assert_eq!(cache.len(), 2);
+
+        cache.remove("a");
+        assert_eq!(cache.len(), 1);
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+    }
 
     #[test]
     fn m3u_export_names_are_portable() {
