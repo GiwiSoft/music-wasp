@@ -124,6 +124,16 @@ impl Skin {
         self.definition().high_contrast
     }
 
+    /// Flat, square corners for classic desktop-player skins.
+    pub fn is_square(self) -> bool {
+        self.definition().square
+    }
+
+    /// Tighter widget spacing for compact skins.
+    pub fn is_compact(self) -> bool {
+        self.definition().compact
+    }
+
     /// Four corner colours for the translucent backdrop, or `None` for
     /// opaque skins.
     pub fn backdrop(self) -> Option<[Color32; 4]> {
@@ -153,6 +163,8 @@ struct SkinDefinition {
     light: bool,
     glass: bool,
     high_contrast: bool,
+    square: bool,
+    compact: bool,
     palette: Palette,
     backdrop: Option<[Color32; 4]>,
     icon_light: bool,
@@ -168,6 +180,8 @@ impl SkinDefinition {
             light: false,
             glass: false,
             high_contrast: false,
+            square: false,
+            compact: false,
             palette: Palette::default(),
             backdrop: None,
             icon_light: false,
@@ -205,6 +219,10 @@ struct SkinEntry {
     glass: bool,
     #[serde(default)]
     high_contrast: bool,
+    #[serde(default)]
+    square: bool,
+    #[serde(default)]
+    compact: bool,
     #[serde(default)]
     palette: PaletteEntry,
     #[serde(default)]
@@ -301,6 +319,8 @@ fn parse_skin(entry: SkinEntry, base_dir: Option<&Path>) -> Result<SkinDefinitio
         light: entry.light,
         glass: entry.glass,
         high_contrast: entry.high_contrast,
+        square: entry.square,
+        compact: entry.compact,
         palette,
         backdrop,
         icon_light,
@@ -526,6 +546,21 @@ pub fn apply(ctx: &egui::Context, skin: Skin) {
             color: Color32::from_black_alpha(if skin.is_light() { 45 } else { 110 }),
         };
         v.window_highlight_topmost = true;
+    } else if skin.is_square() {
+        v.window_corner_radius = CornerRadius::same(0);
+        v.menu_corner_radius = CornerRadius::same(0);
+        v.window_shadow = egui::epaint::Shadow {
+            offset: [2, 2],
+            blur: 0,
+            spread: 0,
+            color: Color32::from_black_alpha(180),
+        };
+        v.popup_shadow = egui::epaint::Shadow {
+            offset: [2, 2],
+            blur: 0,
+            spread: 0,
+            color: Color32::from_black_alpha(180),
+        };
     }
     v.widgets.noninteractive.bg_fill = palette.bg_panel;
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, palette.widget_weak);
@@ -549,7 +584,13 @@ pub fn apply(ctx: &egui::Context, skin: Skin) {
         &mut v.widgets.active,
         &mut v.widgets.open,
     ] {
-        w.corner_radius = CornerRadius::same(if glass { 8 } else { 3 });
+        w.corner_radius = CornerRadius::same(if glass {
+            8
+        } else if skin.is_square() {
+            0
+        } else {
+            3
+        });
     }
 
     ctx.set_theme(if skin.is_light() {
@@ -564,6 +605,10 @@ pub fn apply(ctx: &egui::Context, skin: Skin) {
             style.spacing.item_spacing = egui::vec2(8.0, 6.0);
             style.spacing.button_padding = egui::vec2(10.0, 6.0);
             style.spacing.window_margin = egui::Margin::same(12);
+        } else if skin.is_compact() {
+            style.spacing.item_spacing = egui::vec2(4.0, 2.0);
+            style.spacing.button_padding = egui::vec2(6.0, 2.0);
+            style.spacing.window_margin = egui::Margin::same(4);
         } else {
             style.spacing.item_spacing = egui::vec2(6.0, 4.0);
             style.spacing.button_padding = egui::vec2(8.0, 4.0);
@@ -673,6 +718,18 @@ mod tests {
         assert!(!Skin::WASP.is_glass());
         assert!(Skin::LIQUID_GLASS_LIGHT.is_light());
         assert!(!Skin::LIQUID_GLASS_DARK.is_light());
+    }
+
+    #[test]
+    fn winamp_classic_skin_is_flat_and_green() {
+        let skin = Skin::from_id("winamp_classic");
+        assert_eq!(skin.label(), "Winamp Classic");
+        assert!(skin.is_square());
+        assert!(skin.is_compact());
+        assert!(!skin.is_glass());
+        let palette = skin.palette();
+        assert!(palette.accent.g() > 220);
+        assert!(Skin::all().iter().any(|item| item.id() == "winamp_classic"));
     }
 
     #[test]

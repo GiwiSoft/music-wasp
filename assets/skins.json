@@ -74,6 +74,26 @@
       }
     },
     {
+      "id": "winamp_classic",
+      "label": "Winamp Classic",
+      "icon": "dark",
+      "square": true,
+      "compact": true,
+      "palette": {
+        "bg_dark": "#202225",
+        "bg_panel": "#2b2e31",
+        "bg_row_alt": "#33373a",
+        "bg_selected": "#1b4d5c",
+        "accent": "#66ff66",
+        "text_dim": "#9aa1a8",
+        "text": "#d8dde2",
+        "extreme_bg": "#07130d",
+        "widget_inactive": "#3a3e42",
+        "widget_weak": "#303438",
+        "widget_hover": "#4a5055"
+      }
+    },
+    {
       "id": "high_contrast",
       "label": "High contrast",
       "icon": "dark",

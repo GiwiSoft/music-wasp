@@ -38,7 +38,7 @@ This is an early but working project, not a finished product. What runs today:
 | M3U import / export | import `.m3u` / `.m3u8` files (relative paths resolved, missing audio skipped, new files indexed) and export any playlist with `#EXTINF` metadata |
 | Smart playlists | editable rule sets (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
-| Skins | eight built-in palettes plus user skins from `skins.json`, with per-skin colours, glass backdrops, labels and logo/icon; picked from Settings and remembered |
+| Skins | nine built-in palettes plus user skins from `skins.json`, with per-skin colours, glass backdrops, labels and logo/icon; picked from Settings and remembered |
 | Accessibility | logical Tab order, screen-reader labels for icon controls, larger text mode, high-contrast palette and visible focus rings |
 | Settings | tabbed panel: General (skins, accessibility, folder watching), Keybindings, About; shortcuts and track-list column settings persist to `settings.json` |
 | Library hygiene | find rows whose files vanished, detect duplicate artist/title/album groups, and remove entries from the library in bulk; audio files are never deleted |
@@ -168,8 +168,8 @@ icon before the app starts.
 12. **EQ** (`Ctrl+E`) opens the 10-band equalizer. Pick a preset or move the sliders; the curve and
    the running track update immediately. Changes are saved to `settings.json` automatically.
 13. Pick a **Skin** from the dropdown in **Settings**: MusicWasp Dark (default), Midnight, Forest,
-    Mono, High contrast, Liquid Glass Dark, Liquid Glass White, or MusicWasp Light. The choice,
-    logo and window icon update instantly and are remembered. The General tab also toggles
+    Mono, Winamp Classic, High contrast, Liquid Glass Dark, Liquid Glass White, or MusicWasp Light.
+    The choice, logo and window icon update instantly and are remembered. The General tab also toggles
     ReplayGain (with album-gain preference), picks the output device, sets the crossfade length
     (0 s keeps gapless joins) and enables **Larger text and controls** (a 120% interface scale).
     Tab and Shift+Tab follow the logical toolbar and panel order; icon-only buttons expose their
