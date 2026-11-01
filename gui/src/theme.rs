@@ -19,16 +19,18 @@ pub enum Skin {
     Midnight,
     Forest,
     Mono,
+    HighContrast,
     #[serde(alias = "paper")]
     Light,
 }
 
 impl Skin {
-    pub const ALL: [Skin; 5] = [
+    pub const ALL: [Skin; 6] = [
         Skin::Wasp,
         Skin::Midnight,
         Skin::Forest,
         Skin::Mono,
+        Skin::HighContrast,
         Skin::Light,
     ];
 
@@ -38,6 +40,7 @@ impl Skin {
             Skin::Midnight => "Midnight (dark)",
             Skin::Forest => "Forest (dark)",
             Skin::Mono => "Mono (dark)",
+            Skin::HighContrast => "High contrast",
             Skin::Light => "MusicWasp Light",
         }
     }
@@ -100,6 +103,19 @@ impl Skin {
                 widget_weak: Color32::from_rgb(41, 41, 41),
                 widget_hover: Color32::from_rgb(66, 66, 66),
             },
+            Skin::HighContrast => Palette {
+                bg_dark: Color32::BLACK,
+                bg_panel: Color32::from_rgb(10, 10, 10),
+                bg_row_alt: Color32::from_rgb(20, 20, 20),
+                bg_selected: Color32::from_rgb(48, 42, 0),
+                accent: Color32::from_rgb(255, 221, 0),
+                text_dim: Color32::from_rgb(205, 205, 205),
+                text: Color32::WHITE,
+                extreme_bg: Color32::BLACK,
+                widget_inactive: Color32::from_rgb(32, 32, 32),
+                widget_weak: Color32::from_rgb(24, 24, 24),
+                widget_hover: Color32::from_rgb(64, 64, 64),
+            },
             Skin::Light => Palette {
                 bg_dark: Color32::from_rgb(240, 241, 236),
                 bg_panel: Color32::from_rgb(250, 251, 247),
@@ -134,6 +150,9 @@ pub struct Palette {
 }
 
 static ACTIVE: OnceLock<RwLock<Palette>> = OnceLock::new();
+
+/// Extra UI scale used by the larger-font accessibility mode.
+pub const LARGE_TEXT_SCALE: f32 = 1.2;
 
 fn active() -> &'static RwLock<Palette> {
     ACTIVE.get_or_init(|| RwLock::new(Skin::default().palette()))
@@ -180,9 +199,15 @@ pub fn apply(ctx: &egui::Context, skin: Skin) {
     v.extreme_bg_color = palette.extreme_bg;
     v.faint_bg_color = palette.bg_row_alt;
     v.selection.bg_fill = palette.bg_selected;
-    v.selection.stroke = Stroke::new(1.0_f32, palette.accent);
+    v.selection.stroke = Stroke::new(
+        if skin == Skin::HighContrast { 2.0 } else { 1.0 },
+        palette.accent,
+    );
     v.hyperlink_color = palette.accent;
-    v.window_stroke = Stroke::new(1.0_f32, palette.widget_hover);
+    v.window_stroke = Stroke::new(
+        if skin == Skin::HighContrast { 2.0 } else { 1.0 },
+        palette.widget_hover,
+    );
     v.widgets.noninteractive.bg_fill = palette.bg_panel;
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, palette.widget_weak);
     v.widgets.inactive.bg_fill = palette.widget_inactive;
@@ -222,6 +247,12 @@ pub fn apply(ctx: &egui::Context, skin: Skin) {
     });
 }
 
+/// Apply the accessibility text scale to the whole UI, not just labels, so
+/// buttons and table rows grow together and nothing clips.
+pub fn apply_text_scale(ctx: &egui::Context, large: bool) {
+    ctx.set_zoom_factor(if large { LARGE_TEXT_SCALE } else { 1.0 });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +280,17 @@ mod tests {
 
         // Leave the default behind for any other test that paints.
         apply(&ctx, Skin::default());
+    }
+
+    #[test]
+    fn high_contrast_skin_is_dark_and_maximally_legible() {
+        let palette = Skin::HighContrast.palette();
+        assert!(!Skin::HighContrast.is_light());
+        assert_eq!(palette.bg_dark, Color32::BLACK);
+        assert_eq!(palette.text, Color32::WHITE);
+        assert!(palette.accent.r() > 240);
+        assert!(palette.text_dim.r() > 180);
+        assert_eq!(Skin::HighContrast.label(), "High contrast");
+        assert!(Skin::ALL.contains(&Skin::HighContrast));
     }
 }

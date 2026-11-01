@@ -2,7 +2,7 @@
 
 use crate::app::App;
 use crate::theme as th;
-use egui::{Color32, RichText, Sense, Stroke};
+use egui::{Color32, RichText, Sense, Stroke, WidgetInfo, WidgetType};
 use musicwasp_core::dsp::{self, Equalizer, BAND_FREQS, GAIN_RANGE_DB, PREAMP_RANGE_DB};
 
 pub fn window(app: &mut App, ctx: &egui::Context) {
@@ -70,12 +70,15 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                             .strong()
                             .color(th::text_dim()),
                     );
-                    ui.add_sized(
+                    let preamp = ui.add_sized(
                         [34.0, 145.0],
                         egui::Slider::new(&mut eq.preamp_db, -PREAMP_RANGE_DB..=PREAMP_RANGE_DB)
                             .vertical()
                             .show_value(false),
                     );
+                    preamp.widget_info(|| {
+                        WidgetInfo::labeled(WidgetType::Slider, true, "Preamp gain")
+                    });
                     ui.label(
                         RichText::new(format!("{:+.1}", eq.preamp_db))
                             .monospace()
@@ -90,12 +93,19 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                 for (band, freq) in BAND_FREQS.iter().enumerate() {
                     ui.vertical(|ui| {
                         let gain = &mut eq.gains_db[band];
-                        ui.add_sized(
+                        let slider = ui.add_sized(
                             [32.0, 145.0],
                             egui::Slider::new(gain, -GAIN_RANGE_DB..=GAIN_RANGE_DB)
                                 .vertical()
                                 .show_value(false),
                         );
+                        slider.widget_info(|| {
+                            WidgetInfo::labeled(
+                                WidgetType::Slider,
+                                true,
+                                format!("{freq} Hz band gain"),
+                            )
+                        });
                         ui.label(
                             RichText::new(format!("{:+.1}", *gain))
                                 .monospace()

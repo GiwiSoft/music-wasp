@@ -5,7 +5,7 @@ use crate::app::{
 use crate::icons;
 use crate::settings::{TrackColumn, TrackLayout};
 use crate::theme as th;
-use egui::{Color32, RichText};
+use egui::{Color32, RichText, WidgetInfo, WidgetType};
 use egui_extras::{Column, TableBuilder};
 use musicwasp_core::{Playlist, PlaylistFolder, SortKey, Track};
 use std::collections::{BTreeSet, HashMap};
@@ -71,13 +71,13 @@ fn fold_button(ui: &mut egui::Ui, folded: bool, tooltip: &str) -> bool {
     } else {
         icons::CARET_DOWN
     };
-    ui.add(
+    let response = ui.add(
         egui::Button::new(icons::text(icon, 12.0))
             .frame(false)
             .min_size(egui::vec2(18.0, 18.0)),
-    )
-    .on_hover_text(tooltip)
-    .clicked()
+    );
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tooltip));
+    response.on_hover_text(tooltip).clicked()
 }
 
 /// Section title; clicking it also folds the section.
@@ -302,18 +302,23 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             ui.label(RichText::new(view_label).size(12.0).color(th::text()));
             ui.separator();
 
-            ui.label(icons::text(icons::MAGNIFYING_GLASS, 13.0).color(th::text_dim()))
+            let search_label = ui
+                .label(icons::text(icons::MAGNIFYING_GLASS, 13.0).color(th::text_dim()))
                 .on_hover_text(
                     "Advanced search: artist:\"radiohead\" year:1997\n\
                      Fields: title, artist, album, albumartist, genre, format,\n\
                      year, track, disc, duration. Use >, <, >=, <= or 1990..1999.",
                 );
-            let search = ui.add_sized(
-                [180.0, 24.0],
-                egui::TextEdit::singleline(&mut app.search)
-                    .id(egui::Id::new("search_box"))
-                    .hint_text("search or artist:\"radiohead\" year:1997"),
-            );
+            search_label
+                .widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, "Search tracks"));
+            let search = ui
+                .add_sized(
+                    [180.0, 24.0],
+                    egui::TextEdit::singleline(&mut app.search)
+                        .id(egui::Id::new("search_box"))
+                        .hint_text("search or artist:\"radiohead\" year:1997"),
+                )
+                .labelled_by(search_label.id);
             if search.changed() {
                 app.mark_tracks_dirty();
             }
@@ -327,7 +332,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             let mut edit_saved: Option<i64> = None;
             let mut delete_saved: Option<i64> = None;
             let saved = app.saved_searches.clone();
-            ui.menu_button(icons::text(icons::BOOKMARK_SIMPLE, 14.0), |ui| {
+            let saved_menu = ui.menu_button(icons::text(icons::BOOKMARK_SIMPLE, 14.0), |ui| {
                 if ui.button("Save current search…").clicked() {
                     save_search = true;
                     ui.close();
@@ -354,9 +359,11 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         }
                     });
                 }
-            })
-            .response
-            .on_hover_text("Saved searches");
+            });
+            let saved_menu = saved_menu.response;
+            saved_menu
+                .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Saved searches"));
+            saved_menu.on_hover_text("Saved searches");
             if save_search {
                 app.open_save_search_dialog();
             }
@@ -371,15 +378,17 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             }
 
             ui.separator();
-            ui.add_sized(
+            let scan_path = ui.add_sized(
                 [210.0, 24.0],
                 egui::TextEdit::singleline(&mut app.scan_path)
                     .id(egui::Id::new("scan_path"))
                     .hint_text("folder to scan"),
             );
-            if icons::compact(ui, icons::FOLDER_OPEN, "Choose a music folder").clicked() {
+            let folder = icons::compact(ui, icons::FOLDER_OPEN, "Choose a music folder");
+            if folder.clicked() {
                 app.open_picker();
             }
+            scan_path.labelled_by(folder.id);
             let scanning = app.is_scanning();
             if icons::button_enabled(
                 ui,
@@ -659,7 +668,7 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                 );
                 playlists_toggled |= section_label(ui, icons::QUEUE, "PLAYLISTS");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.menu_button(icons::text(icons::PLUS, 14.0), |ui| {
+                    let menu = ui.menu_button(icons::text(icons::PLUS, 14.0), |ui| {
                         if ui.button("Save current view as playlist").clicked() {
                             act = Some(Act::SaveView);
                             ui.close();
@@ -672,9 +681,16 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                             act = Some(Act::ImportM3u);
                             ui.close();
                         }
-                    })
-                    .response
-                    .on_hover_text("New playlist, folder or M3U import");
+                    });
+                    let response = menu.response;
+                    response.widget_info(|| {
+                        WidgetInfo::labeled(
+                            WidgetType::Button,
+                            true,
+                            "New playlist, folder or M3U import",
+                        )
+                    });
+                    response.on_hover_text("New playlist, folder or M3U import");
                     if icons::compact(ui, icons::SPARKLE, "New smart playlist").clicked() {
                         act = Some(Act::NewSmart);
                     }
@@ -933,7 +949,9 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
                 ui.spacing_mut().slider_width = 120.0;
-                ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
+                let volume =
+                    ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
+                volume.widget_info(|| WidgetInfo::labeled(WidgetType::Slider, true, "Volume"));
                 ui.label(icons::text(icons::SPEAKER_HIGH, 14.0).color(th::text_dim()))
                     .on_hover_text("Volume");
             });
@@ -957,6 +975,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     .show_value(false)
                     .trailing_fill(true),
             );
+            resp.widget_info(|| WidgetInfo::labeled(WidgetType::Slider, true, "Seek"));
             if resp.dragged() {
                 app.seek_drag = Some(pos);
             }
@@ -1091,6 +1110,7 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                             .show_value(false)
                             .trailing_fill(true),
                     );
+                    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Slider, true, "Seek"));
                     if resp.dragged() {
                         app.seek_drag = Some(pos);
                     }
@@ -1151,7 +1171,9 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                 ui.horizontal(|ui| {
                     ui.label(icons::text(icons::SPEAKER_HIGH, 14.0).color(th::text_dim()));
                     ui.spacing_mut().slider_width = 120.0;
-                    ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
+                    let volume =
+                        ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
+                    volume.widget_info(|| WidgetInfo::labeled(WidgetType::Slider, true, "Volume"));
                 });
             });
 
@@ -1481,6 +1503,16 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                     },
                                 );
 
+                                resp.widget_info(|| {
+                                    WidgetInfo::labeled(
+                                        WidgetType::Button,
+                                        true,
+                                        format!(
+                                            "Queue entry {}: {} by {}",
+                                            display_row, track.title, track.artist
+                                        ),
+                                    )
+                                });
                                 let resp = resp.on_hover_text(format!(
                                     "Play now\n{} - {}\nDrag to reorder",
                                     track.title,
@@ -1651,6 +1683,16 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                             egui::vec2(tile_width, tile_height),
                             egui::Sense::click(),
                         );
+                        response.widget_info(|| {
+                            WidgetInfo::labeled(
+                                WidgetType::Button,
+                                true,
+                                format!(
+                                    "{} by {}, {} track(s)",
+                                    group.album, group.artist, group.track_count
+                                ),
+                            )
+                        });
                         if response.hovered() {
                             ui.painter().rect_filled(rect, 4.0, th::bg_row_alt());
                         }
@@ -2155,7 +2197,10 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
             .header(header_height, |mut h| {
                 if art_column {
                     h.col(|ui| {
-                        ui.label(icons::text(icons::IMAGE, 12.0).color(th::text_dim()));
+                        ui.label(icons::text(icons::IMAGE, 12.0).color(th::text_dim()))
+                            .widget_info(|| {
+                                WidgetInfo::labeled(WidgetType::Label, true, "Album art")
+                            });
                     });
                 }
                 for column in &visible_columns {
@@ -2648,11 +2693,12 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
                     let field = |ui: &mut egui::Ui, label: &str, value: &mut String| {
-                        ui.label(RichText::new(label).size(12.0).color(th::text_dim()));
+                        let label = ui.label(RichText::new(label).size(12.0).color(th::text_dim()));
                         ui.add_sized(
                             [320.0, 22.0],
                             egui::TextEdit::singleline(value).hint_text(hint),
-                        );
+                        )
+                        .labelled_by(label.id);
                         ui.end_row();
                     };
                     field(ui, "Title", &mut state.edit.title);
@@ -2665,20 +2711,26 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                     let mut track_no = state.edit.track_no.unwrap_or(0);
                     let mut disc_no = state.edit.disc_no.unwrap_or(0);
 
-                    ui.label(RichText::new("Year").size(12.0).color(th::text_dim()));
-                    ui.add(egui::DragValue::new(&mut year).range(0..=9999).speed(1.0));
+                    let year_label =
+                        ui.label(RichText::new("Year").size(12.0).color(th::text_dim()));
+                    ui.add(egui::DragValue::new(&mut year).range(0..=9999).speed(1.0))
+                        .labelled_by(year_label.id);
                     ui.end_row();
 
-                    ui.label(RichText::new("Track no").size(12.0).color(th::text_dim()));
+                    let track_label =
+                        ui.label(RichText::new("Track no").size(12.0).color(th::text_dim()));
                     ui.add(
                         egui::DragValue::new(&mut track_no)
                             .range(0..=999)
                             .speed(1.0),
-                    );
+                    )
+                    .labelled_by(track_label.id);
                     ui.end_row();
 
-                    ui.label(RichText::new("Disc no").size(12.0).color(th::text_dim()));
-                    ui.add(egui::DragValue::new(&mut disc_no).range(0..=99).speed(1.0));
+                    let disc_label =
+                        ui.label(RichText::new("Disc no").size(12.0).color(th::text_dim()));
+                    ui.add(egui::DragValue::new(&mut disc_no).range(0..=99).speed(1.0))
+                        .labelled_by(disc_label.id);
                     ui.end_row();
 
                     state.edit.year = (year > 0).then_some(year);
@@ -2810,13 +2862,15 @@ pub fn rename_window(app: &mut App, ctx: &egui::Context) {
                 }
                 _ => "New name".to_string(),
             };
-            ui.label(RichText::new(hint).size(10.5).color(th::text_dim()));
+            let hint_label = ui.label(RichText::new(&hint).size(10.5).color(th::text_dim()));
             ui.add_space(4.0);
 
-            let resp = ui.add_sized(
-                [300.0, 24.0],
-                egui::TextEdit::singleline(&mut state.text).hint_text("new value"),
-            );
+            let resp = ui
+                .add_sized(
+                    [300.0, 24.0],
+                    egui::TextEdit::singleline(&mut state.text).hint_text("new value"),
+                )
+                .labelled_by(hint_label.id);
             if state.request_focus {
                 resp.request_focus();
                 state.request_focus = false;
@@ -2889,10 +2943,13 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
                 .color(th::text_dim()),
             );
             ui.add_space(4.0);
-            let resp = ui.add_sized(
-                [260.0, 22.0],
-                egui::TextEdit::singleline(&mut name).hint_text("playlist name"),
-            );
+            let name_label = ui.label(RichText::new("Playlist name").size(10.5));
+            let resp = ui
+                .add_sized(
+                    [260.0, 22.0],
+                    egui::TextEdit::singleline(&mut name).hint_text("playlist name"),
+                )
+                .labelled_by(name_label.id);
             if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 create = true;
             }
@@ -2938,10 +2995,13 @@ pub fn folder_dialog(app: &mut App, ctx: &egui::Context) {
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.add_space(4.0);
-            let resp = ui.add_sized(
-                [280.0, 22.0],
-                egui::TextEdit::singleline(&mut draft.name).hint_text("folder name"),
-            );
+            let name_label = ui.label(RichText::new("Folder name").size(10.5));
+            let resp = ui
+                .add_sized(
+                    [280.0, 22.0],
+                    egui::TextEdit::singleline(&mut draft.name).hint_text("folder name"),
+                )
+                .labelled_by(name_label.id);
             if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 create = true;
             }
@@ -3006,24 +3066,27 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
             );
             ui.add_space(6.0);
 
-            ui.label(RichText::new("Playlist file").size(10.5));
-            let path_resp = ui.add_sized(
-                [520.0, 22.0],
-                egui::TextEdit::singleline(&mut draft.path).hint_text(if importing {
-                    "/home/me/Music/mix.m3u8"
-                } else {
-                    "/home/me/Music/playlist.m3u8"
-                }),
-            );
+            let file_label = ui.label(RichText::new("Playlist file").size(10.5));
+            let path_resp = ui
+                .add_sized(
+                    [520.0, 22.0],
+                    egui::TextEdit::singleline(&mut draft.path).hint_text(if importing {
+                        "/home/me/Music/mix.m3u8"
+                    } else {
+                        "/home/me/Music/playlist.m3u8"
+                    }),
+                )
+                .labelled_by(file_label.id);
 
             if importing {
                 ui.add_space(6.0);
-                ui.label(RichText::new("Playlist name").size(10.5));
+                let name_label = ui.label(RichText::new("Playlist name").size(10.5));
                 ui.add_sized(
                     [320.0, 22.0],
                     egui::TextEdit::singleline(&mut draft.name)
                         .hint_text("optional, defaults to the file name"),
-                );
+                )
+                .labelled_by(name_label.id);
 
                 ui.add_space(6.0);
                 ui.label(RichText::new("Folder").size(10.5));
@@ -3199,18 +3262,22 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
     .default_width(460.0)
     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
     .show(ctx, |ui| {
-        ui.label(RichText::new("Name").size(10.5));
-        let name_resp = ui.add_sized(
-            [440.0, 22.0],
-            egui::TextEdit::singleline(&mut draft.name).hint_text("e.g. Radiohead 1997"),
-        );
+        let name_label = ui.label(RichText::new("Name").size(10.5));
+        let name_resp = ui
+            .add_sized(
+                [440.0, 22.0],
+                egui::TextEdit::singleline(&mut draft.name).hint_text("e.g. Radiohead 1997"),
+            )
+            .labelled_by(name_label.id);
         ui.add_space(6.0);
-        ui.label(RichText::new("Query").size(10.5));
-        let query_resp = ui.add_sized(
-            [440.0, 22.0],
-            egui::TextEdit::singleline(&mut draft.query)
-                .hint_text("artist:\"radiohead\" year:1997"),
-        );
+        let query_label = ui.label(RichText::new("Query").size(10.5));
+        let query_resp = ui
+            .add_sized(
+                [440.0, 22.0],
+                egui::TextEdit::singleline(&mut draft.query)
+                    .hint_text("artist:\"radiohead\" year:1997"),
+            )
+            .labelled_by(query_label.id);
         ui.add_space(4.0);
         ui.label(
             RichText::new(
@@ -3579,6 +3646,33 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 );
 
                 ui.add_space(8.0);
+                ui.label(
+                    RichText::new("ACCESSIBILITY")
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                let mut large_fonts = app.settings.large_fonts;
+                if ui
+                    .checkbox(
+                        &mut large_fonts,
+                        RichText::new("Larger text and controls").size(11.5),
+                    )
+                    .on_hover_text("Scales the whole interface, including tables and dialogs")
+                    .changed()
+                {
+                    app.set_large_fonts(ctx, large_fonts);
+                }
+                ui.label(
+                    RichText::new(
+                        "Use Tab and Shift+Tab to move through controls; tooltips describe icon-only buttons.",
+                    )
+                    .size(10.0)
+                    .color(th::text_dim()),
+                );
+
+                ui.add_space(8.0);
                 let mut watching = app.settings.watch_enabled;
                 if ui
                     .checkbox(
@@ -3699,12 +3793,15 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     RichText::new("Scrobble to ListenBrainz").size(11.5),
                 );
                 if scrobble_enabled {
+                    let token_label =
+                        ui.label(RichText::new("ListenBrainz token").size(10.5));
                     ui.add_sized(
                         [300.0, 22.0],
                         egui::TextEdit::singleline(&mut scrobble_token)
                             .password(true)
                             .hint_text("ListenBrainz user token"),
-                    );
+                    )
+                    .labelled_by(token_label.id);
                     ui.label(
                         RichText::new(
                             "No developer API key: paste a token from your ListenBrainz profile.",

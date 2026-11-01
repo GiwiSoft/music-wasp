@@ -38,8 +38,9 @@ This is an early but working project, not a finished product. What runs today:
 | M3U import / export | import `.m3u` / `.m3u8` files (relative paths resolved, missing audio skipped, new files indexed) and export any playlist with `#EXTINF` metadata |
 | Smart playlists | editable rule sets (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
-| Skins | five palettes (MusicWasp Dark, Midnight, Forest, Mono, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
-| Settings | tabbed panel: General (skins, folder watching), Keybindings, About; shortcuts and track-list column settings persist to `settings.json` |
+| Skins | six palettes (MusicWasp Dark, Midnight, Forest, Mono, High contrast, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
+| Accessibility | logical Tab order, screen-reader labels for icon controls, larger text mode, high-contrast palette and visible focus rings |
+| Settings | tabbed panel: General (skins, accessibility, folder watching), Keybindings, About; shortcuts and track-list column settings persist to `settings.json` |
 | Library hygiene | find rows whose files vanished, detect duplicate artist/title/album groups, and remove entries from the library in bulk; audio files are never deleted |
 | Folder watching | scanned folders are watched with `notify`: new audio is imported automatically and external tag edits refresh existing rows; manual **Scan** still works |
 | Linux desktop | MPRIS2 service: desktop media keys, GNOME/KDE controls, lock screen, `playerctl` and Bluetooth headset buttons; publishes track, position, volume, shuffle and repeat |
@@ -165,9 +166,11 @@ icon before the app starts.
 12. **EQ** (`Ctrl+E`) opens the 10-band equalizer. Pick a preset or move the sliders; the curve and
    the running track update immediately. Changes are saved to `settings.json` automatically.
 13. Pick a **Skin** from the dropdown in **Settings**: MusicWasp Dark (default), Midnight, Forest,
-    Mono, or MusicWasp Light. The choice, logo and window icon update instantly and are remembered.
-    The General tab also toggles ReplayGain (with album-gain preference), picks the output device
-    and sets the crossfade length (0 s keeps gapless joins).
+    Mono, High contrast, or MusicWasp Light. The choice, logo and window icon update instantly and
+    are remembered. The General tab also toggles ReplayGain (with album-gain preference), picks the
+    output device, sets the crossfade length (0 s keeps gapless joins) and enables **Larger text and
+    controls** (a 120% interface scale). Tab and Shift+Tab follow the logical toolbar and panel
+    order; icon-only buttons expose their tooltip text to screen readers.
 14. Close and reopen the app: it comes back to the same view, search, selection, volume, queue and
     window size/position. Playback always starts stopped, with no track loaded; press `Space` to
     play the current queue entry from the beginning. Session state is written every few seconds and
@@ -308,6 +311,7 @@ cli/    musicwasp-cli    headless library tool
   It also persists the equalizer state, selected skin and track-list column configuration.
 - **`gui::theme`** is a small skin engine: named palettes drive egui's `Visuals` and the colours
   that custom-painted widgets (equalizer curve, drag marker, album-art placeholder) use directly.
+  It also owns the high-contrast palette, visible focus strokes and the larger-text UI scale.
 
 Database schema (SQLite, `PRAGMA journal_mode=WAL`):
 

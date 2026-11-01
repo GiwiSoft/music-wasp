@@ -400,6 +400,9 @@ pub struct Settings {
     /// Colour skin.
     #[serde(default)]
     pub skin: Skin,
+    /// Scale the whole interface for larger text and controls.
+    #[serde(default)]
+    pub large_fonts: bool,
     /// Collapsed state of the left browser sections.
     #[serde(default)]
     pub folded: FoldedSections,
@@ -496,6 +499,7 @@ impl Default for Settings {
             shortcuts,
             equalizer: Equalizer::default(),
             skin: Skin::default(),
+            large_fonts: false,
             folded: FoldedSections::default(),
             columns: ColumnConfig::default(),
             queue_open: default_queue_open(),
@@ -798,6 +802,7 @@ mod tests {
 
         let settings = Settings {
             watch_enabled: false,
+            large_fonts: true,
             replaygain: false,
             replaygain_album: true,
             output_device: Some("Speakers".to_string()),
@@ -826,6 +831,7 @@ mod tests {
         let loaded = Settings::load(&path);
         assert_eq!(loaded.session, settings.session);
         assert!(!loaded.watch_enabled);
+        assert!(loaded.large_fonts);
         assert_eq!(loaded.watch_folders, vec!["/music".to_string()]);
         assert!(!loaded.replaygain);
         assert!(loaded.replaygain_album);
@@ -863,6 +869,7 @@ mod tests {
         let loaded = Settings::load(&path);
         assert!(!loaded.equalizer.enabled);
         assert_eq!(loaded.skin, crate::theme::Skin::default());
+        assert!(!loaded.large_fonts);
         assert_eq!(loaded.shortcut(Action::PlayPause).unwrap().token(), "space");
         assert_eq!(loaded.session, Session::default());
         assert!(loaded.watch_enabled);

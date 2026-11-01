@@ -1186,6 +1186,7 @@ impl App {
         settings.equalizer = settings.equalizer.clamped();
         crate::icons::install(&cc.egui_ctx);
         crate::theme::apply(&cc.egui_ctx, settings.skin);
+        crate::theme::apply_text_scale(&cc.egui_ctx, settings.large_fonts);
 
         // Headless UI tests use a temporary data dir and no audio/watcher/MPRIS.
         let test_mode = std::env::var_os("MUSICWASP_TEST").is_some();
@@ -3405,6 +3406,7 @@ impl App {
         self.capture = None;
         self.watch_dirty = true;
         crate::theme::apply(ctx, self.settings.skin);
+        crate::theme::apply_text_scale(ctx, self.settings.large_fonts);
         self.refresh_brand_icon(ctx);
         if let Some(player) = &self.player {
             player.set_replaygain(self.settings.replaygain, self.settings.replaygain_album);
@@ -3422,6 +3424,15 @@ impl App {
             self.settings.skin = skin;
             crate::theme::apply(ctx, skin);
             self.refresh_brand_icon(ctx);
+            self.persist_settings();
+        }
+    }
+
+    /// Toggle the larger-text accessibility mode.
+    pub fn set_large_fonts(&mut self, ctx: &egui::Context, large: bool) {
+        if self.settings.large_fonts != large {
+            self.settings.large_fonts = large;
+            crate::theme::apply_text_scale(ctx, large);
             self.persist_settings();
         }
     }

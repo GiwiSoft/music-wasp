@@ -5,7 +5,7 @@
 //! labels and buttons: `format!("{} Save", icons::FLOPPY_DISK.as_str())`.
 
 use crate::theme as th;
-use egui::RichText;
+use egui::{RichText, WidgetInfo, WidgetType};
 use egui_phosphor_icons::Icon;
 
 pub use egui_phosphor_icons::icons::*;
@@ -71,12 +71,16 @@ pub fn with(icon: Icon, label: &str) -> String {
 
 /// A button with a leading icon and a text label.
 pub fn button(ui: &mut egui::Ui, icon: Icon, label: &str) -> egui::Response {
-    ui.button(with(icon, label))
+    let response = ui.button(with(icon, label));
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
+    response
 }
 
 /// An enabled/disabled button with a leading icon and a text label.
 pub fn button_enabled(ui: &mut egui::Ui, enabled: bool, icon: Icon, label: &str) -> egui::Response {
-    ui.add_enabled(enabled, egui::Button::new(with(icon, label)))
+    let response = ui.add_enabled(enabled, egui::Button::new(with(icon, label)));
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, label));
+    response
 }
 
 /// A compact icon-only button (with a tooltip), for dense rows.
@@ -92,13 +96,16 @@ pub fn compact_enabled(
     tooltip: &str,
 ) -> egui::Response {
     let button = egui::Button::new(text(icon, 14.0)).min_size(egui::vec2(24.0, 22.0));
-    ui.add_enabled(enabled, button).on_hover_text(tooltip)
+    let response = ui.add_enabled(enabled, button);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tooltip));
+    response.on_hover_text(tooltip)
 }
 
 /// A toggle rendered as a single icon, e.g. shuffle and repeat.
 pub fn toggle(ui: &mut egui::Ui, selected: bool, icon: Icon, tooltip: &str) -> egui::Response {
-    ui.selectable_label(selected, text(icon, 15.0))
-        .on_hover_text(tooltip)
+    let response = ui.selectable_label(selected, text(icon, 15.0));
+    response.widget_info(|| WidgetInfo::selected(WidgetType::Button, true, selected, tooltip));
+    response.on_hover_text(tooltip)
 }
 
 /// A transport control. `primary` fills the button with the accent colour.
@@ -117,5 +124,7 @@ pub fn transport(
     if primary {
         button = button.fill(th::accent());
     }
-    ui.add(button).on_hover_text(tooltip)
+    let response = ui.add(button);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tooltip));
+    response.on_hover_text(tooltip)
 }

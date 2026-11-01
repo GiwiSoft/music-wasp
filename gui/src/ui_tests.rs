@@ -6,6 +6,7 @@
 
 use crate::app::{App, AutoTagStage};
 use crate::settings::{TrackColumn, TrackLayout};
+use crate::theme::Skin;
 use egui::accesskit::Role;
 use egui_kittest::kittest::Queryable;
 use egui_kittest::Harness;
@@ -304,6 +305,23 @@ fn advanced_search_and_column_manager_update_the_ui() {
 
     let mut harness = harness();
     harness.run_steps(3);
+
+    assert!(harness.query_by_label("Scan").is_some());
+    assert!(harness.query_by_label("Saved searches").is_some());
+    assert!(harness.query_by_label_contains("Settings: skins").is_some());
+
+    // Tab should start at Search, the first focusable control in the toolbar.
+    harness.key_press(egui::Key::Tab);
+    harness.run_steps(1);
+    let focused = text_inputs(&harness)
+        .into_iter()
+        .find(|node| node.is_focused())
+        .expect("Tab should focus a text input");
+    assert!(
+        focused.value().is_none_or(|value| value.is_empty()),
+        "the first tab stop should be the empty search box"
+    );
+
     let inputs = text_inputs(&harness);
     let search = inputs.first().expect("search text input");
     search.focus();
@@ -350,6 +368,23 @@ fn advanced_search_and_column_manager_update_the_ui() {
         harness.state().settings.columns.layout,
         TrackLayout::Compact
     );
+
+    harness.get_by_label_contains("Settings: skins").click();
+    harness.run_steps(1);
+    assert!(
+        harness.state().show_settings,
+        "settings window did not open"
+    );
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Larger text and controls")
+        .click_accesskit();
+    harness.run_steps(1);
+    assert!(harness.state().settings.large_fonts);
+
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_skin(&ctx, Skin::HighContrast);
+    harness.run_steps(1);
+    assert_eq!(harness.state().settings.skin, Skin::HighContrast);
 }
 
 #[test]
