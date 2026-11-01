@@ -147,14 +147,16 @@ icon before the app starts.
    auto-number tracks (per disc), normalize case (title/lower/UPPER), clear a chosen field, or copy
    a field from the first selected track. All batch actions are covered by the same Undo snapshot.
 8. The plus menu next to **PLAYLISTS** saves the current selection (or the whole view) as a
-   playlist, and also creates a playlist folder or imports an M3U/M3U8 file; the sparkle button
+   playlist, creates an empty playlist, creates a playlist folder, or imports an M3U/M3U8 file.
+   The new-playlist dialog also has a **Create empty playlist** checkbox. The sparkle button
    creates a smart playlist from rules. Right-click a playlist for
    **Rename**, **Export M3U…**, **Move to folder** and **Delete**; drag a playlist onto a folder to
-   move it. Right-click a folder to create a subfolder, rename it or delete it (its contents move up
-   one level). Right-click a smart playlist and choose **Edit rules…** to change its rules, sort,
-   limit or name. Inside a playlist, drag rows to reorder, use **Remove**/`Delete` to drop tracks,
-   **Up**/**Down** (or `Alt`+arrows) to nudge a selection, and drag rows onto another playlist to
-   move them there. Dropping M3U files from the file manager imports them too.
+   move it. Right-click a folder to create a playlist directly inside it, create a subfolder, rename
+   it or delete it (its contents move up one level). Right-click a smart playlist and choose
+   **Edit rules…** to change its rules, sort, limit or name. Inside a playlist, drag rows to reorder,
+   use **Remove**/`Delete` to drop tracks, **Up**/**Down** (or `Alt`+arrows) to nudge a selection,
+   and drag rows onto another playlist to move them there. Dropping M3U files from the file manager
+   imports them too.
 9. The monitor button in the toolbar switches to a plain now-playing view with large cover,
    transport, seek, volume and the next track. Press it again to return to the library.
 10. Click a track cell (title, artist, album, genre, year, track no) and press `F2` to rename that

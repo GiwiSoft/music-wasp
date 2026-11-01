@@ -1107,6 +1107,10 @@ pub struct App {
     pub smart_playlists: Vec<SmartPlaylist>,
     pub smart_dialog: Option<SmartDraft>,
     pub playlist_dialog: Option<String>,
+    /// When true the new playlist does not copy the current view/selection.
+    pub playlist_dialog_empty: bool,
+    /// Folder that will receive the new playlist.
+    pub playlist_dialog_folder: Option<i64>,
     pub folder_dialog: Option<FolderDraft>,
     pub m3u_dialog: Option<M3uDraft>,
     pub saved_searches: Vec<SavedSearch>,
@@ -1287,6 +1291,8 @@ impl App {
             smart_playlists: Vec::new(),
             smart_dialog: None,
             playlist_dialog: None,
+            playlist_dialog_empty: false,
+            playlist_dialog_folder: None,
             folder_dialog: None,
             m3u_dialog: None,
             saved_searches: Vec::new(),
@@ -1588,21 +1594,51 @@ impl App {
         }
     }
 
-    /// Save the currently displayed tracks as a new playlist.
+    /// Open the new-playlist dialog. Empty playlists skip the current view.
+    /// `folder` places the result inside a playlist folder.
+    pub fn open_playlist_dialog(&mut self, empty: bool, folder: Option<i64>) {
+        let n = self.playlists.len() + 1;
+        self.playlist_dialog = Some(format!("Playlist {n}"));
+        self.playlist_dialog_empty = empty;
+        self.playlist_dialog_folder = folder;
+    }
+
+    /// Save the currently displayed tracks as a new playlist, or create an
+    /// empty one when the dialog requested it.
     pub fn commit_playlist_dialog(&mut self) {
         let Some(name) = self.playlist_dialog.clone() else {
             return;
         };
         let selected = self.selected_in_view();
-        let ids: Vec<i64> = if selected.is_empty() {
+        let ids: Vec<i64> = if self.playlist_dialog_empty {
+            Vec::new()
+        } else if selected.is_empty() {
             self.tracks.iter().map(|t| t.id).collect()
         } else {
             selected
         };
         match self.lib.create_playlist(&name, &ids) {
             Ok(id) => {
-                self.message = format!("playlist \"{}\" saved ({} tracks)", name.trim(), ids.len());
+                let folder = self.playlist_dialog_folder;
+                let moved = match folder {
+                    Some(folder) => self
+                        .lib
+                        .move_playlist_to_folder(id, Some(folder))
+                        .map_err(|error| format!("created, but could not move to folder: {error}")),
+                    None => Ok(()),
+                };
+                self.message = match moved {
+                    Ok(()) if self.playlist_dialog_empty => {
+                        format!("empty playlist \"{}\" created", name.trim())
+                    }
+                    Ok(()) => {
+                        format!("playlist \"{}\" saved ({} tracks)", name.trim(), ids.len())
+                    }
+                    Err(error) => error,
+                };
                 self.playlist_dialog = None;
+                self.playlist_dialog_empty = false;
+                self.playlist_dialog_folder = None;
                 self.view = View::Playlist(id);
                 self.mark_browser_dirty();
             }

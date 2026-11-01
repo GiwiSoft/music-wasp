@@ -269,6 +269,69 @@ fn serve(mut stream: TcpStream) -> Option<String> {
 // ---------------------------------------------------------------- tests
 
 #[test]
+fn folder_context_menu_creates_a_playlist_in_that_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    let folder = {
+        let lib = Library::open_at(&dir.path().join("library.db")).unwrap();
+        lib.create_playlist_folder("Setlists", None).unwrap()
+    };
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.get_by_label_contains("Setlists").click_secondary();
+    harness.run_steps(1);
+    harness.get_by_label("New playlist here…").click();
+    harness.run_steps(2);
+    assert!(harness.state().playlist_dialog_folder == Some(folder));
+    assert!(harness.query_by_label_contains("Destination:").is_some());
+
+    harness.get_by_label("Create").click();
+    harness.run_steps(2);
+
+    let playlists = &harness.state().playlists;
+    assert_eq!(playlists.len(), 1);
+    assert_eq!(playlists[0].folder_id, Some(folder));
+    assert_eq!(playlists[0].count, 0);
+}
+
+#[test]
+fn can_create_an_empty_playlist_from_the_dialog() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[SeedTrack {
+            file: "one.wav",
+            title: "One",
+            artist: "Artist",
+            album: "Album",
+            year: 2024,
+            track_no: 1,
+        }],
+    );
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.state_mut().open_playlist_dialog(false, None);
+    harness.run_steps(2);
+
+    harness
+        .get_by_role_and_label(Role::CheckBox, "Create empty playlist")
+        .click_accesskit();
+    harness.run_steps(1);
+    assert!(harness.state().playlist_dialog_empty);
+
+    harness.get_by_label("Create").click();
+    harness.run_steps(2);
+
+    let playlists = &harness.state().playlists;
+    assert_eq!(playlists.len(), 1);
+    assert_eq!(playlists[0].count, 0, "the new playlist must be empty");
+    assert!(harness.state().playlist_dialog.is_none());
+}
+
+#[test]
 fn advanced_search_and_column_manager_update_the_ui() {
     let dir = tempfile::tempdir().unwrap();
     let mut env = TestEnv::new(dir.path());

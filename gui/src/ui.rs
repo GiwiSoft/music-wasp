@@ -110,6 +110,8 @@ enum Act {
     Smart(i64),
     DropOnPlaylist(i64, Vec<i64>, Option<i64>),
     SaveView,
+    NewEmptyPlaylist,
+    NewPlaylistInFolder(i64),
     NewSmart,
     EditSmart(i64),
     DeletePlaylist,
@@ -168,6 +170,10 @@ fn playlist_tree(
                 row_act = Some(Act::MovePlaylist(drag.id, Some(folder.id)));
             }
             resp.context_menu(|ui| {
+                if ui.button("New playlist here…").clicked() {
+                    row_act = Some(Act::NewPlaylistInFolder(folder.id));
+                    ui.close();
+                }
                 if ui.button("New subfolder…").clicked() {
                     row_act = Some(Act::NewFolder(Some(folder.id)));
                     ui.close();
@@ -673,6 +679,10 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                             act = Some(Act::SaveView);
                             ui.close();
                         }
+                        if ui.button("New empty playlist").clicked() {
+                            act = Some(Act::NewEmptyPlaylist);
+                            ui.close();
+                        }
                         if ui.button("New playlist folder").clicked() {
                             act = Some(Act::NewFolder(None));
                             ui.close();
@@ -824,8 +834,13 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
             app.transfer_to_playlist(playlist_id, &ids, from);
         }
         Some(Act::SaveView) => {
-            let n = app.playlists.len() + 1;
-            app.playlist_dialog = Some(format!("Playlist {n}"));
+            app.open_playlist_dialog(false, None);
+        }
+        Some(Act::NewEmptyPlaylist) => {
+            app.open_playlist_dialog(true, None);
+        }
+        Some(Act::NewPlaylistInFolder(folder)) => {
+            app.open_playlist_dialog(true, Some(folder));
         }
         Some(Act::NewSmart) => app.open_smart_dialog(),
         Some(Act::EditSmart(id)) => app.edit_smart_dialog(id),
@@ -2919,6 +2934,7 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
     let Some(mut name) = app.playlist_dialog.clone() else {
         return;
     };
+    let mut empty = app.playlist_dialog_empty;
 
     let mut create = false;
     let mut cancel = false;
@@ -2934,7 +2950,9 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
                 app.tracks.len()
             };
             ui.label(
-                RichText::new(if selected > 0 {
+                RichText::new(if empty {
+                    "Create an empty playlist; add tracks later by dragging them in.".to_string()
+                } else if selected > 0 {
                     format!("{selected} selected track(s) will be saved")
                 } else {
                     format!("all {total} tracks in this view will be saved")
@@ -2942,6 +2960,22 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
                 .size(11.0)
                 .color(th::text_dim()),
             );
+            if let Some(folder) = app.playlist_dialog_folder {
+                let path = app.playlist_folder_path(folder);
+                if !path.is_empty() {
+                    ui.label(
+                        RichText::new(format!("Destination: {path}"))
+                            .size(10.5)
+                            .color(th::accent()),
+                    );
+                }
+            }
+            ui.add_space(4.0);
+            ui.checkbox(
+                &mut empty,
+                RichText::new("Create empty playlist").size(11.0),
+            )
+            .on_hover_text("Do not copy the current selection or view");
             ui.add_space(4.0);
             let name_label = ui.label(RichText::new("Playlist name").size(10.5));
             let resp = ui
@@ -2964,11 +2998,14 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
             });
         });
 
+    app.playlist_dialog_empty = empty;
     app.playlist_dialog = Some(name);
     if create {
         app.commit_playlist_dialog();
     } else if cancel {
         app.playlist_dialog = None;
+        app.playlist_dialog_empty = false;
+        app.playlist_dialog_folder = None;
     }
 }
 
