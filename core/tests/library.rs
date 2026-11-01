@@ -141,6 +141,46 @@ fn filter_and_column_queries() {
 }
 
 #[test]
+fn incremental_scan_reports_unchanged_and_can_cancel() {
+    let dir = tempfile::tempdir().unwrap();
+    let music = dir.path().join("music");
+    std::fs::create_dir_all(&music).unwrap();
+    write_wav(&music.join("one.wav"), 500);
+
+    let lib = Library::open_at(&dir.path().join("library.db")).unwrap();
+    let first = lib.scan_with_progress(&music, false, |_| true).unwrap();
+    assert_eq!(first.found, 1);
+    assert_eq!(first.indexed, 1);
+    assert_eq!(first.unchanged, 0);
+    assert!(!first.cancelled);
+
+    let second = lib.scan_with_progress(&music, false, |_| true).unwrap();
+    assert_eq!(second.found, 1);
+    assert_eq!(second.indexed, 0);
+    assert_eq!(second.unchanged, 1);
+
+    let forced = lib.scan_with_progress(&music, true, |_| true).unwrap();
+    assert_eq!(forced.indexed, 1);
+
+    // Size alone is enough to detect a changed file, even in the same second.
+    write_wav(&music.join("one.wav"), 900);
+    let changed = lib.scan_with_progress(&music, false, |_| true).unwrap();
+    assert_eq!(changed.found, 1);
+    assert_eq!(changed.indexed, 1);
+    assert_eq!(changed.unchanged, 0);
+
+    // Two new files, but stop after the first one.
+    write_wav(&music.join("two.wav"), 500);
+    write_wav(&music.join("three.wav"), 500);
+    let cancelled = lib
+        .scan_with_progress(&music, false, |progress| progress.found < 1)
+        .unwrap();
+    assert!(cancelled.cancelled);
+    assert!(cancelled.found >= 1);
+    assert!(cancelled.indexed <= 1);
+}
+
+#[test]
 fn rescan_is_idempotent() {
     let dir = tempfile::tempdir().unwrap();
     let music = dir.path().join("music");

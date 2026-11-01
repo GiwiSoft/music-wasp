@@ -6,13 +6,15 @@ use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
 use musicwasp_core::tags::TagSnapshot;
 use musicwasp_core::{
-    AlbumGroup, Filter, Library, Player, Playlist, PlaylistFolder, SavedSearch, SortKey, TagEdit,
-    Track,
+    AlbumGroup, Filter, Library, Player, Playlist, PlaylistFolder, SavedSearch, ScanProgress,
+    ScanReport, SortKey, TagEdit, Track,
 };
 use notify::Watcher as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -673,6 +675,21 @@ struct CoverMsg {
     result: Result<Option<Cover>, String>,
 }
 
+/// Messages from the background indexing worker.
+enum ScanMsg {
+    Progress(ScanProgress),
+    Finished(std::result::Result<ScanReport, String>),
+}
+
+/// Background scan state. The worker owns its own SQLite connection.
+struct ScanState {
+    root: PathBuf,
+    progress: ScanProgress,
+    cancel: Arc<AtomicBool>,
+    rx: Receiver<ScanMsg>,
+    last_refresh: std::time::Instant,
+}
+
 /// A play currently being considered for ListenBrainz submission.
 struct ScrobbleState {
     track: Track,
@@ -1064,6 +1081,7 @@ pub struct App {
 
     // Misc
     pub scan_path: String,
+    scan: Option<ScanState>,
     pub message: String,
     pub art: Option<(String, egui::TextureHandle)>,
     pub art_key: Option<String>,
@@ -1239,6 +1257,7 @@ impl App {
             scrobble_tx,
             scrobble_rx,
             scan_path,
+            scan: None,
             message: String::new(),
             art: None,
             art_key: None,
@@ -4206,14 +4225,154 @@ impl App {
     }
 
     fn scan(&mut self) {
-        let path = std::path::PathBuf::from(self.scan_path.trim());
-        match self.lib.scan(&path, false) {
-            Ok(n) => {
-                self.message = format!("indexed {n} tracks from {}", path.display());
-                self.remember_watch_folder(&path);
-                self.mark_browser_dirty();
+        let path = PathBuf::from(self.scan_path.trim());
+        if self.scan.is_some() {
+            self.message = "indexing is already running".to_string();
+            return;
+        }
+        if !path.is_dir() {
+            self.message = format!("not a folder: {}", path.display());
+            return;
+        }
+        let db_path = match self.lib.db_path() {
+            Ok(path) => path,
+            Err(e) => {
+                self.message = format!("scan failed: {e}");
+                return;
             }
-            Err(e) => self.message = format!("scan failed: {e}"),
+        };
+
+        let (tx, rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = Arc::clone(&cancel);
+        let root = path.clone();
+        self.scan = Some(ScanState {
+            root: path.clone(),
+            progress: ScanProgress::default(),
+            cancel,
+            rx,
+            last_refresh: std::time::Instant::now(),
+        });
+        self.message = format!("indexing {} in the background…", path.display());
+
+        std::thread::spawn(move || {
+            let outcome = (|| -> anyhow::Result<ScanReport> {
+                let library = Library::open_at(&db_path)?;
+                let mut last_emit = std::time::Instant::now()
+                    .checked_sub(std::time::Duration::from_secs(1))
+                    .unwrap_or_else(std::time::Instant::now);
+                library.scan_with_progress(&root, false, |progress| {
+                    if last_emit.elapsed() >= std::time::Duration::from_millis(120) {
+                        let _ = tx.send(ScanMsg::Progress(progress));
+                        last_emit = std::time::Instant::now();
+                    }
+                    !worker_cancel.load(Ordering::Relaxed)
+                })
+            })()
+            .map_err(|e| format!("{e:#}"));
+            let _ = tx.send(ScanMsg::Finished(outcome));
+        });
+    }
+
+    pub fn is_scanning(&self) -> bool {
+        self.scan.is_some()
+    }
+
+    pub fn scan_progress_label(&self) -> Option<String> {
+        self.scan.as_ref().map(|state| {
+            format!(
+                "{}: {} found, {} indexed, {} unchanged",
+                state.root.display(),
+                state.progress.found,
+                state.progress.indexed,
+                state.progress.unchanged
+            )
+        })
+    }
+
+    pub fn cancel_scan(&mut self) {
+        if let Some(state) = &self.scan {
+            state.cancel.store(true, Ordering::Relaxed);
+            self.message = "stopping indexing after the current file…".to_string();
+        }
+    }
+
+    fn poll_scan(&mut self) {
+        let mut latest = None;
+        let mut finished = None;
+        let mut disconnected = false;
+        let mut refresh = false;
+        let mut root = None;
+
+        if let Some(state) = &mut self.scan {
+            loop {
+                match state.rx.try_recv() {
+                    Ok(ScanMsg::Progress(progress)) => {
+                        state.progress = progress.clone();
+                        latest = Some(progress);
+                    }
+                    Ok(ScanMsg::Finished(result)) => finished = Some(result),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
+                }
+            }
+            root = Some(state.root.clone());
+            if latest.is_some() && state.last_refresh.elapsed() >= std::time::Duration::from_secs(1)
+            {
+                state.last_refresh = std::time::Instant::now();
+                refresh = true;
+            }
+        }
+
+        if let Some(progress) = &latest {
+            if let Some(root) = &root {
+                self.message = format!(
+                    "indexing {}: {} found, {} indexed, {} unchanged",
+                    root.display(),
+                    progress.found,
+                    progress.indexed,
+                    progress.unchanged
+                );
+            }
+        }
+        if refresh {
+            self.mark_browser_dirty();
+            self.mark_tracks_dirty();
+        }
+
+        if let Some(result) = finished {
+            let root = root.unwrap_or_else(|| PathBuf::from("."));
+            self.scan = None;
+            match result {
+                Ok(report) if report.cancelled => {
+                    self.message = format!(
+                        "indexing stopped after {} file(s), {} indexed",
+                        report.found, report.indexed
+                    );
+                }
+                Ok(report) => {
+                    self.remember_watch_folder(&root);
+                    self.message = format!(
+                        "scanned {} track(s) from {}: {} new/updated, {} unchanged, {} failed",
+                        report.found,
+                        root.display(),
+                        report.indexed,
+                        report.unchanged,
+                        report.failed
+                    );
+                }
+                Err(e) => self.message = format!("scan failed: {e}"),
+            }
+            self.mark_browser_dirty();
+            self.mark_tracks_dirty();
+        } else if disconnected {
+            self.scan = None;
+            self.message = "indexing worker stopped unexpectedly".to_string();
+            self.mark_browser_dirty();
+            self.mark_tracks_dirty();
         }
     }
 }
@@ -4227,6 +4386,10 @@ impl eframe::App for App {
             self.watch_dirty = false;
         }
         self.poll_watcher(&ctx);
+        self.poll_scan();
+        if self.is_scanning() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
         #[cfg(target_os = "linux")]
         self.poll_mpris(&ctx);
         self.poll_cover_fetch();
@@ -4314,6 +4477,9 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Some(state) = &self.scan {
+            state.cancel.store(true, Ordering::Relaxed);
+        }
         self.persist_session(true);
     }
 }
@@ -4461,6 +4627,14 @@ impl App {
         // Debug hook: MUSICWASP_COLUMNS=1 opens the column manager.
         if self.frames == 20 && std::env::var("MUSICWASP_COLUMNS").is_ok() {
             self.show_columns = true;
+        }
+
+        // Debug hook: MUSICWASP_SCAN=/path starts a background scan.
+        if self.frames == 20 {
+            if let Ok(path) = std::env::var("MUSICWASP_SCAN") {
+                self.scan_path = path;
+                self.scan_clicked();
+            }
         }
 
         // Debug hook: MUSICWASP_UNDO=1 restores the last tag snapshot.

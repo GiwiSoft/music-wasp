@@ -380,11 +380,26 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
             if icons::compact(ui, icons::FOLDER_OPEN, "Choose a music folder").clicked() {
                 app.open_picker();
             }
-            if icons::button(ui, icons::ARROWS_CLOCKWISE, "Scan")
-                .on_hover_text("Add every track in the folder to the library")
-                .clicked()
+            let scanning = app.is_scanning();
+            if icons::button_enabled(
+                ui,
+                !scanning,
+                icons::ARROWS_CLOCKWISE,
+                if scanning { "Indexing…" } else { "Scan" },
+            )
+            .on_hover_text("Index new and changed tracks in the background")
+            .clicked()
             {
                 app.scan_clicked();
+            }
+            if scanning {
+                let spinner = ui.add(egui::Spinner::new().size(14.0));
+                if let Some(label) = app.scan_progress_label() {
+                    spinner.on_hover_text(label);
+                }
+                if icons::compact(ui, icons::X, "Stop indexing").clicked() {
+                    app.cancel_scan();
+                }
             }
 
             let selected = app.selected_in_view().len();
@@ -487,7 +502,12 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                 ui.separator();
                 if !app.message.is_empty() {
                     if ui.available_width() > 180.0 {
-                        ui.label(RichText::new(&app.message).size(11.0).color(th::accent()));
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&app.message).size(11.0).color(th::accent()),
+                            )
+                            .truncate(),
+                        );
                     }
                 } else if ui.available_width() < 210.0 {
                     // Not enough room: the table already shows what matters.

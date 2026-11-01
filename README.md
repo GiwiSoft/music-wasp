@@ -15,7 +15,7 @@ This is an early but working project, not a finished product. What runs today:
 
 | Area | Implemented |
 | :-- | :-- |
-| Library | recursive scan of 18 audio formats, tag reading via `lofty`, SQLite index |
+| Library | incremental background scan of 18 audio formats, skips unchanged files by mtime + size, batches writes, tag reading via `lofty`, SQLite index |
 | Browsing | column browser (genre → artist → album) with foldable sections whose state is remembered, advanced field search, sortable table |
 | Track list | persisted column widths, drag/reorder/hide columns, and standard / compact / album-art row layouts |
 | Saved searches | name and reuse queries such as `artist:"radiohead" year:1997`, edit or delete them from the bookmark menu |
@@ -110,7 +110,10 @@ icon before the app starts.
 
 ## Usage
 
-1. Start the GUI, pick a folder with the folder button (or type a path), press **Scan**.
+1. Start the GUI, pick a folder with the folder button (or type a path), press **Scan**. Indexing
+   runs in a background thread with live counts, batches its SQLite writes and can be stopped with
+   the X next to the spinner. Unchanged files are skipped using mtime and size, so repeat scans on a
+   large library only read new or edited files.
 2. Browse with the left columns (click an entry again to clear it). Click a section caret to fold it;
    the folded state is saved like the rest of the settings. Type in **Search** to filter across
    title, artist, album and genre. Field filters narrow it further, for example
@@ -174,9 +177,10 @@ icon before the app starts.
     but the first in each group**) and confirm **Remove from library**. Only database entries are
     deleted: audio files stay on disk, and playlist entries disappear with the removed rows. Files
     can be re-imported at any time.
-16. A successful **Scan** also watches that folder. New audio files are imported automatically and
-    tag changes made in another editor refresh their library rows. Toggle watching in **Settings**.
-    Renames and deletions are not auto-pruned; **Library hygiene** reports those rows.
+16. A successful background **Scan** also watches that folder. New audio files are imported
+    automatically and tag changes made in another editor refresh their library rows. Toggle watching
+    in **Settings**. Renames and deletions are not auto-pruned; **Library hygiene** reports those
+    rows.
 17. On Linux, MusicWasp registers `org.mpris.MediaPlayer2.musicwasp` with the session bus. Desktop
     media keys, GNOME/KDE media controls, the lock screen, `playerctl` and Bluetooth headset
     buttons control playback; track, position, volume, shuffle and repeat are published. Try
@@ -275,7 +279,8 @@ cli/    musicwasp-cli    headless library tool
 ```
 
 - **`core::library`** owns the connection. `Track`/`Filter`/`SortKey` are the only types the UI
-  needs, so SQL stays in one place.
+  needs, so SQL stays in one place. Scans compare mtime and size against a path map and commit in
+  batches; the GUI runs them on a worker with its own connection and a small progress channel.
 - **`core::player`** spawns an audio thread that owns the `cpal` output stream and a `rodio` sink.
   The UI sends commands over an `mpsc` channel and reads an `Arc<Shared>` of atomics, so a slow
   or missing audio device can never freeze the interface. Decoded samples pass through
@@ -333,6 +338,7 @@ MUSICWASP_SCREENSHOT=/tmp/tags.png MUSICWASP_EDITOR=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/rename.png MUSICWASP_RENAME=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/eq.png MUSICWASP_EQ=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/columns.png MUSICWASP_COLUMNS=1 cargo run -p musicwasp-gui
+MUSICWASP_SCREENSHOT=/tmp/scan.png MUSICWASP_SCAN=/path/to/music cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/settings.png MUSICWASP_SETTINGS=1 MUSICWASP_SETTINGS_TAB=about cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/hygiene.png MUSICWASP_HYGIENE=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/grid.png MUSICWASP_ALBUM_GRID=1 cargo run -p musicwasp-gui

@@ -108,8 +108,11 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Scan { path, rescan } => {
-            let n = library::scan(&conn, &path, rescan)?;
-            println!("{n} tracks indexed");
+            let report = library::scan_with_progress(&conn, &path, rescan, |_| true)?;
+            println!(
+                "{} tracks: {} new/updated, {} unchanged, {} failed",
+                report.found, report.indexed, report.unchanged, report.failed
+            );
         }
         Commands::List { filter } => {
             let tracks = library::list(&conn, filter.as_deref())?;

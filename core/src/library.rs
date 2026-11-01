@@ -7,7 +7,7 @@ use lofty::probe::Probe;
 use lofty::tag::{Tag, TagExt};
 use rusqlite::{params, params_from_iter, types::Value, Connection};
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
@@ -99,6 +99,20 @@ impl Library {
 
     pub fn scan(&self, root: &Path, rescan: bool) -> Result<usize> {
         scan(&self.conn, root, rescan)
+    }
+
+    /// Incremental scan with progress and cancellation. Return `false` from
+    /// `progress` to stop after the current file; committed batches are kept.
+    pub fn scan_with_progress<F>(
+        &self,
+        root: &Path,
+        rescan: bool,
+        progress: F,
+    ) -> Result<ScanReport>
+    where
+        F: FnMut(ScanProgress) -> bool,
+    {
+        scan_with_progress(&self.conn, root, rescan, progress)
     }
 
     pub fn playlists(&self) -> Result<Vec<crate::playlist::Playlist>> {
@@ -772,11 +786,57 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
     })
 }
 
+/// Live counters from a scan. The worker throttles how often these are sent.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScanProgress {
+    pub path: PathBuf,
+    pub found: usize,
+    pub indexed: usize,
+    pub unchanged: usize,
+    pub failed: usize,
+}
+
+/// Outcome of a full or cancelled scan.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScanReport {
+    pub found: usize,
+    pub indexed: usize,
+    pub unchanged: usize,
+    pub failed: usize,
+    pub cancelled: bool,
+}
+
 /// Walk `root`, read tags with lofty, upsert into SQLite.
+///
+/// This is the incremental scan: unchanged paths are identified by mtime and
+/// size, and writes are committed in batches so a huge first import remains
+/// visible and interruptible.
 pub fn scan(conn: &Connection, root: &Path, rescan: bool) -> Result<usize> {
+    Ok(scan_with_progress(conn, root, rescan, |_| true)?.found)
+}
+
+/// Incremental, cancellable scan with progress callbacks.
+///
+/// The callback runs once per audio file, after that file has been handled.
+/// Returning `false` stops the walk; the batch being written is committed and
+/// the report has `cancelled = true`.
+pub fn scan_with_progress<F>(
+    conn: &Connection,
+    root: &Path,
+    rescan: bool,
+    mut progress: F,
+) -> Result<ScanReport>
+where
+    F: FnMut(ScanProgress) -> bool,
+{
     anyhow::ensure!(root.is_dir(), "not a directory: {}", root.display());
 
-    let mut seen = 0usize;
+    let existing = if rescan {
+        None
+    } else {
+        Some(existing_files(conn, root)?)
+    };
+    let mut report = ScanReport::default();
 
     let mut stmt = conn.prepare_cached(
         r#"INSERT INTO tracks
@@ -791,6 +851,12 @@ pub fn scan(conn: &Connection, root: &Path, rescan: bool) -> Result<usize> {
              bitrate=excluded.bitrate, channels=excluded.channels, format=excluded.format,
              size_bytes=excluded.size_bytes, mtime=excluded.mtime"#,
     )?;
+
+    // Batch commits keep the WAL small and let the UI see rows appearing during
+    // a first import instead of waiting for the whole library.
+    const BATCH: usize = 500;
+    let mut tx = conn.unchecked_transaction()?;
+    let mut pending = 0usize;
 
     for entry in WalkDir::new(root).follow_links(true) {
         let entry = match entry {
@@ -811,7 +877,16 @@ pub fn scan(conn: &Connection, root: &Path, rescan: bool) -> Result<usize> {
 
         let meta = match std::fs::metadata(path) {
             Ok(m) => m,
-            Err(_) => continue,
+            Err(error) => {
+                tracing::warn!("skip {}: {error}", path.display());
+                report.found += 1;
+                report.failed += 1;
+                if !progress(progress_snapshot(&report, path)) {
+                    report.cancelled = true;
+                    break;
+                }
+                continue;
+            }
         };
         let mtime = meta
             .modified()
@@ -820,24 +895,33 @@ pub fn scan(conn: &Connection, root: &Path, rescan: bool) -> Result<usize> {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        if !rescan {
-            let existing: Option<i64> = conn
-                .query_row(
-                    "SELECT mtime FROM tracks WHERE path = ?1",
-                    params![path.to_string_lossy()],
-                    |r| r.get(0),
-                )
-                .ok();
-            if existing == Some(mtime) {
-                seen += 1;
+        report.found += 1;
+
+        if let Some(existing) = &existing {
+            let same = existing
+                .get(&path.to_string_lossy().to_string())
+                .is_some_and(|(old_mtime, old_size)| {
+                    *old_mtime == mtime && *old_size == meta.len() as i64
+                });
+            if same {
+                report.unchanged += 1;
+                if !progress(progress_snapshot(&report, path)) {
+                    report.cancelled = true;
+                    break;
+                }
                 continue;
             }
         }
 
         let info = match read_tags(path) {
-            Ok(i) => i,
-            Err(e) => {
-                tracing::warn!("skip {}: {e}", path.display());
+            Ok(info) => info,
+            Err(error) => {
+                tracing::warn!("skip {}: {error}", path.display());
+                report.failed += 1;
+                if !progress(progress_snapshot(&report, path)) {
+                    report.cancelled = true;
+                    break;
+                }
                 continue;
             }
         };
@@ -860,10 +944,53 @@ pub fn scan(conn: &Connection, root: &Path, rescan: bool) -> Result<usize> {
             meta.len() as i64,
             mtime,
         ])?;
-        seen += 1;
+        report.indexed += 1;
+        pending += 1;
+
+        if pending >= BATCH {
+            tx.commit()?;
+            tx = conn.unchecked_transaction()?;
+            pending = 0;
+        }
+
+        if !progress(progress_snapshot(&report, path)) {
+            report.cancelled = true;
+            break;
+        }
     }
 
-    Ok(seen)
+    tx.commit()?;
+    Ok(report)
+}
+
+fn progress_snapshot(report: &ScanReport, path: &Path) -> ScanProgress {
+    ScanProgress {
+        path: path.to_path_buf(),
+        found: report.found,
+        indexed: report.indexed,
+        unchanged: report.unchanged,
+        failed: report.failed,
+    }
+}
+
+/// Existing path -> (mtime, size) rows under one root, loaded once per scan.
+fn existing_files(conn: &Connection, root: &Path) -> Result<HashMap<String, (i64, i64)>> {
+    let mut stmt = conn.prepare("SELECT path, mtime, size_bytes FROM tracks")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    let mut existing = HashMap::new();
+    for row in rows {
+        let (path, mtime, size) = row?;
+        if Path::new(&path).starts_with(root) {
+            existing.insert(path, (mtime, size));
+        }
+    }
+    Ok(existing)
 }
 
 /// Re-read one file and upsert it (used after tag edits).

@@ -112,6 +112,10 @@
         <p>Find rows whose files disappeared, detect duplicate artist/title/album groups, and remove entries from the library without ever deleting audio files.</p>
       </article>
       <article class="card">
+        <h3>Background indexing</h3>
+        <p>Scans run off the UI thread with live counts and a stop button. Repeat scans skip unchanged files using mtime and size, and SQLite writes are committed in batches.</p>
+      </article>
+      <article class="card">
         <h3>Folder watching</h3>
         <p>Scanned folders are watched with <code>notify</code>. New audio is imported automatically and external tag edits refresh existing rows.</p>
       </article>
