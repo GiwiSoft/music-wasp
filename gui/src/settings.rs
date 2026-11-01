@@ -203,6 +203,191 @@ pub struct FoldedSections {
     pub playlists: bool,
 }
 
+/// A track-list column. The order here is also the default order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrackColumn {
+    Number,
+    Title,
+    Artist,
+    Album,
+    Genre,
+    Year,
+    Duration,
+    Format,
+}
+
+impl TrackColumn {
+    pub const ALL: [TrackColumn; 8] = [
+        TrackColumn::Number,
+        TrackColumn::Title,
+        TrackColumn::Artist,
+        TrackColumn::Album,
+        TrackColumn::Genre,
+        TrackColumn::Year,
+        TrackColumn::Duration,
+        TrackColumn::Format,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            TrackColumn::Number => "#",
+            TrackColumn::Title => "Title",
+            TrackColumn::Artist => "Artist",
+            TrackColumn::Album => "Album",
+            TrackColumn::Genre => "Genre",
+            TrackColumn::Year => "Year",
+            TrackColumn::Duration => "Time",
+            TrackColumn::Format => "Format",
+        }
+    }
+
+    pub fn default_width(self) -> f32 {
+        match self {
+            TrackColumn::Number => 44.0,
+            TrackColumn::Title => 220.0,
+            TrackColumn::Artist => 150.0,
+            TrackColumn::Album => 170.0,
+            TrackColumn::Genre => 110.0,
+            TrackColumn::Year => 52.0,
+            TrackColumn::Duration => 52.0,
+            TrackColumn::Format => 78.0,
+        }
+    }
+
+    pub fn min_width(self) -> f32 {
+        match self {
+            TrackColumn::Number => 36.0,
+            TrackColumn::Title => 120.0,
+            TrackColumn::Artist => 70.0,
+            TrackColumn::Album => 70.0,
+            TrackColumn::Genre => 60.0,
+            TrackColumn::Year => 36.0,
+            TrackColumn::Duration => 36.0,
+            TrackColumn::Format => 50.0,
+        }
+    }
+}
+
+/// How dense the track table is, and whether it includes album artwork.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrackLayout {
+    #[default]
+    Standard,
+    Compact,
+    AlbumArt,
+}
+
+impl TrackLayout {
+    pub const ALL: [TrackLayout; 3] = [
+        TrackLayout::Standard,
+        TrackLayout::Compact,
+        TrackLayout::AlbumArt,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            TrackLayout::Standard => "Standard",
+            TrackLayout::Compact => "Compact",
+            TrackLayout::AlbumArt => "Album art",
+        }
+    }
+}
+
+/// Persisted track-list columns: order, visibility, widths and layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ColumnConfig {
+    pub order: Vec<TrackColumn>,
+    pub hidden: Vec<TrackColumn>,
+    pub widths: BTreeMap<TrackColumn, f32>,
+    pub layout: TrackLayout,
+}
+
+impl Default for ColumnConfig {
+    fn default() -> Self {
+        Self {
+            order: TrackColumn::ALL.to_vec(),
+            hidden: Vec::new(),
+            widths: BTreeMap::new(),
+            layout: TrackLayout::Standard,
+        }
+    }
+}
+
+impl ColumnConfig {
+    /// Every column exactly once, with new columns appended to old settings.
+    pub fn normalized_order(&self) -> Vec<TrackColumn> {
+        let mut order = Vec::with_capacity(TrackColumn::ALL.len());
+        for column in &self.order {
+            if !order.contains(column) {
+                order.push(*column);
+            }
+        }
+        for column in TrackColumn::ALL {
+            if !order.contains(&column) {
+                order.push(column);
+            }
+        }
+        order
+    }
+
+    pub fn is_hidden(&self, column: TrackColumn) -> bool {
+        self.hidden.contains(&column)
+    }
+
+    /// Columns in display order, never empty.
+    pub fn visible(&self) -> Vec<TrackColumn> {
+        let mut visible: Vec<TrackColumn> = self
+            .normalized_order()
+            .into_iter()
+            .filter(|column| !self.is_hidden(*column))
+            .collect();
+        if visible.is_empty() {
+            visible.push(TrackColumn::Title);
+        }
+        visible
+    }
+
+    pub fn width(&self, column: TrackColumn) -> f32 {
+        self.widths
+            .get(&column)
+            .copied()
+            .filter(|width| width.is_finite() && *width > 0.0)
+            .unwrap_or_else(|| column.default_width())
+            .max(column.min_width())
+    }
+
+    pub fn set_width(&mut self, column: TrackColumn, width: f32) {
+        if width.is_finite() && width > 0.0 {
+            self.widths.insert(column, width.max(column.min_width()));
+        }
+    }
+
+    /// Move a visible column one slot earlier or later in the full order.
+    pub fn move_column(&mut self, column: TrackColumn, delta: i32) {
+        let order = self.normalized_order();
+        let Some(index) = order.iter().position(|item| *item == column) else {
+            return;
+        };
+        let target = index as i32 + delta;
+        if target < 0 || target as usize >= order.len() {
+            return;
+        }
+        let target = target as usize;
+        let mut order = order;
+        order.swap(index, target);
+        self.order = order;
+    }
+
+    pub fn reset(&mut self) {
+        let layout = self.layout;
+        *self = Self::default();
+        self.layout = layout;
+    }
+}
+
 /// Persisted state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -218,6 +403,9 @@ pub struct Settings {
     /// Collapsed state of the left browser sections.
     #[serde(default)]
     pub folded: FoldedSections,
+    /// Track-list column order, visibility, widths and layout.
+    #[serde(default)]
+    pub columns: ColumnConfig,
     /// Show the play-queue panel on the right.
     #[serde(default = "default_queue_open")]
     pub queue_open: bool,
@@ -309,6 +497,7 @@ impl Default for Settings {
             equalizer: Equalizer::default(),
             skin: Skin::default(),
             folded: FoldedSections::default(),
+            columns: ColumnConfig::default(),
             queue_open: default_queue_open(),
             watch_enabled: default_watch_enabled(),
             replaygain: default_replaygain_enabled(),
@@ -465,6 +654,71 @@ mod tests {
         let conflicts = settings.conflicts();
         assert!(conflicts.contains(&Action::PlayPause));
         assert!(conflicts.contains(&Action::Stop));
+    }
+
+    #[test]
+    fn column_config_round_trips_and_normalizes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+
+        let mut settings = Settings::default();
+        settings.columns.layout = TrackLayout::AlbumArt;
+        settings.columns.order = vec![
+            TrackColumn::Album,
+            TrackColumn::Title,
+            TrackColumn::Artist,
+            TrackColumn::Album,
+        ];
+        settings.columns.hidden = vec![TrackColumn::Genre, TrackColumn::Format];
+        settings.columns.set_width(TrackColumn::Artist, 222.0);
+        settings.columns.set_width(TrackColumn::Year, 1.0);
+        settings.save(&path).unwrap();
+
+        let loaded = Settings::load(&path);
+        assert_eq!(loaded.columns.layout, TrackLayout::AlbumArt);
+        assert_eq!(loaded.columns.width(TrackColumn::Artist), 222.0);
+        assert_eq!(
+            loaded.columns.width(TrackColumn::Year),
+            TrackColumn::Year.min_width(),
+            "widths are clamped to a usable minimum"
+        );
+        assert_eq!(
+            loaded.columns.normalized_order().len(),
+            TrackColumn::ALL.len(),
+            "duplicates and missing columns are repaired"
+        );
+        assert_eq!(loaded.columns.normalized_order()[0], TrackColumn::Album);
+        assert_eq!(
+            loaded.columns.visible(),
+            vec![
+                TrackColumn::Album,
+                TrackColumn::Title,
+                TrackColumn::Artist,
+                TrackColumn::Number,
+                TrackColumn::Year,
+                TrackColumn::Duration,
+            ]
+        );
+    }
+
+    #[test]
+    fn hiding_every_column_still_leaves_a_usable_table() {
+        let mut columns = ColumnConfig::default();
+        columns.hidden = TrackColumn::ALL.to_vec();
+        assert_eq!(columns.visible(), vec![TrackColumn::Title]);
+
+        columns.move_column(TrackColumn::Format, -1);
+        let order = columns.normalized_order();
+        let format = order
+            .iter()
+            .position(|column| *column == TrackColumn::Format);
+        let duration = order
+            .iter()
+            .position(|column| *column == TrackColumn::Duration);
+        assert_eq!(duration, format.map(|index| index + 1));
+
+        columns.reset();
+        assert_eq!(columns, ColumnConfig::default());
     }
 
     #[test]

@@ -3,6 +3,7 @@ use crate::app::{
     M3uMode, RenameTarget, SettingsTab, TrackField, View,
 };
 use crate::icons;
+use crate::settings::{TrackColumn, TrackLayout};
 use crate::theme as th;
 use egui::{Color32, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -444,6 +445,16 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                 {
                     app.settings.queue_open = !app.settings.queue_open;
                     app.persist_settings();
+                }
+                if icons::toggle(
+                    ui,
+                    app.show_columns,
+                    icons::COLUMNS,
+                    "Track columns, order and layout",
+                )
+                .clicked()
+                {
+                    app.show_columns = !app.show_columns;
                 }
                 if icons::toggle(
                     ui,
@@ -1850,6 +1861,36 @@ pub fn cover_picker(app: &mut App, ctx: &egui::Context) {
     }
 }
 
+/// Small album thumbnail used by the album-art track layout.
+fn track_art(
+    ui: &mut egui::Ui,
+    track: &Track,
+    ctx: &egui::Context,
+    covers: &mut HashMap<String, Option<egui::TextureHandle>>,
+) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(38.0, 38.0), egui::Sense::hover());
+    let key = crate::app::track_cover_key(track);
+    let texture =
+        crate::app::load_cover_texture(ctx, covers, &key, std::path::Path::new(&track.path));
+    if let Some(texture) = texture {
+        ui.painter().image(
+            texture.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    } else {
+        ui.painter().rect_filled(rect, 3.0, th::bg_row_alt());
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            icons::MUSIC_NOTES.as_str(),
+            egui::FontId::proportional(15.0),
+            th::text_dim(),
+        );
+    }
+}
+
 pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     enum RowAct {
@@ -1886,7 +1927,8 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
     let mut menu_action: Option<MenuAction> = None;
     let mut new_sort: Option<SortKey> = None;
 
-    let tracks: &[Track] = &app.tracks;
+    let track_rows = std::mem::take(&mut app.tracks);
+    let tracks: &[Track] = &track_rows;
     let selected = app.selected.clone();
     let playing_id = app.playing_id;
     let sort = app.sort;
@@ -1976,20 +2018,95 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
         // Clicks act on rows, never select text inside cells.
         ui.style_mut().interaction.selectable_labels = false;
 
-        let table = TableBuilder::new(ui)
-            .id_salt("tracks")
+        let layout = app.settings.columns.layout;
+        let visible_columns = app.settings.columns.visible();
+        let art_column = layout == TrackLayout::AlbumArt;
+        let compact = layout == TrackLayout::Compact;
+        let row_height = match layout {
+            TrackLayout::Standard => 22.0,
+            TrackLayout::Compact => 18.0,
+            TrackLayout::AlbumArt => 48.0,
+        };
+        let header_height = if compact { 20.0 } else { 24.0 };
+        let title_size = if compact { 11.5 } else { 12.5 };
+        let text_size = if compact { 11.0 } else { 12.0 };
+        let small_size = if compact { 10.5 } else { 11.5 };
+
+        // If the configured widths fit, keep them all. Otherwise the widest
+        // column becomes the flexible one so the table never overflows.
+        let spacing = ui.spacing().item_spacing.x;
+        let extra_columns = visible_columns.len() + usize::from(art_column) + 1;
+        let desired_total: f32 = visible_columns
+            .iter()
+            .map(|column| app.settings.columns.width(*column))
+            .sum::<f32>()
+            + spacing * extra_columns as f32
+            + if art_column { 44.0 } else { 0.0 };
+        let available = (ui.available_width() - 12.0).max(160.0);
+        let flex_column = if desired_total > available {
+            visible_columns
+                .iter()
+                .copied()
+                .find(|column| *column == TrackColumn::Title)
+                .or_else(|| {
+                    visible_columns
+                        .iter()
+                        .copied()
+                        .find(|column| *column != TrackColumn::Number)
+                })
+                .or_else(|| visible_columns.first().copied())
+        } else {
+            None
+        };
+
+        // The table draws its own texture lookups for the album-art layout.
+        // Take the cache out so the track slice can stay borrowed immutably.
+        let mut covers = std::mem::take(&mut app.album_covers);
+        let mut captured_widths: Vec<f32> = Vec::new();
+        let table_id = format!(
+            "tracks-{}-{}-{}",
+            match layout {
+                TrackLayout::Standard => "standard",
+                TrackLayout::Compact => "compact",
+                TrackLayout::AlbumArt => "album-art",
+            },
+            visible_columns
+                .iter()
+                .map(|column| format!("{column:?}"))
+                .collect::<Vec<_>>()
+                .join("-"),
+            flex_column
+                .map(|column| format!("{column:?}"))
+                .unwrap_or_else(|| "none".to_string())
+        );
+        let mut table = TableBuilder::new(ui)
+            .id_salt(table_id)
             .striped(true)
             .resizable(true)
             .sense(egui::Sense::click_and_drag())
-            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(Column::exact(44.0).clip(true))
-            .column(Column::remainder().at_least(120.0).clip(true))
-            .column(Column::initial(150.0).at_least(70.0).clip(true))
-            .column(Column::initial(170.0).at_least(70.0).clip(true))
-            .column(Column::initial(110.0).at_least(60.0).clip(true))
-            .column(Column::initial(52.0).at_least(36.0).clip(true))
-            .column(Column::initial(52.0).at_least(36.0).clip(true))
-            .column(Column::initial(78.0).at_least(50.0).clip(true));
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
+        if app.columns_reset {
+            table.reset();
+        }
+        if art_column {
+            table = table.column(Column::exact(44.0).clip(true));
+        }
+        for column in &visible_columns {
+            let width = app.settings.columns.width(*column);
+            let minimum = column.min_width();
+            table = if Some(*column) == flex_column {
+                table.column(
+                    Column::remainder()
+                        .at_least(minimum)
+                        .clip(true)
+                        .resizable(false),
+                )
+            } else {
+                table.column(Column::initial(width).at_least(minimum).clip(true))
+            };
+        }
+        // Absorb unused room when every configured width fits.
+        table = table.column(Column::remainder().resizable(false));
 
         let mut header = |ui: &mut egui::Ui, label: &str, key: Option<SortKey>| {
             let active = key == Some(sort);
@@ -2015,135 +2132,180 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
         };
 
         table
-            .header(24.0, |mut h| {
-                h.col(|ui| {
-                    ui.label(RichText::new("#").size(11.0).color(th::text_dim()));
-                });
-                h.col(|ui| header(ui, "Title", Some(SortKey::Title)));
-                h.col(|ui| header(ui, "Artist", Some(SortKey::Artist)));
-                h.col(|ui| header(ui, "Album", Some(SortKey::Album)));
-                h.col(|ui| header(ui, "Genre", Some(SortKey::Genre)));
-                h.col(|ui| header(ui, "Year", Some(SortKey::Year)));
-                h.col(|ui| header(ui, "Time", Some(SortKey::Duration)));
-                h.col(|ui| {
-                    ui.label(RichText::new("Format").size(11.0).color(th::text_dim()));
-                });
+            .header(header_height, |mut h| {
+                if art_column {
+                    h.col(|ui| {
+                        ui.label(icons::text(icons::IMAGE, 12.0).color(th::text_dim()));
+                    });
+                }
+                for column in &visible_columns {
+                    h.col(|ui| {
+                        let key = match column {
+                            TrackColumn::Title => Some(SortKey::Title),
+                            TrackColumn::Artist => Some(SortKey::Artist),
+                            TrackColumn::Album => Some(SortKey::Album),
+                            TrackColumn::Genre => Some(SortKey::Genre),
+                            TrackColumn::Year => Some(SortKey::Year),
+                            TrackColumn::Duration => Some(SortKey::Duration),
+                            TrackColumn::Number | TrackColumn::Format => None,
+                        };
+                        header(ui, column.label(), key);
+                    });
+                }
+                h.col(|_ui| {});
             })
             .body(|body| {
-                body.rows(22.0, tracks.len(), |mut row| {
+                captured_widths = body.widths().to_vec();
+                body.rows(row_height, tracks.len(), |mut row| {
                     let idx = row.index();
                     let track = &tracks[idx];
                     let is_sel = selected.contains(&track.id);
                     let is_playing = playing_id == Some(track.id);
                     row.set_selected(is_sel);
 
-                    let (_, cell) = row.col(|ui| {
-                        if is_playing {
-                            ui.label(icons::text(icons::PLAY, 11.0).color(th::accent()));
-                        } else {
-                            ui.label(
-                                RichText::new(format!("{:>2}", track.track_no.unwrap_or(0)))
-                                    .monospace()
-                                    .size(11.0)
-                                    .color(th::text_dim()),
-                            );
+                    if art_column {
+                        row.col(|ui| track_art(ui, track, &ctx, &mut covers));
+                    }
+
+                    for column in &visible_columns {
+                        match column {
+                            TrackColumn::Number => {
+                                let (_, cell) = row.col(|ui| {
+                                    if is_playing {
+                                        ui.label(
+                                            icons::text(icons::PLAY, 11.0).color(th::accent()),
+                                        );
+                                    } else {
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "{:>2}",
+                                                track.track_no.unwrap_or(0)
+                                            ))
+                                            .monospace()
+                                            .size(small_size)
+                                            .color(th::text_dim()),
+                                        );
+                                    }
+                                });
+                                if cell.clicked() {
+                                    cell_focus = Some(TrackField::TrackNo);
+                                }
+                            }
+                            TrackColumn::Title => {
+                                let (_, cell) = row.col(|ui| {
+                                    let text = RichText::new(&track.title).size(title_size);
+                                    ui.add(
+                                        egui::Label::new(if is_playing {
+                                            text.color(th::accent()).strong()
+                                        } else {
+                                            text
+                                        })
+                                        .truncate(),
+                                    );
+                                });
+                                if cell.clicked() {
+                                    cell_focus = Some(TrackField::Title);
+                                }
+                            }
+                            TrackColumn::Artist => {
+                                let (_, cell) = row.col(|ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(&track.artist)
+                                                .size(text_size)
+                                                .color(th::text_dim()),
+                                        )
+                                        .truncate(),
+                                    );
+                                });
+                                if cell.clicked() {
+                                    cell_focus = Some(TrackField::Artist);
+                                }
+                            }
+                            TrackColumn::Album => {
+                                let (_, cell) = row.col(|ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(&track.album)
+                                                .size(text_size)
+                                                .color(th::text_dim()),
+                                        )
+                                        .truncate(),
+                                    );
+                                });
+                                if cell.clicked() {
+                                    cell_focus = Some(TrackField::Album);
+                                }
+                            }
+                            TrackColumn::Genre => {
+                                let (_, cell) = row.col(|ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(&track.genre)
+                                                .size(small_size)
+                                                .color(th::text_dim()),
+                                        )
+                                        .truncate(),
+                                    );
+                                });
+                                if cell.clicked() {
+                                    cell_focus = Some(TrackField::Genre);
+                                }
+                            }
+                            TrackColumn::Year => {
+                                let (_, cell) = row.col(|ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(
+                                                track
+                                                    .year
+                                                    .map(|year| year.to_string())
+                                                    .unwrap_or_default(),
+                                            )
+                                            .size(small_size)
+                                            .color(th::text_dim()),
+                                        )
+                                        .truncate(),
+                                    );
+                                });
+                                if cell.clicked() {
+                                    cell_focus = Some(TrackField::Year);
+                                }
+                            }
+                            TrackColumn::Duration => {
+                                row.col(|ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(fmt_time(track.duration_secs as f64))
+                                                .monospace()
+                                                .size(small_size)
+                                                .color(th::text_dim()),
+                                        )
+                                        .truncate(),
+                                    );
+                                });
+                            }
+                            TrackColumn::Format => {
+                                row.col(|ui| {
+                                    let label = if track.bitrate > 0 {
+                                        format!("{}k", track.bitrate)
+                                    } else {
+                                        track.format.clone()
+                                    };
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(label)
+                                                .size(if compact { 10.0 } else { 11.0 })
+                                                .color(th::text_dim()),
+                                        )
+                                        .truncate(),
+                                    );
+                                });
+                            }
                         }
-                    });
-                    if cell.clicked() {
-                        cell_focus = Some(TrackField::TrackNo);
                     }
 
-                    let (_, cell) = row.col(|ui| {
-                        let text = RichText::new(&track.title).size(12.5);
-                        ui.add(
-                            egui::Label::new(if is_playing {
-                                text.color(th::accent()).strong()
-                            } else {
-                                text
-                            })
-                            .truncate(),
-                        );
-                    });
-                    if cell.clicked() {
-                        cell_focus = Some(TrackField::Title);
-                    }
-
-                    let (_, cell) = row.col(|ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&track.artist)
-                                    .size(12.0)
-                                    .color(th::text_dim()),
-                            )
-                            .truncate(),
-                        );
-                    });
-                    if cell.clicked() {
-                        cell_focus = Some(TrackField::Artist);
-                    }
-
-                    let (_, cell) = row.col(|ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&track.album).size(12.0).color(th::text_dim()),
-                            )
-                            .truncate(),
-                        );
-                    });
-                    if cell.clicked() {
-                        cell_focus = Some(TrackField::Album);
-                    }
-
-                    let (_, cell) = row.col(|ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&track.genre).size(11.5).color(th::text_dim()),
-                            )
-                            .truncate(),
-                        );
-                    });
-                    if cell.clicked() {
-                        cell_focus = Some(TrackField::Genre);
-                    }
-
-                    let (_, cell) = row.col(|ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(
-                                    track.year.map(|y| y.to_string()).unwrap_or_default(),
-                                )
-                                .size(11.5)
-                                .color(th::text_dim()),
-                            )
-                            .truncate(),
-                        );
-                    });
-                    if cell.clicked() {
-                        cell_focus = Some(TrackField::Year);
-                    }
-
-                    row.col(|ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(fmt_time(track.duration_secs as f64))
-                                    .monospace()
-                                    .size(11.5)
-                                    .color(th::text_dim()),
-                            )
-                            .truncate(),
-                        );
-                    });
-                    row.col(|ui| {
-                        let label = if track.bitrate > 0 {
-                            format!("{}k", track.bitrate)
-                        } else {
-                            track.format.clone()
-                        };
-                        ui.add(
-                            egui::Label::new(RichText::new(label).size(11.0).color(th::text_dim()))
-                                .truncate(),
-                        );
-                    });
+                    row.col(|_ui| {});
 
                     let resp = row.response();
                     if resp.secondary_clicked() && !is_sel {
@@ -2228,8 +2390,6 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                             drag: drag.as_ref().clone(),
                         });
                     } else if resp.dnd_hover_payload::<crate::app::DragTracks>().is_some() {
-                        // Insertion marker: the row's own context, because the
-                        // table already holds the panel's Ui.
                         let rect = resp.rect;
                         let painter = resp.ctx.layer_painter(egui::LayerId::new(
                             egui::Order::Foreground,
@@ -2257,7 +2417,30 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                     }
                 });
             });
+
+        app.album_covers = covers;
+        app.columns_reset = false;
+        if !captured_widths.is_empty() {
+            captured_widths.pop(); // trailing spacer
+        }
+        if art_column && !captured_widths.is_empty() {
+            captured_widths.remove(0);
+        }
+        let mut persist_columns = Vec::new();
+        let mut persist_widths = Vec::new();
+        for (index, column) in visible_columns.iter().enumerate() {
+            if Some(*column) == flex_column {
+                continue;
+            }
+            if let Some(width) = captured_widths.get(index) {
+                persist_columns.push(*column);
+                persist_widths.push(*width);
+            }
+        }
+        app.update_column_widths(&persist_columns, &persist_widths);
     });
+
+    app.tracks = track_rows;
 
     // The track list itself is a drop target too: the open playlist, or the
     // library when browsing all music.
@@ -2880,6 +3063,100 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
         app.m3u_dialog = None;
     } else {
         app.m3u_dialog = Some(draft);
+    }
+}
+
+/// Track-list column order, visibility, widths reset and row layout.
+pub fn columns_window(app: &mut App, ctx: &egui::Context) {
+    if !app.show_columns {
+        return;
+    }
+    let mut open = true;
+    let mut config = app.settings.columns.clone();
+    let mut reset = false;
+
+    egui::Window::new("Track columns")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(400.0)
+        .show(ctx, |ui| {
+            ui.label(RichText::new("Layout").size(10.5).color(th::text_dim()));
+            ui.horizontal(|ui| {
+                for layout in TrackLayout::ALL {
+                    ui.selectable_value(&mut config.layout, layout, layout.label());
+                }
+            });
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new("Compact rows are denser; album art adds a cover thumbnail per row.")
+                    .size(10.0)
+                    .color(th::text_dim()),
+            );
+            ui.separator();
+
+            ui.label(RichText::new("Columns").size(10.5).color(th::text_dim()));
+            ui.add_space(2.0);
+            let order = config.normalized_order();
+            for (index, column) in order.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    let mut visible = !config.is_hidden(*column);
+                    let can_hide = config.visible().len() > 1 || visible;
+                    if ui
+                        .add_enabled(can_hide, egui::Checkbox::new(&mut visible, column.label()))
+                        .changed()
+                    {
+                        if visible {
+                            config.hidden.retain(|hidden| hidden != column);
+                        } else if !config.hidden.contains(column) {
+                            config.hidden.push(*column);
+                        }
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if icons::compact_enabled(
+                            ui,
+                            index + 1 < order.len(),
+                            icons::ARROW_DOWN,
+                            "Move column down",
+                        )
+                        .clicked()
+                        {
+                            config.move_column(*column, 1);
+                        }
+                        if icons::compact_enabled(ui, index > 0, icons::ARROW_UP, "Move column up")
+                            .clicked()
+                        {
+                            config.move_column(*column, -1);
+                        }
+                    });
+                });
+            }
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .button(icons::with(icons::ARROW_COUNTER_CLOCKWISE, "Reset columns"))
+                    .clicked()
+                {
+                    reset = true;
+                }
+                ui.label(
+                    RichText::new("drag column dividers in the table to resize")
+                        .size(9.5)
+                        .color(th::text_dim()),
+                );
+            });
+        });
+
+    if reset {
+        config.reset();
+    }
+    if config != app.settings.columns {
+        app.settings.columns = config;
+        app.columns_reset = true;
+        app.persist_settings();
+    }
+    if !open {
+        app.show_columns = false;
     }
 }
 

@@ -17,6 +17,7 @@ This is an early but working project, not a finished product. What runs today:
 | :-- | :-- |
 | Library | recursive scan of 18 audio formats, tag reading via `lofty`, SQLite index |
 | Browsing | column browser (genre → artist → album) with foldable sections whose state is remembered, advanced field search, sortable table |
+| Track list | persisted column widths, drag/reorder/hide columns, and standard / compact / album-art row layouts |
 | Saved searches | name and reuse queries such as `artist:"radiohead" year:1997`, edit or delete them from the bookmark menu |
 | Selection | multi-select (`Ctrl`-click, `Shift`-click, `Ctrl+A`, `Esc`), drag tracks onto a playlist, right-click a row for play / rename / metadata / playlist actions |
 | Playback | play / pause / stop / next / prev / seek / volume, repeat (off / all / one), shuffle, gapless preloading and 1–12 s crossfade |
@@ -38,7 +39,7 @@ This is an early but working project, not a finished product. What runs today:
 | Smart playlists | editable rule sets (field / operator / value, match all or any, sort, limit), re-evaluated from the database every time they open |
 | Equalizer | 10-band peaking EQ + preamp, live curve, 8 presets, bypass; applies without restarting the track |
 | Skins | five palettes (MusicWasp Dark, Midnight, Forest, Mono, MusicWasp Light), picked from a dropdown in Settings; light mode also swaps the logo |
-| Settings | tabbed panel: General (skins, folder watching), Keybindings, About; shortcuts persist to `settings.json` |
+| Settings | tabbed panel: General (skins, folder watching), Keybindings, About; shortcuts and track-list column settings persist to `settings.json` |
 | Library hygiene | find rows whose files vanished, detect duplicate artist/title/album groups, and remove entries from the library in bulk; audio files are never deleted |
 | Folder watching | scanned folders are watched with `notify`: new audio is imported automatically and external tag edits refresh existing rows; manual **Scan** still works |
 | Linux desktop | MPRIS2 service: desktop media keys, GNOME/KDE controls, lock screen, `playerctl` and Bluetooth headset buttons; publishes track, position, volume, shuffle and repeat |
@@ -115,7 +116,10 @@ icon before the app starts.
    title, artist, album and genre. Field filters narrow it further, for example
    `artist:"radiohead" year:1997`, `genre:rock year:>=1990` or `year:1990..1999`; text fields
    accept `=` for an exact match. Use the bookmark button beside the search box to save the current
-   query, apply a saved one, or right-click a saved entry to edit or delete it.
+   query, apply a saved one, or right-click a saved entry to edit or delete it. The **columns**
+   button in the toolbar opens the column manager: drag table dividers to resize, reorder or hide
+   columns, reset them, and choose the Standard, Compact or Album art layout. Widths, order,
+   visibility and layout persist in `settings.json`.
 3. Double-click a track, or select it and press `Enter`, to play. `Space` toggles pause. The
    **QUEUE** panel on the right shows the current track and **Up Next**: click an entry to jump to
    it, drag rows to reorder, right-click a row to remove it, or **Clear** everything after the
@@ -296,7 +300,7 @@ cli/    musicwasp-cli    headless library tool
   a worker thread so the UI never blocks.
 - **`gui::settings`** maps actions to a normalised token (`ctrl+right`, `space`), stores them as
   JSON, and reports conflicts; the app dispatches keys from that table instead of hardcoding them.
-  It also persists the equalizer state and the selected skin.
+  It also persists the equalizer state, selected skin and track-list column configuration.
 - **`gui::theme`** is a small skin engine: named palettes drive egui's `Visuals` and the colours
   that custom-painted widgets (equalizer curve, drag marker, album-art placeholder) use directly.
 
@@ -328,6 +332,7 @@ MUSICWASP_SCREENSHOT=/tmp/plain.png MUSICWASP_AUTOPLAY=1 MUSICWASP_PLAIN=1 cargo
 MUSICWASP_SCREENSHOT=/tmp/tags.png MUSICWASP_EDITOR=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/rename.png MUSICWASP_RENAME=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/eq.png MUSICWASP_EQ=1 cargo run -p musicwasp-gui
+MUSICWASP_SCREENSHOT=/tmp/columns.png MUSICWASP_COLUMNS=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/settings.png MUSICWASP_SETTINGS=1 MUSICWASP_SETTINGS_TAB=about cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/hygiene.png MUSICWASP_HYGIENE=1 cargo run -p musicwasp-gui
 MUSICWASP_SCREENSHOT=/tmp/grid.png MUSICWASP_ALBUM_GRID=1 cargo run -p musicwasp-gui

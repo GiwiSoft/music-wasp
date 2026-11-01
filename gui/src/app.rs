@@ -1,4 +1,6 @@
-use crate::settings::{Action, Session, SessionView, Settings, Shortcut, WindowGeometry};
+use crate::settings::{
+    Action, Session, SessionView, Settings, Shortcut, TrackColumn, WindowGeometry,
+};
 use musicwasp_core::autotag::{self, Candidate, Cover, LocalTrack, Release};
 use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
@@ -730,6 +732,45 @@ fn album_key(album: &str, artist: &str) -> String {
     format!("{}\u{1f}{}", album.to_lowercase(), artist.to_lowercase())
 }
 
+/// Cache key for a track's album artwork.
+pub(crate) fn track_cover_key(track: &Track) -> String {
+    let artist = if track.album_artist.trim().is_empty() {
+        &track.artist
+    } else {
+        &track.album_artist
+    };
+    album_key(&track.album, artist)
+}
+
+/// Load and cache a cover texture for one album. Shared by the album grid and
+/// the album-art track layout.
+pub(crate) fn load_cover_texture(
+    ctx: &egui::Context,
+    covers: &mut HashMap<String, Option<egui::TextureHandle>>,
+    key: &str,
+    path: &Path,
+) -> Option<egui::TextureHandle> {
+    if let Some(cached) = covers.get(key) {
+        return cached.clone();
+    }
+
+    let texture = musicwasp_core::library::cover_art(path)
+        .and_then(|bytes| image::load_from_memory(&bytes).ok())
+        .map(|image| {
+            let image = image.resize(180, 180, image::imageops::FilterType::Triangle);
+            let rgba = image.to_rgba8();
+            let size = [rgba.width() as usize, rgba.height() as usize];
+            let color = egui::ColorImage::from_rgba_unmultiplied(size, &rgba.into_raw());
+            ctx.load_texture(
+                format!("album-cover-{key}"),
+                color,
+                egui::TextureOptions::LINEAR,
+            )
+        });
+    covers.insert(key.to_string(), texture.clone());
+    texture
+}
+
 fn image_mime(data: &[u8]) -> Option<&'static str> {
     match image::guess_format(data).ok()? {
         image::ImageFormat::Jpeg => Some("image/jpeg"),
@@ -1062,8 +1103,12 @@ pub struct App {
     /// Album grid mode and its cached covers.
     pub album_view: bool,
     pub album_groups: Vec<AlbumGroup>,
-    album_covers: HashMap<String, Option<egui::TextureHandle>>,
+    pub(crate) album_covers: HashMap<String, Option<egui::TextureHandle>>,
     albums_dirty: bool,
+    /// Track-list column settings window.
+    pub show_columns: bool,
+    /// Ask the table to discard its cached widths on the next frame.
+    pub columns_reset: bool,
     cover_rx: Option<Receiver<CoverMsg>>,
     pub cover_picker: Option<CoverPickerState>,
     /// OS watcher for scanned folders; `None` when disabled or idle.
@@ -1227,6 +1272,8 @@ impl App {
             album_groups: Vec::new(),
             album_covers: HashMap::new(),
             albums_dirty: true,
+            show_columns: false,
+            columns_reset: false,
             cover_rx: None,
             cover_picker: None,
             watcher: None,
@@ -2210,31 +2257,33 @@ impl App {
         group: &AlbumGroup,
     ) -> Option<egui::TextureHandle> {
         let key = album_key(&group.album, &group.artist);
-        if let Some(cached) = self.album_covers.get(&key) {
-            return cached.clone();
-        }
-
-        let texture = musicwasp_core::library::cover_art(Path::new(&group.path))
-            .and_then(|bytes| image::load_from_memory(&bytes).ok())
-            .map(|image| {
-                let image = image.resize(180, 180, image::imageops::FilterType::Triangle);
-                let rgba = image.to_rgba8();
-                let size = [rgba.width() as usize, rgba.height() as usize];
-                let color = egui::ColorImage::from_rgba_unmultiplied(size, &rgba.into_raw());
-                ctx.load_texture(
-                    format!("album-cover-{key}"),
-                    color,
-                    egui::TextureOptions::LINEAR,
-                )
-            });
-        self.album_covers.insert(key, texture.clone());
-        texture
+        load_cover_texture(ctx, &mut self.album_covers, &key, Path::new(&group.path))
     }
 
     pub fn toggle_album_view(&mut self) {
         self.album_view = !self.album_view;
         if self.album_view {
             self.albums_dirty = true;
+        }
+    }
+
+    // ---- track-list columns ----
+
+    /// Remember widths captured from the resizable header.
+    pub fn update_column_widths(&mut self, visible: &[TrackColumn], widths: &[f32]) {
+        if visible.len() != widths.len() {
+            return;
+        }
+        let mut changed = false;
+        for (column, width) in visible.iter().zip(widths) {
+            let current = self.settings.columns.width(*column);
+            if (current - *width).abs() > 0.5 {
+                self.settings.columns.set_width(*column, *width);
+                changed = true;
+            }
+        }
+        if changed {
+            self.persist_settings();
         }
     }
 
@@ -4225,6 +4274,7 @@ impl eframe::App for App {
         crate::ui::folder_dialog(self, &ctx);
         crate::ui::m3u_dialog(self, &ctx);
         crate::ui::saved_search_dialog(self, &ctx);
+        crate::ui::columns_window(self, &ctx);
         crate::ui::smart_dialog(self, &ctx);
         crate::ui::settings_window(self, &ctx);
         crate::ui::hygiene_window(self, &ctx);
@@ -4406,6 +4456,11 @@ impl App {
         // Debug hook: MUSICWASP_EQ=1 opens the equalizer.
         if self.frames == 20 && std::env::var("MUSICWASP_EQ").is_ok() {
             self.show_equalizer = true;
+        }
+
+        // Debug hook: MUSICWASP_COLUMNS=1 opens the column manager.
+        if self.frames == 20 && std::env::var("MUSICWASP_COLUMNS").is_ok() {
+            self.show_columns = true;
         }
 
         // Debug hook: MUSICWASP_UNDO=1 restores the last tag snapshot.
