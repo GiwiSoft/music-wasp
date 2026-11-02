@@ -100,6 +100,9 @@ The wiki contains the full manual:
 
 ## Development
 
+Temporary Wayland patches are tracked in [`patches/REMOVAL.md`](patches/REMOVAL.md); the
+`temporary_patches` test fails when the pinned dependencies drift.
+
 ```bash
 cargo test --workspace
 cargo test -p musicwasp-gui --test snapshots

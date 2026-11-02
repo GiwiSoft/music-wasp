@@ -17,3 +17,7 @@ Pinned in the workspace `Cargo.toml` to
 the reviewed 0.30 backport of native Wayland file drops. Remove the patch and
 the local `egui-winit` directory once winit and egui-winit releases include
 these changes.
+
+See [REMOVAL.md](REMOVAL.md) for the removal checklist. The
+`wayland_patches_are_reviewed_on_dependency_updates` test fails when the pinned
+revision, eframe requirement or patched crate version drifts.
