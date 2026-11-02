@@ -136,6 +136,89 @@ fn advanced_search_filters_fields_and_keeps_plain_text_search() {
 }
 
 #[test]
+fn full_text_search_stays_in_sync_with_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    let music = dir.path().join("music");
+    std::fs::create_dir_all(&music).unwrap();
+    let path = music.join("airbag.wav");
+    write_wav(&path, 500);
+    tag(
+        &path,
+        "Airbag",
+        "Radiohead",
+        "OK Computer",
+        "Alternative",
+        1997,
+        1,
+    );
+
+    let lib = Library::open_at(&dir.path().join("library.db")).unwrap();
+    lib.scan(&music, false).unwrap();
+
+    // Full token, mid-word substring and the short-query fallback all match.
+    assert_eq!(titles(&lib, "radiohead"), vec!["Airbag"]);
+    assert_eq!(titles(&lib, "diohe"), vec!["Airbag"]);
+    assert_eq!(titles(&lib, "ra"), vec!["Airbag"]);
+
+    // Tag edits re-index through the upsert trigger.
+    let query = Filter {
+        text: "airbag".into(),
+        ..Default::default()
+    };
+    let track = lib.query(&query, SortKey::Title, true).unwrap().remove(0);
+    let mut edit = TagEdit::from_track(&track);
+    edit.artist = "Portishead".into();
+    musicwasp_core::tags::write(&path, &edit).unwrap();
+    lib.refresh_file(&path).unwrap();
+    assert!(titles(&lib, "radiohead").is_empty());
+    assert_eq!(titles(&lib, "portishead"), vec!["Airbag"]);
+
+    // Deleting the row drops it from the index as well.
+    lib.remove_tracks(&[track.id]).unwrap();
+    assert!(titles(&lib, "portishead").is_empty());
+    assert!(titles(&lib, "airbag").is_empty());
+}
+
+#[test]
+fn legacy_database_backfills_the_search_index_on_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let music = dir.path().join("music");
+    std::fs::create_dir_all(&music).unwrap();
+    let path = music.join("airbag.wav");
+    write_wav(&path, 500);
+    tag(
+        &path,
+        "Airbag",
+        "Radiohead",
+        "OK Computer",
+        "Alternative",
+        1997,
+        1,
+    );
+
+    let db = dir.path().join("library.db");
+    {
+        let lib = Library::open_at(&db).unwrap();
+        lib.scan(&music, false).unwrap();
+    }
+
+    // Simulate a library created before the FTS index existed.
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "DROP TRIGGER tracks_fts_ai;
+             DROP TRIGGER tracks_fts_ad;
+             DROP TRIGGER tracks_fts_au;
+             DROP TABLE tracks_fts;",
+        )
+        .unwrap();
+    }
+
+    let lib = Library::open_at(&db).unwrap();
+    assert_eq!(titles(&lib, "radiohead"), vec!["Airbag"]);
+}
+
+#[test]
 fn saved_searches_round_trip_and_validate_names() {
     let dir = tempfile::tempdir().unwrap();
     let lib = Library::open_at(&dir.path().join("library.db")).unwrap();

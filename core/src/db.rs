@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 
 /// Directory holding the library database and user settings.
@@ -168,6 +168,55 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_tracks_last_played ON tracks(last_played)",
         [],
     )?;
+
+    // Full-text index over the searchable tag columns. The trigram tokenizer
+    // keeps the substring semantics of the previous LIKE scans while letting
+    // SQLite answer them from an index. External content avoids duplicating
+    // the rows; the triggers keep the index in sync for every write path,
+    // including the scan upserts and tag refreshes.
+    let has_fts: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tracks_fts'",
+            [],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    conn.execute_batch(
+        r#"
+        CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+            title, artist, album, album_artist, genre, format,
+            content = 'tracks',
+            content_rowid = 'id',
+            tokenize = 'trigram'
+        );
+        CREATE TRIGGER IF NOT EXISTS tracks_fts_ai AFTER INSERT ON tracks BEGIN
+            INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, format)
+            VALUES (new.id, new.title, new.artist, new.album, new.album_artist,
+                    new.genre, new.format);
+        END;
+        CREATE TRIGGER IF NOT EXISTS tracks_fts_ad AFTER DELETE ON tracks BEGIN
+            INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, album_artist,
+                                   genre, format)
+            VALUES ('delete', old.id, old.title, old.artist, old.album, old.album_artist,
+                    old.genre, old.format);
+        END;
+        CREATE TRIGGER IF NOT EXISTS tracks_fts_au
+        AFTER UPDATE OF title, artist, album, album_artist, genre, format ON tracks BEGIN
+            INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, album_artist,
+                                   genre, format)
+            VALUES ('delete', old.id, old.title, old.artist, old.album, old.album_artist,
+                    old.genre, old.format);
+            INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, format)
+            VALUES (new.id, new.title, new.artist, new.album, new.album_artist,
+                    new.genre, new.format);
+        END;
+        "#,
+    )?;
+    // Existing libraries predate the index: fill it once on upgrade.
+    if !has_fts {
+        conn.execute("INSERT INTO tracks_fts(tracks_fts) VALUES ('rebuild')", [])?;
+    }
     Ok(())
 }
 

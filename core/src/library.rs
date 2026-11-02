@@ -449,6 +449,13 @@ pub fn query(conn: &Connection, filter: &Filter, sort: SortKey, asc: bool) -> Re
         args.push(Value::Text(al.clone()));
     }
     if !search.text.trim().is_empty() {
+        // Prefilter through the trigram FTS index, then keep the LIKE check so
+        // results match the old substring search exactly. Short queries fall
+        // back to the plain scan because a trigram needs three characters.
+        if let Some(match_expr) = fts_phrase(&search.text) {
+            sql.push_str(" AND id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?)");
+            args.push(Value::Text(match_expr));
+        }
         sql.push_str(
             " AND (title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\'
                    OR album LIKE ? ESCAPE '\\' OR genre LIKE ? ESCAPE '\\')",
@@ -469,6 +476,12 @@ pub fn query(conn: &Connection, filter: &Filter, sort: SortKey, asc: bool) -> Re
                     sql.push_str(&format!(" AND {} = ? COLLATE NOCASE", field.column()));
                     args.push(Value::Text(value));
                 } else {
+                    if let Some(match_expr) = fts_phrase(&value) {
+                        sql.push_str(
+                            " AND id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?)",
+                        );
+                        args.push(Value::Text(format!("{} : {match_expr}", field.column())));
+                    }
                     sql.push_str(&format!(" AND {} LIKE ? ESCAPE '\\'", field.column()));
                     args.push(Value::Text(like_pattern(&value)));
                 }
@@ -511,6 +524,18 @@ fn like_pattern(value: &str) -> String {
         .replace('%', "\\%")
         .replace('_', "\\_");
     format!("%{escaped}%")
+}
+
+/// FTS5 trigram phrase for a raw search string.
+///
+/// Returns `None` for strings shorter than one trigram: the trigram tokenizer
+/// cannot match them, so the caller keeps the plain LIKE scan.
+fn fts_phrase(text: &str) -> Option<String> {
+    let text = text.trim();
+    if text.chars().count() < 3 {
+        return None;
+    }
+    Some(format!("\"{}\"", text.replace('"', "\"\"")))
 }
 
 /// Tracks for a set of ids, in the order requested.
