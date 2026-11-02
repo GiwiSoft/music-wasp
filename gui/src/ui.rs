@@ -3649,6 +3649,10 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     let mut unbind: Option<crate::settings::Action> = None;
     let mut rebind: Option<crate::settings::Action> = None;
     let mut chosen_skin: Option<crate::theme::Skin> = None;
+    let mut open_skins = false;
+    let mut reload_skins = false;
+    let mut duplicate_skin = false;
+    let mut edit_skin = false;
     let mut chosen_language: Option<Language> = None;
     let mut chosen_device: Option<Option<String>> = None;
     let mut scrobble_enabled = app.settings.scrobble_listenbrainz;
@@ -3735,6 +3739,21 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         .size(10.5)
                         .color(th::text_dim()),
                 );
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if ui.small_button("Open skins folder").clicked() {
+                        open_skins = true;
+                    }
+                    if ui.small_button("Reload skins").clicked() {
+                        reload_skins = true;
+                    }
+                    if ui.small_button("Duplicate selected skin").clicked() {
+                        duplicate_skin = true;
+                    }
+                    if ui.small_button("Edit colours…").clicked() {
+                        edit_skin = true;
+                    }
+                });
 
                 ui.add_space(8.0);
                 ui.label(
@@ -4081,6 +4100,18 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
         app.settings.scrobble_listenbrainz = scrobble_enabled;
         app.settings.listenbrainz_token = scrobble_token;
         app.persist_settings();
+    }
+    if open_skins {
+        app.open_skins_folder();
+    }
+    if reload_skins {
+        app.reload_skins(ctx);
+    }
+    if duplicate_skin {
+        app.duplicate_skin(ctx);
+    }
+    if edit_skin {
+        app.open_skin_editor();
     }
     if let Some(skin) = chosen_skin {
         app.set_skin(ctx, skin);

@@ -22,7 +22,7 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - Library hygiene with missing-file detection and rename reconciliation
 - Tag-based file organizer with preview, collision detection and undo
 - English, French, German and Spanish UI
-- Nine built-in skins, custom JSON skins and high-contrast mode
+- Nine built-in skins, custom JSON skins, a live colour editor and high-contrast mode
 - Disc folders, saved searches, session restore and ListenBrainz scrobbling
 - Linux MPRIS2 desktop controls and native Wayland drag-and-drop
 

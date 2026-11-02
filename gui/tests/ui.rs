@@ -762,3 +762,48 @@ fn organizer_previews_moves_and_undoes_selected_tracks() {
     assert!(!music.join("Artist/Album/01 - One.wav").exists());
     assert!(harness.state().move_undo.is_none());
 }
+
+#[test]
+fn skin_editor_duplicates_and_saves_palettes() {
+    use musicwasp_gui::theme;
+
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    let mut harness = harness();
+    harness.run_steps(2);
+    let ctx = harness.ctx.clone();
+    let original = harness.state().settings.skin;
+
+    // Live preview changes the painted palette without touching settings.json.
+    let mut palette = original.palette();
+    palette.accent = egui::Color32::from_rgb(255, 0, 128);
+    harness.state_mut().open_skin_editor();
+    harness.state_mut().skin_editor.as_mut().unwrap().palette = palette;
+    harness.state_mut().preview_skin_palette(&ctx, palette);
+    assert_eq!(theme::accent(), palette.accent);
+
+    // Saving writes a user override with the same id.
+    harness.state_mut().save_skin_editor(&ctx);
+    let saved = theme::Skin::from_id(original.id());
+    assert_eq!(saved.palette().accent, palette.accent);
+    let path = dir.path().join("skins.json");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains(original.id()));
+
+    // Reload picks up edits made outside the app.
+    std::fs::write(&path, text.replace("#ff0080", "#112233")).unwrap();
+    harness.state_mut().reload_skins(&ctx);
+    assert_eq!(
+        theme::Skin::from_id(original.id()).palette().accent,
+        egui::Color32::from_rgb(0x11, 0x22, 0x33)
+    );
+
+    // Duplicating creates and selects a new skin.
+    harness.state_mut().duplicate_skin(&ctx);
+    let copy = harness.state().settings.skin;
+    assert_ne!(copy.id(), original.id());
+    assert!(copy.label().ends_with("copy"));
+    assert!(theme::Skin::all().iter().any(|skin| skin.id() == copy.id()));
+    let text = std::fs::read_to_string(dir.path().join("skins.json")).unwrap();
+    assert!(text.contains(copy.id()));
+}

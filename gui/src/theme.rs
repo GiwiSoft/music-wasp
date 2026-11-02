@@ -462,6 +462,240 @@ impl Default for Palette {
     }
 }
 
+/// One editable colour slot, shared by the editor and `skins.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteField {
+    BgDark,
+    BgPanel,
+    BgRowAlt,
+    BgSelected,
+    Accent,
+    TextDim,
+    Text,
+    ExtremeBg,
+    WidgetInactive,
+    WidgetWeak,
+    WidgetHover,
+}
+
+impl PaletteField {
+    pub const ALL: [PaletteField; 11] = [
+        PaletteField::BgDark,
+        PaletteField::BgPanel,
+        PaletteField::BgRowAlt,
+        PaletteField::BgSelected,
+        PaletteField::Accent,
+        PaletteField::TextDim,
+        PaletteField::Text,
+        PaletteField::ExtremeBg,
+        PaletteField::WidgetInactive,
+        PaletteField::WidgetWeak,
+        PaletteField::WidgetHover,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PaletteField::BgDark => "Window background",
+            PaletteField::BgPanel => "Panel background",
+            PaletteField::BgRowAlt => "Alternate row",
+            PaletteField::BgSelected => "Selected row",
+            PaletteField::Accent => "Accent",
+            PaletteField::TextDim => "Dimmed text",
+            PaletteField::Text => "Text",
+            PaletteField::ExtremeBg => "Extreme background",
+            PaletteField::WidgetInactive => "Widget",
+            PaletteField::WidgetWeak => "Widget (weak)",
+            PaletteField::WidgetHover => "Widget hover",
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            PaletteField::BgDark => "bg_dark",
+            PaletteField::BgPanel => "bg_panel",
+            PaletteField::BgRowAlt => "bg_row_alt",
+            PaletteField::BgSelected => "bg_selected",
+            PaletteField::Accent => "accent",
+            PaletteField::TextDim => "text_dim",
+            PaletteField::Text => "text",
+            PaletteField::ExtremeBg => "extreme_bg",
+            PaletteField::WidgetInactive => "widget_inactive",
+            PaletteField::WidgetWeak => "widget_weak",
+            PaletteField::WidgetHover => "widget_hover",
+        }
+    }
+
+    pub fn get(self, palette: &Palette) -> Color32 {
+        match self {
+            PaletteField::BgDark => palette.bg_dark,
+            PaletteField::BgPanel => palette.bg_panel,
+            PaletteField::BgRowAlt => palette.bg_row_alt,
+            PaletteField::BgSelected => palette.bg_selected,
+            PaletteField::Accent => palette.accent,
+            PaletteField::TextDim => palette.text_dim,
+            PaletteField::Text => palette.text,
+            PaletteField::ExtremeBg => palette.extreme_bg,
+            PaletteField::WidgetInactive => palette.widget_inactive,
+            PaletteField::WidgetWeak => palette.widget_weak,
+            PaletteField::WidgetHover => palette.widget_hover,
+        }
+    }
+
+    pub fn set(self, palette: &mut Palette, color: Color32) {
+        match self {
+            PaletteField::BgDark => palette.bg_dark = color,
+            PaletteField::BgPanel => palette.bg_panel = color,
+            PaletteField::BgRowAlt => palette.bg_row_alt = color,
+            PaletteField::BgSelected => palette.bg_selected = color,
+            PaletteField::Accent => palette.accent = color,
+            PaletteField::TextDim => palette.text_dim = color,
+            PaletteField::Text => palette.text = color,
+            PaletteField::ExtremeBg => palette.extreme_bg = color,
+            PaletteField::WidgetInactive => palette.widget_inactive = color,
+            PaletteField::WidgetWeak => palette.widget_weak = color,
+            PaletteField::WidgetHover => palette.widget_hover = color,
+        }
+    }
+}
+
+/// Data directory, created when missing. `skins.json` lives here.
+pub fn skins_folder() -> Result<PathBuf, String> {
+    let dir = musicwasp_core::db::data_dir().map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    Ok(dir)
+}
+
+/// Save `palette` as an override of `skin` in `skins.json`, then reload.
+pub fn save_palette(skin: Skin, palette: Palette) -> Result<Skin, String> {
+    let definition = skin.definition();
+    let entry = entry_value(&definition, palette, true);
+    upsert_entry(&entry, definition.id)?;
+    load_user_skins();
+    Ok(Skin::from_id(skin.id()))
+}
+
+/// Copy `skin` into `skins.json` under a unique id.
+pub fn duplicate(skin: Skin) -> Result<Skin, String> {
+    let definition = skin.definition();
+    let (id, label) = unique_copy(&definition);
+    let mut entry = entry_value(&definition, definition.palette, false);
+    entry["id"] = serde_json::Value::String(id.clone());
+    entry["label"] = serde_json::Value::String(label);
+    upsert_entry(&entry, &id)?;
+    load_user_skins();
+    Ok(Skin::from_id(&id))
+}
+
+fn unique_copy(definition: &SkinDefinition) -> (String, String) {
+    let base = format!("{}-copy", definition.id);
+    let mut id = base.clone();
+    let mut index = 2;
+    while Skin::all().iter().any(|skin| skin.id() == id) {
+        id = format!("{base}{index}");
+        index += 1;
+    }
+    let mut label = format!("{} copy", definition.label);
+    if index > 2 {
+        label.push_str(&format!(" {}", index - 1));
+    }
+    (id, label)
+}
+
+fn entry_value(
+    definition: &SkinDefinition,
+    palette: Palette,
+    include_aliases: bool,
+) -> serde_json::Value {
+    let colors = PaletteField::ALL
+        .iter()
+        .map(|field| {
+            (
+                field.key().to_string(),
+                serde_json::Value::String(hex(field.get(&palette))),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    let mut entry = serde_json::json!({
+        "id": definition.id,
+        "label": definition.label,
+        "light": definition.light,
+        "glass": definition.glass,
+        "high_contrast": definition.high_contrast,
+        "square": definition.square,
+        "compact": definition.compact,
+        "palette": colors,
+    });
+    if include_aliases && !definition.aliases.is_empty() {
+        entry["aliases"] = serde_json::json!(definition.aliases);
+    }
+    if let Some(backdrop) = definition.backdrop {
+        entry["backdrop"] =
+            serde_json::json!(backdrop.iter().map(|color| hex(*color)).collect::<Vec<_>>());
+    }
+    if let Some(path) = &definition.icon_path {
+        entry["icon"] = serde_json::Value::String(path.to_string_lossy().to_string());
+    } else {
+        entry["icon"] = serde_json::Value::String(
+            if definition.icon_light {
+                "light"
+            } else {
+                "dark"
+            }
+            .to_string(),
+        );
+    }
+    entry
+}
+
+fn upsert_entry(entry: &serde_json::Value, id: &str) -> Result<(), String> {
+    let path = skins_folder()?.join("skins.json");
+    let mut entries = user_entries(&path)?;
+    match entries
+        .iter_mut()
+        .find(|item| item.get("id").and_then(|value| value.as_str()) == Some(id))
+    {
+        Some(existing) => *existing = entry.clone(),
+        None => entries.push(entry.clone()),
+    }
+    let document = serde_json::json!({ "skins": entries });
+    let text = serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, text).map_err(|error| error.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn user_entries(path: &Path) -> Result<Vec<serde_json::Value>, String> {
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|error| format!("invalid skins.json: {error}"))?;
+    match value {
+        serde_json::Value::Array(entries) => Ok(entries),
+        serde_json::Value::Object(mut map) => match map.remove("skins") {
+            Some(serde_json::Value::Array(entries)) => Ok(entries),
+            _ => Err("skins.json must hold a list or an object with \"skins\"".to_string()),
+        },
+        _ => Err("skins.json must hold a list or an object with \"skins\"".to_string()),
+    }
+}
+
+fn hex(color: Color32) -> String {
+    if color.a() == 255 {
+        format!("#{:02x}{:02x}{:02x}", color.r(), color.g(), color.b())
+    } else {
+        format!(
+            "#{:02x}{:02x}{:02x}{:02x}",
+            color.r(),
+            color.g(),
+            color.b(),
+            color.a()
+        )
+    }
+}
+
 static ACTIVE: OnceLock<RwLock<Palette>> = OnceLock::new();
 
 /// Extra UI scale used by the larger-font accessibility mode.
@@ -496,7 +730,15 @@ pub fn bg_selected() -> Color32 {
 
 /// Install `skin` and rebuild the egui visuals.
 pub fn apply(ctx: &egui::Context, skin: Skin) {
-    let palette = skin.palette();
+    apply_palette(ctx, skin, skin.palette());
+}
+
+/// Apply an edited palette immediately, keeping the skin's other traits.
+pub fn preview(ctx: &egui::Context, skin: Skin, palette: Palette) {
+    apply_palette(ctx, skin, palette);
+}
+
+fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
     let glass = skin.is_glass();
     *active()
         .write()

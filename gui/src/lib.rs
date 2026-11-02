@@ -12,5 +12,6 @@ pub mod icons;
 mod mpris;
 mod organize;
 pub mod settings;
+mod skin_editor;
 pub mod theme;
 mod ui;

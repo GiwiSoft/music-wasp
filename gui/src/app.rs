@@ -484,6 +484,13 @@ impl AutoTagMapping {
 
 /// Results of a library hygiene scan: rows whose files vanished, and groups of
 /// tracks that share the same artist/title/album.
+/// Live skin colour editor state.
+pub struct SkinEditorState {
+    pub skin: crate::theme::Skin,
+    pub palette: crate::theme::Palette,
+    pub status: Option<String>,
+}
+
 /// File organizer window: pattern, dry-run plan and confirmation state.
 pub struct OrganizeState {
     pub pattern: String,
@@ -1270,6 +1277,8 @@ pub struct App {
     /// Screenshot runs must be deterministic, so they skip session restore/save.
     session_enabled: bool,
     pub show_settings: bool,
+    pub show_skin_editor: bool,
+    pub skin_editor: Option<SkinEditorState>,
     pub settings_tab: SettingsTab,
     pub show_equalizer: bool,
     /// Equalizer state last pushed to the engine, so changes are cheap.
@@ -1453,6 +1462,8 @@ impl App {
             window_geometry,
             session_enabled,
             show_settings: false,
+            show_skin_editor: false,
+            skin_editor: None,
             settings_tab: SettingsTab::default(),
             show_equalizer: false,
             eq_applied,
@@ -3960,6 +3971,105 @@ impl App {
         self.persist_settings();
     }
 
+    // ---- skin editing ----
+
+    /// Open the palette editor for the current skin.
+    pub fn open_skin_editor(&mut self) {
+        let skin = self.settings.skin;
+        self.skin_editor = Some(SkinEditorState {
+            skin,
+            palette: skin.palette(),
+            status: None,
+        });
+        self.show_skin_editor = true;
+    }
+
+    /// Apply an edited palette without persisting it yet.
+    pub fn preview_skin_palette(&mut self, ctx: &egui::Context, palette: crate::theme::Palette) {
+        if let Some(editor) = &self.skin_editor {
+            crate::theme::preview(ctx, editor.skin, palette);
+        }
+    }
+
+    /// Write the edited palette to `skins.json` and keep it selected.
+    pub fn save_skin_editor(&mut self, ctx: &egui::Context) {
+        let Some(editor) = &self.skin_editor else {
+            return;
+        };
+        match crate::theme::save_palette(editor.skin, editor.palette) {
+            Ok(skin) => {
+                self.settings.skin = skin;
+                crate::theme::apply(ctx, skin);
+                self.refresh_brand_icon(ctx);
+                self.persist_settings();
+                self.skin_editor = None;
+                self.show_skin_editor = false;
+                self.message = "skin colours saved".to_string();
+            }
+            Err(error) => {
+                if let Some(editor) = &mut self.skin_editor {
+                    editor.status = Some(format!("save failed: {error}"));
+                }
+            }
+        }
+    }
+
+    /// Drop the live preview and restore the stored palette.
+    pub fn cancel_skin_editor(&mut self, ctx: &egui::Context) {
+        if let Some(editor) = &self.skin_editor {
+            crate::theme::apply(ctx, editor.skin);
+        }
+        self.skin_editor = None;
+        self.show_skin_editor = false;
+    }
+
+    /// Re-read `skins.json` and re-apply the selected skin.
+    pub fn reload_skins(&mut self, ctx: &egui::Context) {
+        crate::theme::load_user_skins();
+        let skin = crate::theme::Skin::from_id(self.settings.skin.id());
+        self.settings.skin = skin;
+        crate::theme::apply(ctx, skin);
+        self.refresh_brand_icon(ctx);
+        self.persist_settings();
+        self.skin_editor = None;
+        self.show_skin_editor = false;
+        self.message = "skins reloaded".to_string();
+    }
+
+    /// Copy the selected skin and switch to the new one.
+    pub fn duplicate_skin(&mut self, ctx: &egui::Context) {
+        match crate::theme::duplicate(self.settings.skin) {
+            Ok(skin) => {
+                self.settings.skin = skin;
+                crate::theme::apply(ctx, skin);
+                self.refresh_brand_icon(ctx);
+                self.persist_settings();
+                self.message = format!("duplicated skin \"{}\"", skin.label());
+                self.open_skin_editor();
+            }
+            Err(error) => self.message = format!("could not duplicate skin: {error}"),
+        }
+    }
+
+    /// Reveal the data directory that holds `skins.json`.
+    pub fn open_skins_folder(&mut self) {
+        match crate::theme::skins_folder() {
+            Ok(folder) => {
+                let file = folder.join("skins.json");
+                if !file.exists() {
+                    let _ = std::fs::write(&file, "{\n  \"skins\": []\n}\n");
+                }
+                match reveal_folder(&folder) {
+                    Ok(()) => self.message = format!("opened {}", folder.display()),
+                    Err(error) => {
+                        self.message = format!("could not open skins folder: {error}");
+                    }
+                }
+            }
+            Err(error) => self.message = format!("could not open skins folder: {error}"),
+        }
+    }
+
     /// Switch skins immediately and remember the choice.
     pub fn set_skin(&mut self, ctx: &egui::Context, skin: crate::theme::Skin) {
         if self.settings.skin != skin {
@@ -5015,6 +5125,7 @@ impl eframe::App for App {
         crate::ui::settings_window(self, &ctx);
         crate::hygiene::window(self, &ctx);
         crate::organize::window(self, &ctx);
+        crate::skin_editor::window(self, &ctx);
         crate::ui::cover_picker(self, &ctx);
         crate::ui::folder_picker(self, &ctx);
         crate::ui::autotag_window(self, &ctx);
@@ -5227,6 +5338,11 @@ impl App {
             self.open_hygiene();
         }
 
+        // Debug hook: MUSICWASP_SKIN_EDITOR=1 opens the colour editor.
+        if self.frames == 30 && std::env::var("MUSICWASP_SKIN_EDITOR").is_ok() {
+            self.open_skin_editor();
+        }
+
         // Debug hook: MUSICWASP_ORGANIZE=1 opens the file organizer preview.
         if self.frames == 20 && std::env::var("MUSICWASP_ORGANIZE").is_ok() {
             self.open_organize();
@@ -5299,3 +5415,20 @@ pub fn fmt_size(bytes: u64) -> String {
 #[cfg(test)]
 #[path = "../tests/unit/app.rs"]
 mod tests;
+
+/// Open a folder in the desktop file manager.
+fn reveal_folder(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    let command = "xdg-open";
+    #[cfg(target_os = "windows")]
+    let command = "explorer";
+    #[cfg(target_os = "macos")]
+    let command = "open";
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    let command = "xdg-open";
+
+    std::process::Command::new(command)
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+}
