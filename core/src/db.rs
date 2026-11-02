@@ -69,9 +69,6 @@ fn migrate(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
         CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
         CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre);
-        CREATE INDEX IF NOT EXISTS idx_tracks_rating ON tracks(rating);
-        CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON tracks(play_count);
-        CREATE INDEX IF NOT EXISTS idx_tracks_last_played ON tracks(last_played);
 
         -- Optional hierarchy for grouping playlists. Folders can be nested;
         -- deleting a folder moves its children up one level.

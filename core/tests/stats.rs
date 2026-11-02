@@ -124,3 +124,58 @@ fn ratings_play_counts_skips_and_history_filters() {
         assert_eq!(found, 1, "missing tracks.{column}");
     }
 }
+
+#[test]
+fn legacy_database_without_statistics_columns_migrates_on_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.db");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE tracks (
+                id            INTEGER PRIMARY KEY,
+                path          TEXT NOT NULL UNIQUE,
+                title         TEXT NOT NULL DEFAULT '',
+                artist        TEXT NOT NULL DEFAULT '',
+                album         TEXT NOT NULL DEFAULT '',
+                album_artist  TEXT NOT NULL DEFAULT '',
+                genre         TEXT NOT NULL DEFAULT '',
+                year          INTEGER,
+                track_no      INTEGER,
+                disc_no       INTEGER,
+                duration_secs INTEGER NOT NULL DEFAULT 0,
+                sample_rate   INTEGER NOT NULL DEFAULT 0,
+                bitrate       INTEGER NOT NULL DEFAULT 0,
+                channels      INTEGER NOT NULL DEFAULT 0,
+                format        TEXT NOT NULL DEFAULT '',
+                size_bytes    INTEGER NOT NULL DEFAULT 0,
+                mtime         INTEGER NOT NULL DEFAULT 0,
+                added_at      INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT INTO tracks (path, title, added_at) VALUES ('/music/a.flac', 'A', 123);
+            "#,
+        )
+        .unwrap();
+    }
+
+    let conn = db::open_at(&path).unwrap();
+    let rating: i64 = conn
+        .query_row("SELECT rating FROM tracks WHERE id = 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(rating, 0);
+    let indexes: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_index_list('tracks')
+             WHERE name IN ('idx_tracks_rating', 'idx_tracks_play_count', 'idx_tracks_last_played')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        indexes, 3,
+        "statistics indexes are created after the ALTERs"
+    );
+}
