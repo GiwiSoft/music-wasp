@@ -82,7 +82,11 @@ fn preview_moves_files_and_undo_restores_them() {
             true,
         )
         .unwrap();
-    assert!(moved[0].path.ends_with("Radiohead/Album/01 - Airbag.wav"));
+    assert_eq!(
+        std::path::Path::new(&moved[0].path),
+        music.join("Radiohead/Album/01 - Airbag.wav"),
+        "the library row follows the file into its new folder"
+    );
 
     // A second preview of the same layout has nothing left to do.
     let tracks = lib
