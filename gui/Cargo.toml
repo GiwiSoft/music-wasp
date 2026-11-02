@@ -7,6 +7,10 @@ license.workspace = true
 [[bin]]
 name = "musicwasp"
 path = "src/main.rs"
+# Integration tests drive the library directly; do not link a second copy of
+# the GUI as an empty unit-test binary.
+test = false
+bench = false
 
 [lib]
 name = "musicwasp_gui"
@@ -42,4 +46,9 @@ winresource = "0.1"
 [dev-dependencies]
 tempfile = "3"
 toml = "0.8"
+egui_kittest = { version = "0.36", features = ["eframe"] }
+
+# Snapshot rendering pulls wgpu, which is only used by the Linux snapshot test.
+# Keeping it target-specific stops Windows test builds from compiling wgpu.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
 egui_kittest = { version = "0.36", features = ["eframe", "snapshot", "wgpu"] }

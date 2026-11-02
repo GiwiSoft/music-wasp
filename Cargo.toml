@@ -23,6 +23,14 @@ opt-level = 3
 lto = "thin"
 strip = true
 
+# Full debuginfo makes the GUI and every test binary enormous and slow to
+# link. Line tables are enough for backtraces during development.
+[profile.dev]
+debug = 1
+
+[profile.test]
+debug = 1
+
 # Temporary native-Wayland drag-and-drop support.
 # winit 0.30 has no Wayland file drops. This is the reviewed 0.30 backport
 # (rust-windowing/winit#4729). The egui-winit patch uses winit's data device
