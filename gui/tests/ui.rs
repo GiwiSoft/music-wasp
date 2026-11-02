@@ -836,3 +836,68 @@ fn mini_player_toggles_without_disturbing_the_library() {
     harness.run_steps(1);
     assert!(!harness.state().settings.mini_player);
 }
+
+#[test]
+fn settings_can_back_up_and_restore_the_library() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[SeedTrack {
+            file: "one.wav",
+            title: "One",
+            artist: "Artist",
+            album: "Album",
+            year: 2026,
+            track_no: 1,
+        }],
+    );
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    let backup = harness.state_mut().backup_library().unwrap();
+    assert!(backup.is_file());
+
+    // Index another file, then restore the one-track snapshot.
+    let music = dir.path().join("music");
+    let extra = music.join("two.wav");
+    write_wav(&extra, 800);
+    tags::write(
+        &extra,
+        &TagEdit {
+            title: "Two".to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    harness.state().lib.scan(&music, false).unwrap();
+    assert_eq!(
+        harness
+            .state()
+            .lib
+            .query(
+                &musicwasp_core::Filter::default(),
+                musicwasp_core::SortKey::Title,
+                true
+            )
+            .unwrap()
+            .len(),
+        2
+    );
+
+    harness.state_mut().open_restore_dialog();
+    assert!(harness
+        .state()
+        .restore_dialog
+        .as_ref()
+        .is_some_and(|draft| !draft.backups.is_empty()));
+
+    let message = harness.state_mut().restore_library(&backup).unwrap();
+    assert!(message.contains("safety backup"));
+    harness.run_steps(2);
+    assert_eq!(harness.state().tracks.len(), 1);
+    assert_eq!(harness.state().tracks[0].title, "One");
+    assert_eq!(harness.state().view, musicwasp_gui::app::View::Library);
+}

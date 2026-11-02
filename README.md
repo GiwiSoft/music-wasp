@@ -20,6 +20,7 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - Album grid with cover fetch, replacement and `cover.jpg` sidecars
 - Manual and smart playlists, nested folders and M3U import/export
 - Library hygiene with missing-file detection and rename reconciliation
+- Timestamped library database backups and safe restore
 - Tag-based file organizer with preview, collision detection and undo
 - English, French, German and Spanish UI
 - Nine built-in skins, custom JSON skins, a live colour editor and high-contrast mode

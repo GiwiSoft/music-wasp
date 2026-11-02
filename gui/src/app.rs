@@ -484,6 +484,14 @@ impl AutoTagMapping {
 
 /// Results of a library hygiene scan: rows whose files vanished, and groups of
 /// tracks that share the same artist/title/album.
+/// Restore-library dialog state.
+pub struct RestoreDraft {
+    pub path: String,
+    pub backups: Vec<musicwasp_core::backup::BackupFile>,
+    pub confirm: bool,
+    pub status: Option<String>,
+}
+
 /// Live skin colour editor state.
 pub struct SkinEditorState {
     pub skin: crate::theme::Skin,
@@ -1231,6 +1239,7 @@ pub struct App {
     pub hygiene: Option<HygieneState>,
     pub show_organize: bool,
     pub organize: Option<OrganizeState>,
+    pub restore_dialog: Option<RestoreDraft>,
     /// Journal of the last organizer batch, so moves can be undone.
     pub move_undo: Option<Vec<musicwasp_core::organize::MoveRecord>>,
     move_undo_path: PathBuf,
@@ -1433,6 +1442,7 @@ impl App {
             hygiene: None,
             show_organize: false,
             organize: None,
+            restore_dialog: None,
             batch_case: BatchCase::default(),
             batch_field: BatchField::default(),
             batch_copy: BatchField::default(),
@@ -3979,6 +3989,83 @@ impl App {
         self.persist_settings();
     }
 
+    // ---- library backups ----
+
+    /// Write a timestamped backup of the current database.
+    pub fn backup_library(&mut self) -> Result<PathBuf, String> {
+        if self.scan.is_some() {
+            return Err("stop indexing before backing up the library".to_string());
+        }
+        let path = self
+            .lib
+            .create_backup()
+            .map_err(|error| error.to_string())?;
+        self.message = format!("library backed up to {}", path.display());
+        if let Some(draft) = &mut self.restore_dialog {
+            draft.backups = musicwasp_core::backup::list().unwrap_or_default();
+        }
+        Ok(path)
+    }
+
+    /// Open the restore dialog with the available backups.
+    pub fn open_restore_dialog(&mut self) {
+        let backups = musicwasp_core::backup::list().unwrap_or_default();
+        let path = backups
+            .first()
+            .map(|backup| backup.path.to_string_lossy().to_string())
+            .unwrap_or_default();
+        self.restore_dialog = Some(RestoreDraft {
+            path,
+            backups,
+            confirm: false,
+            status: None,
+        });
+    }
+
+    /// Replace the library with a validated backup. Refuses while scanning.
+    pub fn restore_library(&mut self, path: &Path) -> Result<String, String> {
+        if self.scan.is_some() {
+            return Err("stop indexing before restoring the library".to_string());
+        }
+        let safety = self
+            .lib
+            .restore_from(path)
+            .map_err(|error| format!("{error:#}"))?;
+
+        if let Some(player) = &self.player {
+            player.stop();
+        }
+        self.queue.clear();
+        self.queue_pos = None;
+        self.playing_id = None;
+        self.art = None;
+        self.art_key = None;
+        self.gapless_for = None;
+        self.selected.clear();
+        self.anchor = None;
+        self.view = View::Library;
+        self.album_view = false;
+        self.hygiene = None;
+        self.show_hygiene = false;
+        self.organize = None;
+        self.show_organize = false;
+        self.smart_dialog = None;
+        self.playlist_dialog = None;
+        self.m3u_dialog = None;
+        self.mark_browser_dirty();
+        self.mark_tracks_dirty();
+        self.refresh_browser();
+        self.refresh_tracks();
+
+        let message = format!(
+            "library restored from {}; safety backup: {}",
+            path.display(),
+            safety.display()
+        );
+        self.message = message.clone();
+        Ok(message)
+    }
+
     // ---- mini player and tray ----
 
     /// Open or close the compact always-on-top player.
@@ -5333,6 +5420,7 @@ impl eframe::App for App {
         crate::hygiene::window(self, &ctx);
         crate::organize::window(self, &ctx);
         crate::skin_editor::window(self, &ctx);
+        crate::backup_dialog::window(self, &ctx);
         self.update_mini_player(&ctx);
         crate::ui::cover_picker(self, &ctx);
         crate::ui::folder_picker(self, &ctx);
@@ -5551,6 +5639,12 @@ impl App {
 
         if self.frames == 30 && std::env::var("MUSICWASP_MINI").is_ok() {
             self.set_mini_player(true, ctx);
+        }
+
+        // Debug hook: MUSICWASP_RESTORE_DIALOG=1 makes a backup and opens it.
+        if self.frames == 30 && std::env::var("MUSICWASP_RESTORE_DIALOG").is_ok() {
+            let _ = self.backup_library();
+            self.open_restore_dialog();
         }
 
         // Debug hook: MUSICWASP_SKIN_EDITOR=1 opens the colour editor.

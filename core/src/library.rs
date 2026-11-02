@@ -305,6 +305,47 @@ impl Library {
         crate::organize::apply(&self.conn, rows)
     }
 
+    /// Write a timestamped database backup into the data directory.
+    pub fn create_backup(&self) -> Result<PathBuf> {
+        crate::backup::create(&self.conn)
+    }
+
+    /// Write a backup to an explicit path.
+    pub fn backup_to(&self, path: &Path) -> Result<()> {
+        crate::backup::create_at(&self.conn, path)
+    }
+
+    /// Replace this library with `backup`. Returns the safety backup taken
+    /// from the current database before the swap.
+    pub fn restore_from(&mut self, backup: &Path) -> Result<PathBuf> {
+        crate::backup::validate(backup)?;
+        let db_path = self.path.clone().map(Ok).unwrap_or_else(crate::db::path)?;
+        let safety = crate::backup::create(&self.conn)?;
+
+        self.conn
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        let placeholder = Connection::open_in_memory()?;
+        let old = std::mem::replace(&mut self.conn, placeholder);
+        drop(old);
+        for suffix in ["-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", db_path.display()));
+        }
+
+        if let Err(error) = std::fs::copy(backup, &db_path) {
+            // Keep the app usable with the database that is still on disk.
+            self.conn = crate::db::open_at(&db_path)?;
+            return Err(error).with_context(|| {
+                format!(
+                    "cannot restore {}; safety backup kept at {}",
+                    backup.display(),
+                    safety.display()
+                )
+            });
+        }
+        self.conn = crate::db::open_at(&db_path)?;
+        Ok(safety)
+    }
+
     /// Undo a previous organizer batch.
     pub fn organize_undo(
         &self,

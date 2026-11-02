@@ -3692,6 +3692,8 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     let mut duplicate_skin = false;
     let mut edit_skin = false;
     let mut mini_player = app.settings.mini_player;
+    let mut backup_library = false;
+    let mut open_restore = false;
     #[cfg(target_os = "linux")]
     let mut tray_enabled = app.settings.tray_enabled;
     let mut chosen_language: Option<Language> = None;
@@ -3757,6 +3759,15 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         );
                     }
                 }
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if ui.small_button("Back up library").clicked() {
+                        backup_library = true;
+                    }
+                    if ui.small_button("Restore…").clicked() {
+                        open_restore = true;
+                    }
+                });
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(tr("settings.language_section"))
@@ -4181,6 +4192,14 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
         app.settings.scrobble_listenbrainz = scrobble_enabled;
         app.settings.listenbrainz_token = scrobble_token;
         app.persist_settings();
+    }
+    if backup_library {
+        if let Err(error) = app.backup_library() {
+            app.message = format!("backup failed: {error}");
+        }
+    }
+    if open_restore {
+        app.open_restore_dialog();
     }
     if mini_player != app.settings.mini_player {
         app.set_mini_player(mini_player, ctx);
