@@ -8,6 +8,7 @@ use crate::settings::{TrackColumn, TrackLayout};
 use crate::theme as th;
 use egui::{Color32, RichText, WidgetInfo, WidgetType};
 use egui_extras::{Column, TableBuilder};
+use musicwasp_core::smart::SmartPlaylist;
 use musicwasp_core::{Playlist, PlaylistFolder, SortKey, Track};
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -114,7 +115,12 @@ enum Act {
     NewEmptyPlaylist,
     NewPlaylistInFolder(i64),
     NewSmart,
+    NewSmartInFolder(i64),
     EditSmart(i64),
+    RenameSmart(i64),
+    DeleteSmartAt(i64),
+    ExportSmart(i64),
+    MoveSmart(i64, Option<i64>),
     DeletePlaylist,
     DeletePlaylistAt(i64),
     NewFolder(Option<i64>),
@@ -147,10 +153,12 @@ fn folder_menu_path(folders: &[PlaylistFolder], folder_id: i64) -> String {
 
 /// Render folders and playlists recursively. Returns the action the user
 /// triggered, if any.
+#[allow(clippy::too_many_arguments)]
 fn playlist_tree(
     ui: &mut egui::Ui,
     folders: &[PlaylistFolder],
     playlists: &[Playlist],
+    smart_playlists: &[SmartPlaylist],
     view: View,
     parent: Option<i64>,
     depth: usize,
@@ -168,11 +176,19 @@ fn playlist_tree(
                 drop_highlight(ui, resp.rect);
             }
             if let Some(drag) = resp.dnd_release_payload::<DragPlaylist>() {
-                row_act = Some(Act::MovePlaylist(drag.id, Some(folder.id)));
+                row_act = Some(if drag.smart {
+                    Act::MoveSmart(drag.id, Some(folder.id))
+                } else {
+                    Act::MovePlaylist(drag.id, Some(folder.id))
+                });
             }
             resp.context_menu(|ui| {
                 if ui.button(tr("ui.new_playlist_here")).clicked() {
                     row_act = Some(Act::NewPlaylistInFolder(folder.id));
+                    ui.close();
+                }
+                if ui.button("New smart playlist here…").clicked() {
+                    row_act = Some(Act::NewSmartInFolder(folder.id));
                     ui.close();
                 }
                 if ui.button(tr("ui.new_subfolder")).clicked() {
@@ -196,6 +212,7 @@ fn playlist_tree(
             ui,
             folders,
             playlists,
+            smart_playlists,
             view,
             Some(folder.id),
             depth + 1,
@@ -223,7 +240,10 @@ fn playlist_tree(
                 playlist: Some(playlist.id),
                 rect: resp.rect,
             });
-            resp.dnd_set_drag_payload(DragPlaylist { id: playlist.id });
+            resp.dnd_set_drag_payload(DragPlaylist {
+                id: playlist.id,
+                smart: false,
+            });
 
             if resp.dnd_hover_payload::<DragTracks>().is_some() || os_files_over(ui, resp.rect) {
                 drop_highlight(ui, resp.rect);
@@ -266,6 +286,62 @@ fn playlist_tree(
 
             if resp.clicked() {
                 row_act = Some(Act::Playlist(playlist.id));
+            }
+        });
+        if row_act.is_some() {
+            return row_act;
+        }
+    }
+
+    for smart in smart_playlists
+        .iter()
+        .filter(|playlist| playlist.folder_id == parent)
+    {
+        let mut row_act: Option<Act> = None;
+        ui.horizontal(|ui| {
+            ui.add_space(indent + 12.0);
+            let selected = matches!(view, View::Smart(id) if id == smart.id);
+            let label = format!("{} {}", icons::SPARKLE.as_str(), smart.name);
+            let resp = ui.add(
+                egui::Button::selectable(selected, label).sense(egui::Sense::click_and_drag()),
+            );
+            resp.dnd_set_drag_payload(DragPlaylist {
+                id: smart.id,
+                smart: true,
+            });
+            resp.context_menu(|ui| {
+                if ui.button("Edit rules…").clicked() {
+                    row_act = Some(Act::EditSmart(smart.id));
+                    ui.close();
+                }
+                if ui.button(tr("ui.rename_2")).clicked() {
+                    row_act = Some(Act::RenameSmart(smart.id));
+                    ui.close();
+                }
+                if ui.button(tr("ui.export_m3u")).clicked() {
+                    row_act = Some(Act::ExportSmart(smart.id));
+                    ui.close();
+                }
+                ui.menu_button(tr("ui.move_to_folder"), |ui| {
+                    if smart.folder_id.is_some() && ui.button(tr("ui.top_level")).clicked() {
+                        row_act = Some(Act::MoveSmart(smart.id, None));
+                        ui.close();
+                    }
+                    for folder in folders {
+                        let label = folder_menu_path(folders, folder.id);
+                        if ui.button(label).clicked() {
+                            row_act = Some(Act::MoveSmart(smart.id, Some(folder.id)));
+                            ui.close();
+                        }
+                    }
+                });
+                if ui.button(tr("ui.delete_playlist")).clicked() {
+                    row_act = Some(Act::DeleteSmartAt(smart.id));
+                    ui.close();
+                }
+            });
+            if resp.clicked() {
+                row_act = Some(Act::Smart(smart.id));
             }
         });
         if row_act.is_some() {
@@ -813,27 +889,13 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                             ui,
                             &app.playlist_folders,
                             &app.playlists,
+                            &app.smart_playlists,
                             app.view,
                             None,
                             0,
                             &mut os_zones,
                         ) {
                             act = Some(action);
-                        }
-                        for smart in &app.smart_playlists {
-                            let selected =
-                                matches!(app.view, crate::app::View::Smart(id) if id == smart.id);
-                            let label = format!("{} {}", icons::SPARKLE.as_str(), smart.name);
-                            let response = ui.selectable_label(selected, label);
-                            response.context_menu(|ui| {
-                                if ui.button("Edit rules…").clicked() {
-                                    act = Some(Act::EditSmart(smart.id));
-                                    ui.close();
-                                }
-                            });
-                            if response.clicked() {
-                                act = Some(Act::Smart(smart.id));
-                            }
                         }
 
                         if app.playlists.is_empty()
@@ -908,7 +970,12 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
             app.open_playlist_dialog(true, Some(folder));
         }
         Some(Act::NewSmart) => app.open_smart_dialog(),
+        Some(Act::NewSmartInFolder(folder)) => app.open_smart_dialog_in(Some(folder)),
         Some(Act::EditSmart(id)) => app.edit_smart_dialog(id),
+        Some(Act::RenameSmart(id)) => app.start_rename_smart(id),
+        Some(Act::DeleteSmartAt(id)) => app.delete_smart_by_id(id),
+        Some(Act::ExportSmart(id)) => app.open_smart_m3u_export(id),
+        Some(Act::MoveSmart(id, folder)) => app.move_smart_to_folder(id, folder),
         Some(Act::DeletePlaylist) => app.delete_current_playlist(),
         Some(Act::DeletePlaylistAt(id)) => app.delete_playlist_by_id(id),
         Some(Act::NewFolder(parent)) => app.open_new_folder(parent),
@@ -4555,6 +4622,11 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
 pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
     use musicwasp_core::smart::{Field, Op, SortBy};
 
+    let folder = app
+        .smart_dialog
+        .as_ref()
+        .and_then(|draft| draft.folder)
+        .map(|id| app.playlist_folder_path(id));
     let Some(draft) = &mut app.smart_dialog else {
         return;
     };
@@ -4584,6 +4656,13 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
             );
             ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut draft.name));
         });
+        if let Some(folder) = folder {
+            ui.label(
+                RichText::new(format!("Folder: {folder}"))
+                    .size(10.5)
+                    .color(th::text_dim()),
+            );
+        }
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {

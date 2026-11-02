@@ -98,7 +98,8 @@ fn migrate(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS smart_playlists (
             id         INTEGER PRIMARY KEY,
             name       TEXT NOT NULL,
-            definition TEXT NOT NULL
+            definition TEXT NOT NULL,
+            folder_id  INTEGER REFERENCES playlist_folders(id) ON DELETE SET NULL
         );
 
         -- Named queries shown in the search box menu.
@@ -121,6 +122,18 @@ fn migrate(conn: &Connection) -> Result<()> {
     }
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_playlists_folder ON playlists(folder_id)",
+        [],
+    )?;
+    // Smart playlists learned folders after the first schema.
+    if !has_column(conn, "smart_playlists", "folder_id")? {
+        conn.execute(
+            "ALTER TABLE smart_playlists ADD COLUMN folder_id INTEGER
+             REFERENCES playlist_folders(id) ON DELETE SET NULL",
+            [],
+        )?;
+    }
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_smart_playlists_folder ON smart_playlists(folder_id)",
         [],
     )?;
 

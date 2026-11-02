@@ -222,6 +222,11 @@ impl Library {
         crate::m3u::export(&self.conn, playlist_id, path)
     }
 
+    /// Write the evaluated smart playlist as M3U/M3U8.
+    pub fn export_smart_m3u(&self, playlist_id: i64, path: &Path) -> Result<usize> {
+        crate::m3u::export_smart(&self.conn, playlist_id, path)
+    }
+
     // ---- saved searches ----
 
     pub fn saved_searches(&self) -> Result<Vec<crate::search::SavedSearch>> {
@@ -250,8 +255,17 @@ impl Library {
         &self,
         name: &str,
         definition: &crate::smart::Definition,
+        folder_id: Option<i64>,
     ) -> Result<i64> {
-        crate::smart::create(&self.conn, name, definition)
+        crate::smart::create(&self.conn, name, definition, folder_id)
+    }
+
+    pub fn move_smart_playlist_to_folder(
+        &self,
+        playlist_id: i64,
+        folder_id: Option<i64>,
+    ) -> Result<()> {
+        crate::smart::set_folder(&self.conn, playlist_id, folder_id)
     }
 
     pub fn delete_smart_playlist(&self, playlist_id: i64) -> Result<()> {

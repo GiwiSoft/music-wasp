@@ -217,41 +217,76 @@ impl Definition {
 pub struct SmartPlaylist {
     pub id: i64,
     pub name: String,
+    /// Owning folder, or `None` when the playlist sits at the root.
+    pub folder_id: Option<i64>,
     pub definition: Definition,
 }
 
-pub fn create(conn: &Connection, name: &str, definition: &Definition) -> Result<i64> {
+pub fn create(
+    conn: &Connection,
+    name: &str,
+    definition: &Definition,
+    folder_id: Option<i64>,
+) -> Result<i64> {
     let name = name.trim();
     anyhow::ensure!(!name.is_empty(), "playlist name cannot be empty");
+    if let Some(folder) = folder_id {
+        anyhow::ensure!(
+            crate::playlist::folder_exists(conn, folder)?,
+            "folder does not exist"
+        );
+    }
     conn.execute(
-        "INSERT INTO smart_playlists (name, definition) VALUES (?1, ?2)",
-        params![name, definition.to_json()?],
+        "INSERT INTO smart_playlists (name, definition, folder_id) VALUES (?1, ?2, ?3)",
+        params![name, definition.to_json()?, folder_id],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
 pub fn list(conn: &Connection) -> Result<Vec<SmartPlaylist>> {
-    let mut stmt = conn
-        .prepare("SELECT id, name, definition FROM smart_playlists ORDER BY name COLLATE NOCASE")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, folder_id, definition
+         FROM smart_playlists
+         ORDER BY name COLLATE NOCASE",
+    )?;
     let rows = stmt.query_map([], |r| {
-        let id: i64 = r.get(0)?;
-        let name: String = r.get(1)?;
-        let definition: String = r.get(2)?;
-        Ok((id, name, definition))
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<i64>>(2)?,
+            r.get::<_, String>(3)?,
+        ))
     })?;
 
     let mut out = Vec::new();
     for row in rows {
-        let (id, name, definition) = row?;
+        let (id, name, folder_id, definition) = row?;
         // A corrupt definition should not make the whole sidebar unusable.
         let definition = Definition::from_json(&definition).unwrap_or_default();
         out.push(SmartPlaylist {
             id,
             name,
+            folder_id,
             definition,
         });
     }
     Ok(out)
+}
+
+/// Put a smart playlist in `folder_id`, or back at the root when it is `None`.
+pub fn set_folder(conn: &Connection, playlist_id: i64, folder_id: Option<i64>) -> Result<()> {
+    if let Some(folder) = folder_id {
+        anyhow::ensure!(
+            crate::playlist::folder_exists(conn, folder)?,
+            "folder does not exist"
+        );
+    }
+    let changed = conn.execute(
+        "UPDATE smart_playlists SET folder_id = ?1 WHERE id = ?2",
+        params![folder_id, playlist_id],
+    )?;
+    anyhow::ensure!(changed > 0, "smart playlist does not exist");
+    Ok(())
 }
 
 pub fn delete(conn: &Connection, playlist_id: i64) -> Result<()> {

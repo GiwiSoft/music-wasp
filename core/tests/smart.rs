@@ -147,6 +147,56 @@ fn smart_playlist_filters_with_and_any_and_sorts() {
 }
 
 #[test]
+fn smart_playlists_live_in_folders_and_export_to_m3u() {
+    let album = library_with_tracks();
+    let root = album.lib.create_playlist_folder("Root", None).unwrap();
+    let child = album
+        .lib
+        .create_playlist_folder("Child", Some(root))
+        .unwrap();
+    let definition = Definition {
+        rules: vec![Rule {
+            field: Field::Genre,
+            op: Op::Equals,
+            value: "Rock".into(),
+        }],
+        sort: SortBy::Title,
+        ..Default::default()
+    };
+    let id = album
+        .lib
+        .create_smart_playlist("Rock", &definition, Some(child))
+        .unwrap();
+    assert_eq!(
+        album.lib.smart_playlists().unwrap()[0].folder_id,
+        Some(child)
+    );
+
+    album
+        .lib
+        .move_smart_playlist_to_folder(id, Some(root))
+        .unwrap();
+    assert_eq!(
+        album.lib.smart_playlists().unwrap()[0].folder_id,
+        Some(root)
+    );
+
+    let exports = tempfile::tempdir().unwrap();
+    let path = exports.path().join("rock.m3u8");
+    assert_eq!(album.lib.export_smart_m3u(id, &path).unwrap(), 2);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.starts_with("#EXTM3U\n#PLAYLIST:Rock\n"));
+    assert!(text.contains("#EXTINF:1,Alpha - First"));
+    assert!(text.contains("#EXTINF:2,Alpha - Third"));
+
+    // Deleting the folder lifts its smart playlists instead of dropping them.
+    album.lib.delete_playlist_folder(root).unwrap();
+    let stored = album.lib.smart_playlists().unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].folder_id, None);
+}
+
+#[test]
 fn smart_playlist_crud_and_persistence() {
     let album = library_with_tracks();
 
@@ -162,7 +212,7 @@ fn smart_playlist_crud_and_persistence() {
 
     let id = album
         .lib
-        .create_smart_playlist("Alpha only", &definition)
+        .create_smart_playlist("Alpha only", &definition, None)
         .unwrap();
 
     let stored = album.lib.smart_playlists().unwrap();

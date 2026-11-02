@@ -9,8 +9,8 @@ use rusqlite::{params, Connection};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::library::{is_audio_path, refresh_file};
-use crate::playlist;
+use crate::library::{is_audio_path, refresh_file, Track};
+use crate::{playlist, smart};
 
 /// One playable line in an M3U file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -277,7 +277,7 @@ fn track_id_for_path(conn: &Connection, path: &Path) -> Result<Option<i64>> {
     Ok(None)
 }
 
-/// Render a playlist as M3U text, with absolute paths and `#EXTINF` metadata.
+/// Render a manual playlist as M3U text.
 pub fn export_text(conn: &Connection, playlist_id: i64) -> Result<String> {
     let tracks = playlist::tracks(conn, playlist_id)?;
     let name = playlist::list(conn)?
@@ -285,7 +285,22 @@ pub fn export_text(conn: &Connection, playlist_id: i64) -> Result<String> {
         .find(|playlist| playlist.id == playlist_id)
         .map(|playlist| playlist.name)
         .ok_or_else(|| anyhow::anyhow!("playlist does not exist"))?;
+    Ok(render(&name, &tracks))
+}
 
+/// Render a smart playlist as M3U text, evaluating its current rules.
+pub fn export_smart_text(conn: &Connection, playlist_id: i64) -> Result<String> {
+    let name = smart::list(conn)?
+        .into_iter()
+        .find(|playlist| playlist.id == playlist_id)
+        .map(|playlist| playlist.name)
+        .ok_or_else(|| anyhow::anyhow!("smart playlist does not exist"))?;
+    let tracks = smart::tracks(conn, playlist_id)?;
+    Ok(render(&name, &tracks))
+}
+
+/// Shared `#EXTM3U` rendering with absolute paths and `#EXTINF` metadata.
+fn render(name: &str, tracks: &[Track]) -> String {
     let mut out = String::from("#EXTM3U\n");
     out.push_str(&format!("#PLAYLIST:{name}\n"));
     for track in tracks {
@@ -305,12 +320,11 @@ pub fn export_text(conn: &Connection, playlist_id: i64) -> Result<String> {
             track.duration_secs, title, track.path
         ));
     }
-    Ok(out)
+    out
 }
 
-/// Write a playlist to an M3U/M3U8 file. Returns the number of tracks written.
-pub fn export(conn: &Connection, playlist_id: i64, path: &Path) -> Result<usize> {
-    let text = export_text(conn, playlist_id)?;
+/// Write text to an M3U/M3U8 file. Returns the number of tracks written.
+fn write(text: &str, path: &Path) -> Result<usize> {
     let count = text
         .lines()
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
@@ -318,6 +332,16 @@ pub fn export(conn: &Connection, playlist_id: i64, path: &Path) -> Result<usize>
     std::fs::write(path, text)
         .with_context(|| format!("cannot write playlist {}", path.display()))?;
     Ok(count)
+}
+
+/// Write a manual playlist to an M3U/M3U8 file.
+pub fn export(conn: &Connection, playlist_id: i64, path: &Path) -> Result<usize> {
+    write(&export_text(conn, playlist_id)?, path)
+}
+
+/// Write a smart playlist to an M3U/M3U8 file.
+pub fn export_smart(conn: &Connection, playlist_id: i64, path: &Path) -> Result<usize> {
+    write(&export_smart_text(conn, playlist_id)?, path)
 }
 
 #[cfg(test)]

@@ -64,6 +64,8 @@ pub struct DragTracks {
 #[derive(Debug, Clone, Copy)]
 pub struct DragPlaylist {
     pub id: i64,
+    /// True for smart playlists, which are stored in another table.
+    pub smart: bool,
 }
 
 /// Drag payload for reordering the play queue.
@@ -77,6 +79,8 @@ pub struct SmartDraft {
     pub name: String,
     pub definition: Definition,
     pub status: Option<String>,
+    /// Folder for a new playlist; existing playlists keep their folder.
+    pub folder: Option<i64>,
     /// `Some(id)` edits an existing playlist; `None` creates one.
     pub editing: Option<i64>,
 }
@@ -573,8 +577,10 @@ pub struct FolderDraft {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum M3uMode {
     Import,
-    /// Export the playlist with this id.
+    /// Export the manual playlist with this id.
     Export(i64),
+    /// Export the evaluated smart playlist with this id.
+    ExportSmart(i64),
 }
 
 /// Path dialog for importing and exporting M3U playlists.
@@ -1792,12 +1798,29 @@ impl App {
     }
 
     pub fn move_playlist_to_folder(&mut self, playlist_id: i64, folder_id: Option<i64>) {
-        match self.lib.move_playlist_to_folder(playlist_id, folder_id) {
+        let result = self.lib.move_playlist_to_folder(playlist_id, folder_id);
+        self.report_playlist_move(result, "playlist", folder_id);
+    }
+
+    pub fn move_smart_to_folder(&mut self, playlist_id: i64, folder_id: Option<i64>) {
+        let result = self
+            .lib
+            .move_smart_playlist_to_folder(playlist_id, folder_id);
+        self.report_playlist_move(result, "smart playlist", folder_id);
+    }
+
+    fn report_playlist_move(
+        &mut self,
+        result: anyhow::Result<()>,
+        what: &str,
+        folder_id: Option<i64>,
+    ) {
+        match result {
             Ok(()) => {
                 self.message = if folder_id.is_some() {
-                    "playlist moved to folder".to_string()
+                    format!("{what} moved to folder")
                 } else {
-                    "playlist moved to the top level".to_string()
+                    format!("{what} moved to the top level")
                 };
                 self.mark_browser_dirty();
             }
@@ -1834,12 +1857,7 @@ impl App {
             self.message = "that folder no longer exists".to_string();
             return;
         };
-        self.rename = Some(RenameState {
-            target: RenameTarget::Folder(folder_id),
-            text: folder.name,
-            error: None,
-            request_focus: true,
-        });
+        self.begin_rename(RenameTarget::Folder(folder_id), folder.name);
     }
 
     pub fn start_rename_playlist(&mut self, playlist_id: i64) {
@@ -1852,9 +1870,26 @@ impl App {
             self.message = "that playlist no longer exists".to_string();
             return;
         };
+        self.begin_rename(RenameTarget::Playlist(playlist_id), playlist.name);
+    }
+
+    pub fn start_rename_smart(&mut self, playlist_id: i64) {
+        let Some(playlist) = self
+            .smart_playlists
+            .iter()
+            .find(|playlist| playlist.id == playlist_id)
+            .cloned()
+        else {
+            self.message = "that smart playlist no longer exists".to_string();
+            return;
+        };
+        self.begin_rename(RenameTarget::Smart(playlist_id), playlist.name);
+    }
+
+    fn begin_rename(&mut self, target: RenameTarget, text: String) {
         self.rename = Some(RenameState {
-            target: RenameTarget::Playlist(playlist_id),
-            text: playlist.name,
+            target,
+            text,
             error: None,
             request_focus: true,
         });
@@ -1873,22 +1908,40 @@ impl App {
     }
 
     pub fn open_m3u_export(&mut self, playlist_id: i64) {
-        let Some(playlist) = self
+        let Some(name) = self
             .playlists
             .iter()
             .find(|playlist| playlist.id == playlist_id)
+            .map(|playlist| playlist.name.clone())
         else {
             self.message = "that playlist no longer exists".to_string();
             return;
         };
+        self.open_m3u_export_dialog(M3uMode::Export(playlist_id), &name);
+    }
+
+    pub fn open_smart_m3u_export(&mut self, playlist_id: i64) {
+        let Some(name) = self
+            .smart_playlists
+            .iter()
+            .find(|playlist| playlist.id == playlist_id)
+            .map(|playlist| playlist.name.clone())
+        else {
+            self.message = "that smart playlist no longer exists".to_string();
+            return;
+        };
+        self.open_m3u_export_dialog(M3uMode::ExportSmart(playlist_id), &name);
+    }
+
+    fn open_m3u_export_dialog(&mut self, mode: M3uMode, name: &str) {
         let dir = dirs::audio_dir()
             .or_else(dirs::home_dir)
             .unwrap_or_else(|| PathBuf::from("."));
-        let file = format!("{}.m3u8", sanitize_file_name(&playlist.name));
+        let file = format!("{}.m3u8", sanitize_file_name(name));
         self.m3u_dialog = Some(M3uDraft {
-            mode: M3uMode::Export(playlist_id),
+            mode,
             path: dir.join(file).to_string_lossy().to_string(),
-            name: playlist.name.clone(),
+            name: name.to_string(),
             folder_id: None,
             status: None,
         });
@@ -1959,11 +2012,16 @@ impl App {
                     }
                 }
             }
-            M3uMode::Export(playlist_id) => {
+            M3uMode::Export(playlist_id) | M3uMode::ExportSmart(playlist_id) => {
                 if path.extension().is_none() {
                     path.set_extension("m3u8");
                 }
-                match self.lib.export_m3u(playlist_id, &path) {
+                let result = if matches!(draft.mode, M3uMode::ExportSmart(_)) {
+                    self.lib.export_smart_m3u(playlist_id, &path)
+                } else {
+                    self.lib.export_m3u(playlist_id, &path)
+                };
+                match result {
                     Ok(count) => {
                         self.message = format!("exported {count} track(s) to {}", path.display());
                         self.m3u_dialog = None;
@@ -2108,6 +2166,20 @@ impl App {
         }
     }
 
+    pub fn delete_smart_by_id(&mut self, playlist_id: i64) {
+        match self.lib.delete_smart_playlist(playlist_id) {
+            Ok(()) => {
+                if matches!(self.view, View::Smart(id) if id == playlist_id) {
+                    self.view = View::Library;
+                    self.mark_tracks_dirty();
+                }
+                self.message = "smart playlist deleted".to_string();
+                self.mark_browser_dirty();
+            }
+            Err(e) => self.message = format!("delete failed: {e}"),
+        }
+    }
+
     /// Playlist id when the current view is an editable (manual) playlist.
     pub fn editable_playlist(&self) -> Option<i64> {
         match self.view {
@@ -2196,12 +2268,18 @@ impl App {
     // ---- smart playlists ----
 
     pub fn open_smart_dialog(&mut self) {
+        self.open_smart_dialog_in(None);
+    }
+
+    /// Create a smart playlist inside `folder`, or at the root when `None`.
+    pub fn open_smart_dialog_in(&mut self, folder: Option<i64>) {
         let mut definition = Definition::default();
         definition.rules.push(Rule::new(Field::Genre, Op::Contains));
         self.smart_dialog = Some(SmartDraft {
             name: format!("Smart playlist {}", self.smart_playlists.len() + 1),
             definition,
             status: None,
+            folder,
             editing: None,
         });
     }
@@ -2221,6 +2299,7 @@ impl App {
             name: smart.name,
             definition: smart.definition,
             status: None,
+            folder: smart.folder_id,
             editing: Some(id),
         });
     }
@@ -2250,7 +2329,10 @@ impl App {
             }
             return;
         }
-        match self.lib.create_smart_playlist(&name, &draft.definition) {
+        match self
+            .lib
+            .create_smart_playlist(&name, &draft.definition, draft.folder)
+        {
             Ok(id) => {
                 self.message = format!("smart playlist \"{name}\" created");
                 self.smart_dialog = None;

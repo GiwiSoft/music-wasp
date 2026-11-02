@@ -674,3 +674,44 @@ fn autotag_dialog_uses_results_from_the_fake_musicbrainz_server() {
     assert!(harness.query_all_by_label_contains("Fake Album").count() >= 1);
     assert!(harness.query_all_by_label_contains("Airbag").count() >= 1);
 }
+
+#[test]
+fn smart_playlist_can_live_in_a_folder_and_open_the_m3u_export() {
+    use musicwasp_gui::app::M3uMode;
+
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[SeedTrack {
+            file: "one.wav",
+            title: "One",
+            artist: "Artist",
+            album: "Album",
+            year: 2026,
+            track_no: 1,
+        }],
+    );
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    let folder = harness
+        .state()
+        .lib
+        .create_playlist_folder("Sets", None)
+        .unwrap();
+    harness.state_mut().open_smart_dialog_in(Some(folder));
+    harness.state_mut().smart_dialog.as_mut().unwrap().name = "Everything".to_string();
+    harness.state_mut().commit_smart_dialog();
+    harness.run_steps(2);
+
+    let stored = harness.state().lib.smart_playlists().unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].folder_id, Some(folder));
+
+    harness.state_mut().open_smart_m3u_export(stored[0].id);
+    assert!(matches!(
+        harness.state().m3u_dialog.as_ref().unwrap().mode,
+        M3uMode::ExportSmart(_)
+    ));
+}

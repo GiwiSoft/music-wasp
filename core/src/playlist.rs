@@ -78,6 +78,10 @@ pub fn delete_folder(conn: &Connection, folder_id: i64) -> Result<()> {
         params![parent_id, folder_id],
     )?;
     tx.execute(
+        "UPDATE smart_playlists SET folder_id = ?1 WHERE folder_id = ?2",
+        params![parent_id, folder_id],
+    )?;
+    tx.execute(
         "UPDATE playlist_folders SET parent_id = ?1 WHERE parent_id = ?2",
         params![parent_id, folder_id],
     )?;
@@ -110,7 +114,7 @@ pub fn move_playlist_to_folder(
     set_folder(conn, playlist_id, folder_id)
 }
 
-fn folder_exists(conn: &Connection, folder_id: i64) -> Result<bool> {
+pub(crate) fn folder_exists(conn: &Connection, folder_id: i64) -> Result<bool> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM playlist_folders WHERE id = ?1",
         params![folder_id],
