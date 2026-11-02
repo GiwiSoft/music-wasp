@@ -5,6 +5,7 @@ pub mod db;
 pub mod dsp;
 pub mod library;
 pub mod m3u;
+pub mod organize;
 pub mod player;
 pub mod playlist;
 pub mod reconcile;

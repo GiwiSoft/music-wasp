@@ -10,6 +10,7 @@ pub mod i18n;
 pub mod icons;
 #[cfg(target_os = "linux")]
 mod mpris;
+mod organize;
 pub mod settings;
 pub mod theme;
 mod ui;

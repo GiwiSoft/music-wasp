@@ -445,6 +445,12 @@ pub struct Settings {
     /// Folders handed to the OS watcher. Added by a successful scan.
     #[serde(default)]
     pub watch_folders: Vec<String>,
+    /// Template used by the file organizer.
+    #[serde(default = "default_organize_pattern")]
+    pub organize_pattern: String,
+    /// Destination root for the organizer; empty uses the first scan folder.
+    #[serde(default)]
+    pub organize_root: String,
     /// What the app looked and sounded like when it last closed.
     #[serde(default)]
     pub session: Session,
@@ -456,6 +462,10 @@ fn default_watch_enabled() -> bool {
 
 fn default_replaygain_enabled() -> bool {
     true
+}
+
+fn default_organize_pattern() -> String {
+    musicwasp_core::organize::DEFAULT_PATTERN.to_string()
 }
 
 /// The view that was open when the app last closed.
@@ -521,6 +531,8 @@ impl Default for Settings {
             scrobble_listenbrainz: false,
             listenbrainz_token: String::new(),
             watch_folders: Vec::new(),
+            organize_pattern: default_organize_pattern(),
+            organize_root: String::new(),
             session: Session::default(),
         }
     }

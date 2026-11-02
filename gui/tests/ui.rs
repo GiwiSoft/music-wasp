@@ -715,3 +715,50 @@ fn smart_playlist_can_live_in_a_folder_and_open_the_m3u_export() {
         M3uMode::ExportSmart(_)
     ));
 }
+
+#[test]
+fn organizer_previews_moves_and_undoes_selected_tracks() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[SeedTrack {
+            file: "one.wav",
+            title: "One",
+            artist: "Artist",
+            album: "Album",
+            year: 2026,
+            track_no: 1,
+        }],
+    );
+
+    let music = dir.path().join("music");
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.state_mut().settings.organize_root = music.to_string_lossy().to_string();
+    harness.state_mut().open_organize();
+
+    let plan = harness
+        .state()
+        .organize
+        .as_ref()
+        .and_then(|state| state.plan.as_ref())
+        .expect("organizer preview");
+    assert_eq!(plan.ready, 1);
+    assert_eq!(
+        plan.rows[0].target_path,
+        music.join("Artist/Album/01 - One.wav")
+    );
+
+    harness.state_mut().organize_apply();
+    harness.run_steps(2);
+    assert!(music.join("Artist/Album/01 - One.wav").is_file());
+    assert!(!music.join("one.wav").exists());
+    assert_eq!(harness.state().move_undo.as_ref().map(Vec::len), Some(1));
+
+    harness.state_mut().undo_file_moves();
+    harness.run_steps(2);
+    assert!(music.join("one.wav").is_file());
+    assert!(!music.join("Artist/Album/01 - One.wav").exists());
+    assert!(harness.state().move_undo.is_none());
+}

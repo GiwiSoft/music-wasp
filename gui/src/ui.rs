@@ -524,6 +524,14 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         app.open_hygiene();
                         ui.close();
                     }
+                    let organizer = ui.add(
+                        egui::Button::new(icons::with(icons::FOLDER, "Organize files from tags…"))
+                            .selected(app.show_organize),
+                    );
+                    if organizer.clicked() {
+                        app.open_organize();
+                        ui.close();
+                    }
                     if app.tag_undo.is_some() {
                         let count = app.tag_undo.as_ref().map_or(0, Vec::len);
                         let label = format!("{} ({count})", tr("ui.undo_last_tag_write"));
@@ -533,6 +541,16 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         )));
                         if undo.clicked() {
                             app.undo_last_tag_write();
+                            ui.close();
+                        }
+                    }
+                    if let Some(count) = app.move_undo.as_ref().map(Vec::len) {
+                        let undo = ui.add(egui::Button::new(icons::with(
+                            icons::ARROW_COUNTER_CLOCKWISE,
+                            &format!("Undo file moves ({count})"),
+                        )));
+                        if undo.clicked() {
+                            app.undo_file_moves();
                             ui.close();
                         }
                     }

@@ -484,6 +484,17 @@ impl AutoTagMapping {
 
 /// Results of a library hygiene scan: rows whose files vanished, and groups of
 /// tracks that share the same artist/title/album.
+/// File organizer window: pattern, dry-run plan and confirmation state.
+pub struct OrganizeState {
+    pub pattern: String,
+    pub root: String,
+    /// Restrict the next preview to the tracks selected in the current view.
+    pub selected_only: bool,
+    pub plan: Option<musicwasp_core::organize::OrganizePlan>,
+    pub pending: bool,
+    pub status: Option<String>,
+}
+
 pub struct HygieneState {
     pub missing: Vec<Track>,
     pub duplicate_groups: Vec<Vec<Track>>,
@@ -1211,6 +1222,11 @@ pub struct App {
     pub autotag: Option<AutoTagState>,
     pub show_hygiene: bool,
     pub hygiene: Option<HygieneState>,
+    pub show_organize: bool,
+    pub organize: Option<OrganizeState>,
+    /// Journal of the last organizer batch, so moves can be undone.
+    pub move_undo: Option<Vec<musicwasp_core::organize::MoveRecord>>,
+    move_undo_path: PathBuf,
     pub batch_case: BatchCase,
     pub batch_field: BatchField,
     pub batch_copy: BatchField,
@@ -1278,6 +1294,10 @@ impl App {
         let mut settings = Settings::load(&settings_path);
         let tag_undo_path = settings_path.with_file_name("tag-undo.json");
         let tag_undo = musicwasp_core::tags::load_undo(&tag_undo_path)
+            .ok()
+            .flatten();
+        let move_undo_path = settings_path.with_file_name("moves-undo.json");
+        let move_undo = musicwasp_core::organize::load_undo(&move_undo_path)
             .ok()
             .flatten();
         settings.equalizer = settings.equalizer.clamped();
@@ -1397,6 +1417,8 @@ impl App {
             autotag: None,
             show_hygiene: false,
             hygiene: None,
+            show_organize: false,
+            organize: None,
             batch_case: BatchCase::default(),
             batch_field: BatchField::default(),
             batch_copy: BatchField::default(),
@@ -1424,6 +1446,8 @@ impl App {
             settings_path,
             tag_undo,
             tag_undo_path,
+            move_undo,
+            move_undo_path,
             last_session: Session::default(),
             last_session_save: std::time::Instant::now(),
             window_geometry,
@@ -2570,6 +2594,168 @@ impl App {
             state.status = Some(self.message.clone());
         }
         self.mark_browser_dirty();
+    }
+
+    // ---- file organizer ----
+
+    /// Open the organizer for the current selection (or the whole library).
+    pub fn open_organize(&mut self) {
+        self.show_organize = true;
+        if self.organize.is_none() {
+            let recorded_root = self.settings.organize_root.trim();
+            let root = if recorded_root.is_empty() {
+                self.settings
+                    .watch_folders
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| self.scan_path.clone())
+            } else {
+                recorded_root.to_string()
+            };
+            let pattern = self.settings.organize_pattern.trim();
+            self.organize = Some(OrganizeState {
+                pattern: if pattern.is_empty() {
+                    musicwasp_core::organize::DEFAULT_PATTERN.to_string()
+                } else {
+                    pattern.to_string()
+                },
+                root,
+                selected_only: !self.selected_in_view().is_empty(),
+                plan: None,
+                pending: false,
+                status: None,
+            });
+        }
+        self.organize_preview();
+    }
+
+    /// Rebuild the dry-run plan. Never moves or renames anything.
+    pub fn organize_preview(&mut self) {
+        let Some(state) = self.organize.as_ref() else {
+            return;
+        };
+        let root = PathBuf::from(state.root.trim());
+        let pattern = state.pattern.clone();
+        let selected_only = state.selected_only;
+        if !root.is_dir() {
+            if let Some(state) = &mut self.organize {
+                state.plan = None;
+                state.pending = false;
+                state.status = Some(format!("not a folder: {}", root.display()));
+            }
+            return;
+        }
+
+        let tracks = if selected_only {
+            let ids = self.selected_in_view();
+            if ids.is_empty() {
+                if let Some(state) = &mut self.organize {
+                    state.plan = None;
+                    state.pending = false;
+                    state.status = Some("select a track first".to_string());
+                }
+                return;
+            }
+            self.lib.tracks_by_ids(&ids).unwrap_or_default()
+        } else {
+            self.lib
+                .query(&Filter::default(), SortKey::Artist, true)
+                .unwrap_or_default()
+        };
+
+        let result = musicwasp_core::organize::plan(&tracks, &root, &pattern);
+        if let Some(state) = &mut self.organize {
+            state.pending = false;
+            match result {
+                Ok(plan) => {
+                    state.status = Some(format!(
+                        "{} ready to move · {} skipped · {} track(s)",
+                        plan.ready,
+                        plan.skipped,
+                        plan.rows.len()
+                    ));
+                    state.plan = Some(plan);
+                }
+                Err(error) => {
+                    state.plan = None;
+                    state.status = Some(format!("preview failed: {error:#}"));
+                }
+            }
+        }
+        self.settings.organize_pattern = pattern;
+        self.settings.organize_root = root.to_string_lossy().to_string();
+        self.persist_settings();
+    }
+
+    /// Move the files of the accepted preview rows and keep an undo journal.
+    pub fn organize_apply(&mut self) {
+        let Some(plan) = self.organize.as_ref().and_then(|state| state.plan.clone()) else {
+            return;
+        };
+        if !plan.has_moves() {
+            return;
+        }
+        match self.lib.organize_apply(&plan.rows) {
+            Ok(report) => {
+                if !report.records.is_empty() {
+                    let _ =
+                        musicwasp_core::organize::save_undo(&self.move_undo_path, &report.records);
+                    self.move_undo = Some(report.records);
+                }
+                self.mark_browser_dirty();
+                self.mark_tracks_dirty();
+                self.organize_preview();
+                let mut text = format!("moved {} file(s)", report.moved);
+                if !report.failed.is_empty() {
+                    text.push_str(&format!(", {} failed", report.failed.len()));
+                    if let Some(first) = report.failed.first() {
+                        text.push_str(&format!(": {first}"));
+                    }
+                }
+                self.set_organize_status(text);
+            }
+            Err(error) => self.set_organize_status(format!("move failed: {error:#}")),
+        }
+    }
+
+    /// Restore the last organizer batch, files and library rows together.
+    pub fn undo_file_moves(&mut self) {
+        let Some(records) = self.move_undo.clone() else {
+            self.message = "no file moves to undo".to_string();
+            return;
+        };
+        match self.lib.organize_undo(&records) {
+            Ok(report) => {
+                if report.remaining.is_empty() {
+                    musicwasp_core::organize::clear_undo(&self.move_undo_path);
+                    self.move_undo = None;
+                } else {
+                    let _ = musicwasp_core::organize::save_undo(
+                        &self.move_undo_path,
+                        &report.remaining,
+                    );
+                    self.move_undo = Some(report.remaining);
+                }
+                self.mark_browser_dirty();
+                self.mark_tracks_dirty();
+                if self.show_organize {
+                    self.organize_preview();
+                }
+                let mut text = format!("restored {} file(s)", report.restored);
+                if !report.failed.is_empty() {
+                    text.push_str(&format!(", {} failed", report.failed.len()));
+                }
+                self.set_organize_status(text);
+            }
+            Err(error) => self.set_organize_status(format!("undo failed: {error:#}")),
+        }
+    }
+
+    fn set_organize_status(&mut self, text: String) {
+        self.message = text.clone();
+        if let Some(state) = &mut self.organize {
+            state.status = Some(text);
+        }
     }
 
     // ---- album grid and cover tools ----
@@ -4828,6 +5014,7 @@ impl eframe::App for App {
         crate::ui::smart_dialog(self, &ctx);
         crate::ui::settings_window(self, &ctx);
         crate::hygiene::window(self, &ctx);
+        crate::organize::window(self, &ctx);
         crate::ui::cover_picker(self, &ctx);
         crate::ui::folder_picker(self, &ctx);
         crate::ui::autotag_window(self, &ctx);
@@ -5038,6 +5225,11 @@ impl App {
         // Debug hook: MUSICWASP_HYGIENE=1 opens the library hygiene window.
         if self.frames == 20 && std::env::var("MUSICWASP_HYGIENE").is_ok() {
             self.open_hygiene();
+        }
+
+        // Debug hook: MUSICWASP_ORGANIZE=1 opens the file organizer preview.
+        if self.frames == 20 && std::env::var("MUSICWASP_ORGANIZE").is_ok() {
+            self.open_organize();
         }
 
         // Debug hook: MUSICWASP_RECONCILE=1 also runs the rename preview.

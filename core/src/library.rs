@@ -297,6 +297,22 @@ impl Library {
         refresh_file(&self.conn, path)
     }
 
+    /// Move files for the accepted organizer rows and return the undo journal.
+    pub fn organize_apply(
+        &self,
+        rows: &[crate::organize::OrganizeRow],
+    ) -> Result<crate::organize::ApplyReport> {
+        crate::organize::apply(&self.conn, rows)
+    }
+
+    /// Undo a previous organizer batch.
+    pub fn organize_undo(
+        &self,
+        records: &[crate::organize::MoveRecord],
+    ) -> Result<crate::organize::UndoReport> {
+        crate::organize::undo(&self.conn, records)
+    }
+
     /// Index loose files and folders, e.g. from an OS drag and drop. Returns
     /// the audio files that were indexed.
     pub fn import_paths(&self, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
