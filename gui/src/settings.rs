@@ -445,6 +445,12 @@ pub struct Settings {
     /// Folders handed to the OS watcher. Added by a successful scan.
     #[serde(default)]
     pub watch_folders: Vec<String>,
+    /// Show the compact always-on-top player window.
+    #[serde(default)]
+    pub mini_player: bool,
+    /// Show the Linux tray icon.
+    #[serde(default)]
+    pub tray_enabled: bool,
     /// Template used by the file organizer.
     #[serde(default = "default_organize_pattern")]
     pub organize_pattern: String,
@@ -531,6 +537,8 @@ impl Default for Settings {
             scrobble_listenbrainz: false,
             listenbrainz_token: String::new(),
             watch_folders: Vec::new(),
+            mini_player: false,
+            tray_enabled: false,
             organize_pattern: default_organize_pattern(),
             organize_root: String::new(),
             session: Session::default(),

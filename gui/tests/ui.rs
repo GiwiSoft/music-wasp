@@ -807,3 +807,32 @@ fn skin_editor_duplicates_and_saves_palettes() {
     let text = std::fs::read_to_string(dir.path().join("skins.json")).unwrap();
     assert!(text.contains(copy.id()));
 }
+
+#[test]
+fn mini_player_toggles_without_disturbing_the_library() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[SeedTrack {
+            file: "one.wav",
+            title: "One",
+            artist: "Artist",
+            album: "Album",
+            year: 2026,
+            track_no: 1,
+        }],
+    );
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_mini_player(true, &ctx);
+    harness.run_steps(2);
+    assert!(harness.state().settings.mini_player);
+    assert_eq!(harness.state().tracks.len(), 1);
+
+    harness.state_mut().set_mini_player(false, &ctx);
+    harness.run_steps(1);
+    assert!(!harness.state().settings.mini_player);
+}

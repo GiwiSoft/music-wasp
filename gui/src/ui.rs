@@ -570,6 +570,27 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         app.plain_view = !app.plain_view;
                         ui.close();
                     }
+                    let mini = ui.add(
+                        egui::Button::new(icons::with(icons::MONITOR_PLAY, "Mini player"))
+                            .selected(app.settings.mini_player),
+                    );
+                    if mini.clicked() {
+                        let enabled = !app.settings.mini_player;
+                        app.set_mini_player(enabled, ui.ctx());
+                        ui.close();
+                    }
+                    #[cfg(target_os = "linux")]
+                    {
+                        let tray = ui.add(
+                            egui::Button::new(icons::with(icons::MONITOR_PLAY, "Tray icon"))
+                                .selected(app.settings.tray_enabled),
+                        );
+                        if tray.clicked() {
+                            let enabled = !app.settings.tray_enabled;
+                            app.set_tray_enabled(enabled, ui.ctx());
+                            ui.close();
+                        }
+                    }
                     if ui
                         .add_enabled(
                             !app.plain_view,
@@ -3653,6 +3674,9 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     let mut reload_skins = false;
     let mut duplicate_skin = false;
     let mut edit_skin = false;
+    let mut mini_player = app.settings.mini_player;
+    #[cfg(target_os = "linux")]
+    let mut tray_enabled = app.settings.tray_enabled;
     let mut chosen_language: Option<Language> = None;
     let mut chosen_device: Option<Option<String>> = None;
     let mut scrobble_enabled = app.settings.scrobble_listenbrainz;
@@ -3754,6 +3778,18 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         edit_skin = true;
                     }
                 });
+
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("WINDOW")
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                ui.checkbox(&mut mini_player, "Mini player (always on top)");
+                #[cfg(target_os = "linux")]
+                ui.checkbox(&mut tray_enabled, "Tray icon");
 
                 ui.add_space(8.0);
                 ui.label(
@@ -4100,6 +4136,13 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
         app.settings.scrobble_listenbrainz = scrobble_enabled;
         app.settings.listenbrainz_token = scrobble_token;
         app.persist_settings();
+    }
+    if mini_player != app.settings.mini_player {
+        app.set_mini_player(mini_player, ctx);
+    }
+    #[cfg(target_os = "linux")]
+    if tray_enabled != app.settings.tray_enabled {
+        app.set_tray_enabled(tray_enabled, ctx);
     }
     if open_skins {
         app.open_skins_folder();

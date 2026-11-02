@@ -24,6 +24,7 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - English, French, German and Spanish UI
 - Nine built-in skins, custom JSON skins, a live colour editor and high-contrast mode
 - Disc folders, saved searches, session restore and ListenBrainz scrobbling
+- Compact always-on-top mini player and optional Linux tray controls
 - Linux MPRIS2 desktop controls and native Wayland drag-and-drop
 
 ## Install
@@ -86,7 +87,8 @@ The wiki contains the full manual:
 | [Playlists](https://github.com/GiwiSoft/music-wasp/wiki/Playlists) | folders, smart playlists, M3U |
 | [File Organizer](https://github.com/GiwiSoft/music-wasp/wiki/File-Organizer) | patterns, preview, collisions, undo |
 | [Tagging](https://github.com/GiwiSoft/music-wasp/wiki/Tagging) | editor, batch actions, auto-tag and undo |
-| [Playback](https://github.com/GiwiSoft/music-wasp/wiki/Playback) | queue, EQ, ReplayGain, scrobbling, MPRIS |
+| [Playback](https://github.com/GiwiSoft/music-wasp/wiki/Playback-and-Audio) | queue, EQ, ReplayGain, scrobbling, MPRIS |
+| [Mini Player and Tray](https://github.com/GiwiSoft/music-wasp/wiki/Mini-Player-and-Tray) | always-on-top player, Linux tray |
 | [Appearance](https://github.com/GiwiSoft/music-wasp/wiki/Appearance) | skins, languages, accessibility, layouts |
 | [CLI](https://github.com/GiwiSoft/music-wasp/wiki/CLI) | commands and scripting |
 | [Configuration](https://github.com/GiwiSoft/music-wasp/wiki/Configuration) | data directory, settings, database |

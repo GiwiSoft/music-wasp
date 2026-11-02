@@ -1234,6 +1234,11 @@ pub struct App {
     /// Journal of the last organizer batch, so moves can be undone.
     pub move_undo: Option<Vec<musicwasp_core::organize::MoveRecord>>,
     move_undo_path: PathBuf,
+    /// Compact always-on-top window bridge.
+    mini: Option<crate::mini_player::MiniBridge>,
+    /// Optional Linux status-notifier tray.
+    #[cfg(target_os = "linux")]
+    tray: Option<crate::tray::TrayController>,
     pub batch_case: BatchCase,
     pub batch_field: BatchField,
     pub batch_copy: BatchField,
@@ -1457,6 +1462,9 @@ impl App {
             tag_undo_path,
             move_undo,
             move_undo_path,
+            mini: None,
+            #[cfg(target_os = "linux")]
+            tray: None,
             last_session: Session::default(),
             last_session_save: std::time::Instant::now(),
             window_geometry,
@@ -3971,6 +3979,190 @@ impl App {
         self.persist_settings();
     }
 
+    // ---- mini player and tray ----
+
+    /// Open or close the compact always-on-top player.
+    pub fn set_mini_player(&mut self, enabled: bool, ctx: &egui::Context) {
+        if self.settings.mini_player == enabled {
+            return;
+        }
+        self.settings.mini_player = enabled;
+        if !enabled {
+            self.mini = None;
+        }
+        self.persist_settings();
+        self.message = if enabled {
+            "mini player opened".to_string()
+        } else {
+            "mini player closed".to_string()
+        };
+        ctx.request_repaint();
+    }
+
+    /// Enable or disable the Linux tray icon.
+    #[cfg(target_os = "linux")]
+    pub fn set_tray_enabled(&mut self, enabled: bool, ctx: &egui::Context) {
+        if self.settings.tray_enabled == enabled {
+            return;
+        }
+        self.settings.tray_enabled = enabled;
+        if enabled {
+            match crate::tray::TrayController::spawn(ctx) {
+                Ok(tray) => self.tray = Some(tray),
+                Err(error) => {
+                    self.settings.tray_enabled = false;
+                    self.message = format!("tray unavailable: {error}");
+                }
+            }
+        } else {
+            self.tray = None;
+        }
+        self.persist_settings();
+        ctx.request_repaint();
+    }
+
+    fn update_mini_player(&mut self, ctx: &egui::Context) {
+        if !self.settings.mini_player {
+            self.mini = None;
+            return;
+        }
+        let track = self
+            .playing_id
+            .and_then(|id| self.lib.tracks_by_ids(&[id]).ok())
+            .and_then(|mut tracks| tracks.pop());
+        let snapshot = self.player.as_ref().map(|player| player.snapshot());
+        let playing = snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.status == musicwasp_core::PlayerStatus::Playing);
+        let duration = track
+            .as_ref()
+            .map(|track| track.duration_secs as f64)
+            .or_else(|| snapshot.as_ref().map(|snapshot| snapshot.duration))
+            .unwrap_or(0.0);
+        let bridge = self
+            .mini
+            .get_or_insert_with(crate::mini_player::MiniBridge::new);
+        bridge.update(crate::mini_player::MiniSnapshot {
+            title: track
+                .as_ref()
+                .map(|track| track.title.clone())
+                .unwrap_or_default(),
+            artist: track
+                .as_ref()
+                .map(|track| track.artist.clone())
+                .unwrap_or_default(),
+            album: track
+                .as_ref()
+                .map(|track| track.album.clone())
+                .unwrap_or_default(),
+            playing,
+            position: snapshot.as_ref().map_or(0.0, |snapshot| snapshot.position),
+            duration,
+        });
+
+        let shared = bridge.shared();
+        let root = ctx.clone();
+        let skin = self.settings.skin;
+        ctx.show_viewport_deferred(
+            crate::mini_player::MiniBridge::viewport_id(),
+            crate::mini_player::builder(),
+            move |ui, _class| crate::mini_player::ui(ui, &shared, &root, skin),
+        );
+
+        let (commands, close) = match &self.mini {
+            Some(bridge) => (bridge.take_commands(), bridge.close_requested()),
+            None => (Vec::new(), false),
+        };
+        for command in commands {
+            self.apply_mini_command(ctx, command);
+        }
+        if close {
+            self.set_mini_player(false, ctx);
+        }
+    }
+
+    fn apply_mini_command(
+        &mut self,
+        ctx: &egui::Context,
+        command: crate::mini_player::MiniCommand,
+    ) {
+        use crate::mini_player::MiniCommand;
+        match command {
+            MiniCommand::PlayPause => self.toggle_pause(),
+            MiniCommand::Next => self.next_track(),
+            MiniCommand::Previous => self.prev_track(),
+            MiniCommand::Seek(seconds) => {
+                if let Some(player) = &self.player {
+                    player.seek(seconds);
+                }
+            }
+            MiniCommand::ShowMain => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                ctx.request_repaint();
+            }
+            MiniCommand::Close => self.set_mini_player(false, ctx),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn update_tray(&mut self, ctx: &egui::Context) {
+        if !self.settings.tray_enabled {
+            self.tray = None;
+            return;
+        }
+        if self.tray.is_none() {
+            match crate::tray::TrayController::spawn(ctx) {
+                Ok(tray) => self.tray = Some(tray),
+                Err(error) => {
+                    self.settings.tray_enabled = false;
+                    self.persist_settings();
+                    self.message = format!("tray unavailable: {error}");
+                    return;
+                }
+            }
+        }
+        let track = self
+            .playing_id
+            .and_then(|id| self.lib.tracks_by_ids(&[id]).ok())
+            .and_then(|mut tracks| tracks.pop());
+        let playing = self.player.as_ref().is_some_and(|player| {
+            player.snapshot().status == musicwasp_core::PlayerStatus::Playing
+        });
+        if let Some(tray) = &self.tray {
+            tray.update(
+                track.as_ref().map_or("", |track| track.title.as_str()),
+                track.as_ref().map_or("", |track| track.artist.as_str()),
+                playing,
+                self.settings.mini_player,
+            );
+        }
+        let commands = self
+            .tray
+            .as_ref()
+            .map(crate::tray::TrayController::drain)
+            .unwrap_or_default();
+        for command in commands {
+            self.apply_tray_command(ctx, command);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn apply_tray_command(&mut self, ctx: &egui::Context, command: crate::tray::Command) {
+        use crate::tray::Command;
+        match command {
+            Command::PlayPause => self.toggle_pause(),
+            Command::Next => self.next_track(),
+            Command::Previous => self.prev_track(),
+            Command::Show => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                ctx.request_repaint();
+            }
+            Command::ToggleMini => self.set_mini_player(!self.settings.mini_player, ctx),
+            Command::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+        }
+    }
+
     // ---- skin editing ----
 
     /// Open the palette editor for the current skin.
@@ -5126,6 +5318,7 @@ impl eframe::App for App {
         crate::hygiene::window(self, &ctx);
         crate::organize::window(self, &ctx);
         crate::skin_editor::window(self, &ctx);
+        self.update_mini_player(&ctx);
         crate::ui::cover_picker(self, &ctx);
         crate::ui::folder_picker(self, &ctx);
         crate::ui::autotag_window(self, &ctx);
@@ -5156,7 +5349,10 @@ impl eframe::App for App {
         }
 
         #[cfg(target_os = "linux")]
-        self.publish_mpris(&ctx);
+        {
+            self.update_tray(&ctx);
+            self.publish_mpris(&ctx);
+        }
 
         self.persist_session(false);
     }
@@ -5336,6 +5532,10 @@ impl App {
         // Debug hook: MUSICWASP_HYGIENE=1 opens the library hygiene window.
         if self.frames == 20 && std::env::var("MUSICWASP_HYGIENE").is_ok() {
             self.open_hygiene();
+        }
+
+        if self.frames == 30 && std::env::var("MUSICWASP_MINI").is_ok() {
+            self.set_mini_player(true, ctx);
         }
 
         // Debug hook: MUSICWASP_SKIN_EDITOR=1 opens the colour editor.

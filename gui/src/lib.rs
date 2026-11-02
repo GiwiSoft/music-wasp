@@ -8,10 +8,13 @@ mod equalizer;
 mod hygiene;
 pub mod i18n;
 pub mod icons;
+mod mini_player;
 #[cfg(target_os = "linux")]
 mod mpris;
 mod organize;
 pub mod settings;
 mod skin_editor;
 pub mod theme;
+#[cfg(target_os = "linux")]
+mod tray;
 mod ui;
