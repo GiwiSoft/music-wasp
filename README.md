@@ -18,7 +18,9 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - Tag editing, batch tag actions and undo
 - MusicBrainz auto-tagging with a reviewable file-to-track mapping
 - Album grid with cover fetch, replacement and `cover.jpg` sidecars
-- Manual playlists, nested playlist folders, smart playlists and M3U import/export
+- Manual and smart playlists, nested folders and M3U import/export
+- Library hygiene with missing-file detection and rename reconciliation
+- Tag-based file organizer with preview, collision detection and undo
 - English, French, German and Spanish UI
 - Nine built-in skins, custom JSON skins and high-contrast mode
 - Disc folders, saved searches, session restore and ListenBrainz scrobbling
@@ -61,6 +63,7 @@ Optional Linux desktop launcher:
 4. Use the main menu (`☰`) for the queue, columns, album grid, equalizer, hygiene tools and
    library filters.
 5. Save selections as playlists or build smart playlists from rules.
+6. Use **Organize files from tags** to preview and apply folder/file renames, with undo.
 
 ## CLI
 
@@ -79,8 +82,9 @@ The wiki contains the full manual:
 | :-- | :-- |
 | [Installation](https://github.com/GiwiSoft/music-wasp/wiki/Installation) | builds, releases, desktop launcher |
 | [Getting Started](https://github.com/GiwiSoft/music-wasp/wiki/Getting-Started) | first scan, browsing, playback |
-| [Library and Search](https://github.com/GiwiSoft/music-wasp/wiki/Library-and-Search) | search syntax, saved searches, ratings, filters |
+| [Library and Search](https://github.com/GiwiSoft/music-wasp/wiki/Library-and-Search) | search syntax, saved searches, ratings, filters, hygiene |
 | [Playlists](https://github.com/GiwiSoft/music-wasp/wiki/Playlists) | folders, smart playlists, M3U |
+| [File Organizer](https://github.com/GiwiSoft/music-wasp/wiki/File-Organizer) | patterns, preview, collisions, undo |
 | [Tagging](https://github.com/GiwiSoft/music-wasp/wiki/Tagging) | editor, batch actions, auto-tag and undo |
 | [Playback](https://github.com/GiwiSoft/music-wasp/wiki/Playback) | queue, EQ, ReplayGain, scrobbling, MPRIS |
 | [Appearance](https://github.com/GiwiSoft/music-wasp/wiki/Appearance) | skins, languages, accessibility, layouts |
