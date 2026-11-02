@@ -387,6 +387,23 @@ fn scan_controls(app: &mut App, ui: &mut egui::Ui) {
             if let Some(label) = app.scan_progress_label() {
                 spinner.on_hover_text(label);
             }
+            if let Some(progress) = app.scan_progress() {
+                let fraction = if progress.total > 0 {
+                    (progress.found as f32 / progress.total as f32).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let text = if progress.total == 0 {
+                    "counting…".to_string()
+                } else {
+                    format!("{}/{}", progress.found, progress.total)
+                };
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .desired_width(110.0)
+                        .text(RichText::new(text).size(9.0)),
+                );
+            }
             if icons::compact(ui, icons::X, "Stop indexing").clicked() {
                 app.cancel_scan();
             }
@@ -3709,8 +3726,36 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 );
                 ui.add_space(4.0);
                 scan_controls(app, ui);
-                if let Some(label) = app.scan_progress_label() {
-                    ui.label(RichText::new(label).size(9.5).color(th::text_dim()));
+                if let Some(progress) = app.scan_progress() {
+                    let fraction = if progress.total > 0 {
+                        (progress.found as f32 / progress.total as f32).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let bar = ui.add(
+                        egui::ProgressBar::new(fraction)
+                            .desired_width(190.0)
+                            .text(
+                                RichText::new(format!(
+                                    "{} / {} files",
+                                    progress.found, progress.total
+                                ))
+                                .size(9.5),
+                            ),
+                    );
+                    if let Some(label) = app.scan_progress_label() {
+                        bar.on_hover_text(label);
+                    }
+                    if progress.total > 0 {
+                        ui.label(
+                            RichText::new(format!(
+                                "{} indexed · {} unchanged",
+                                progress.indexed, progress.unchanged
+                            ))
+                            .size(9.5)
+                            .color(th::text_dim()),
+                        );
+                    }
                 }
                 ui.add_space(8.0);
                 ui.label(

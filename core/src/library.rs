@@ -931,6 +931,8 @@ pub fn stats(conn: &Connection) -> Result<Stats> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScanProgress {
     pub path: PathBuf,
+    /// Audio files discovered before the scan started.
+    pub total: usize,
     pub found: usize,
     pub indexed: usize,
     pub unchanged: usize,
@@ -940,6 +942,8 @@ pub struct ScanProgress {
 /// Outcome of a full or cancelled scan.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScanReport {
+    /// Audio files discovered before the scan started.
+    pub total: usize,
     pub found: usize,
     pub indexed: usize,
     pub unchanged: usize,
@@ -958,7 +962,8 @@ pub fn scan(conn: &Connection, root: &Path, rescan: bool) -> Result<usize> {
 
 /// Incremental, cancellable scan with progress callbacks.
 ///
-/// The callback runs once per audio file, after that file has been handled.
+/// The callback first receives a snapshot with the pre-counted total and
+/// `found = 0`, then runs once per audio file after that file has been handled.
 /// Returning `false` stops the walk; the batch being written is committed and
 /// the report has `cancelled = true`.
 pub fn scan_with_progress<F>(
@@ -977,7 +982,15 @@ where
     } else {
         Some(existing_files(conn, root)?)
     };
-    let mut report = ScanReport::default();
+    let mut report = ScanReport {
+        total: count_audio_files(root),
+        ..Default::default()
+    };
+    // Report the total before reading any tags so the UI can show a bar.
+    if !progress(progress_snapshot(&report, root)) {
+        report.cancelled = true;
+        return Ok(report);
+    }
 
     let mut stmt = conn.prepare_cached(
         r#"INSERT INTO tracks
@@ -1103,11 +1116,23 @@ where
 fn progress_snapshot(report: &ScanReport, path: &Path) -> ScanProgress {
     ScanProgress {
         path: path.to_path_buf(),
+        total: report.total,
         found: report.found,
         indexed: report.indexed,
         unchanged: report.unchanged,
         failed: report.failed,
     }
+}
+
+/// Count audio files before indexing, so progress has a denominator. This walk
+/// only checks names and file types; tags are read in the real pass.
+fn count_audio_files(root: &Path) -> usize {
+    WalkDir::new(root)
+        .follow_links(true)
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry.file_type().is_file() && is_audio_path(entry.path()))
+        .count()
 }
 
 /// Existing path -> (mtime, size) rows under one root, loaded once per scan.

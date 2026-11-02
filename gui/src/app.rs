@@ -5152,15 +5152,25 @@ impl App {
         self.scan.is_some()
     }
 
+    pub fn scan_progress(&self) -> Option<&ScanProgress> {
+        self.scan.as_ref().map(|state| &state.progress)
+    }
+
     pub fn scan_progress_label(&self) -> Option<String> {
         self.scan.as_ref().map(|state| {
-            format!(
-                "{}: {} found, {} indexed, {} unchanged",
-                state.root.display(),
-                state.progress.found,
-                state.progress.indexed,
-                state.progress.unchanged
-            )
+            let progress = &state.progress;
+            if progress.total == 0 {
+                format!("{}: counting files…", state.root.display())
+            } else {
+                format!(
+                    "{}: {} / {} files, {} indexed, {} unchanged",
+                    state.root.display(),
+                    progress.found,
+                    progress.total,
+                    progress.indexed,
+                    progress.unchanged
+                )
+            }
         })
     }
 
@@ -5203,13 +5213,18 @@ impl App {
 
         if let Some(progress) = &latest {
             if let Some(root) = &root {
-                self.message = format!(
-                    "indexing {}: {} found, {} indexed, {} unchanged",
-                    root.display(),
-                    progress.found,
-                    progress.indexed,
-                    progress.unchanged
-                );
+                self.message = if progress.total == 0 {
+                    format!("indexing {}: counting files…", root.display())
+                } else {
+                    format!(
+                        "indexing {}: {}/{} files, {} indexed, {} unchanged",
+                        root.display(),
+                        progress.found,
+                        progress.total,
+                        progress.indexed,
+                        progress.unchanged
+                    )
+                };
             }
         }
         if refresh {
@@ -5223,8 +5238,8 @@ impl App {
             match result {
                 Ok(report) if report.cancelled => {
                     self.message = format!(
-                        "indexing stopped after {} file(s), {} indexed",
-                        report.found, report.indexed
+                        "indexing stopped after {}/{} file(s), {} indexed",
+                        report.found, report.total, report.indexed
                     );
                 }
                 Ok(report) => {

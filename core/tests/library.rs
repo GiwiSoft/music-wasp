@@ -149,12 +149,14 @@ fn incremental_scan_reports_unchanged_and_can_cancel() {
 
     let lib = Library::open_at(&dir.path().join("library.db")).unwrap();
     let first = lib.scan_with_progress(&music, false, |_| true).unwrap();
+    assert_eq!(first.total, 1);
     assert_eq!(first.found, 1);
     assert_eq!(first.indexed, 1);
     assert_eq!(first.unchanged, 0);
     assert!(!first.cancelled);
 
     let second = lib.scan_with_progress(&music, false, |_| true).unwrap();
+    assert_eq!(second.total, 1);
     assert_eq!(second.found, 1);
     assert_eq!(second.indexed, 0);
     assert_eq!(second.unchanged, 1);
@@ -172,8 +174,15 @@ fn incremental_scan_reports_unchanged_and_can_cancel() {
     // Two new files, but stop after the first one.
     write_wav(&music.join("two.wav"), 500);
     write_wav(&music.join("three.wav"), 500);
+    let mut initial = true;
     let cancelled = lib
-        .scan_with_progress(&music, false, |progress| progress.found < 1)
+        .scan_with_progress(&music, false, |progress| {
+            if initial && progress.found == 0 {
+                initial = false;
+                return true;
+            }
+            progress.found < 1
+        })
         .unwrap();
     assert!(cancelled.cancelled);
     assert!(cancelled.found >= 1);
@@ -256,4 +265,30 @@ fn batch_edit_only_touches_filled_fields() {
     assert_eq!(one.genre, "Rock");
     assert_eq!(two.genre, "Jazz");
     assert_eq!(two.title, "Second");
+}
+
+#[test]
+fn scan_reports_the_total_before_the_first_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let music = dir.path().join("music");
+    std::fs::create_dir_all(&music).unwrap();
+    write_wav(&music.join("one.wav"), 500);
+    write_wav(&music.join("two.wav"), 500);
+
+    let lib = Library::open_at(&dir.path().join("library.db")).unwrap();
+    let mut snapshots = Vec::new();
+    let report = lib
+        .scan_with_progress(&music, false, |progress| {
+            snapshots.push((progress.found, progress.total));
+            true
+        })
+        .unwrap();
+
+    assert_eq!(report.total, 2);
+    assert_eq!(
+        snapshots.first(),
+        Some(&(0, 2)),
+        "the first update carries the total before any tags are read"
+    );
+    assert_eq!(snapshots.last(), Some(&(2, 2)));
 }
