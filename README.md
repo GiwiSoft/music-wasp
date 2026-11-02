@@ -101,6 +101,7 @@ The wiki contains the full manual:
 
 ```bash
 cargo test --workspace
+cargo test -p musicwasp-gui --test snapshots
 scripts/dev-watch.sh                   # restart GUI on save
 WATCH_MODE=check scripts/dev-watch.sh  # fast check
 ```

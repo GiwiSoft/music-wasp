@@ -30,7 +30,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config libxkbcommon-dev
+          sudo apt-get install -y libasound2-dev pkg-config libxkbcommon-dev \
+            mesa-vulkan-drivers libegl-mesa0
 
       - uses: dtolnay/rust-toolchain@stable
 
