@@ -12,7 +12,10 @@ pub mod search;
 pub mod smart;
 pub mod tags;
 
-pub use library::{AlbumGroup, Filter, Library, ScanProgress, ScanReport, SortKey, Stats, Track};
+pub use library::{
+    AlbumGroup, Filter, Library, ReconcileCandidate, ReconcileOutcome, ReconcilePlan, ScanProgress,
+    ScanReport, SortKey, Stats, Track,
+};
 pub use player::{Player, PlayerSnapshot, PlayerStatus};
 pub use playlist::{Playlist, PlaylistFolder};
 pub use search::{Condition, NumberField, NumberOp, Query, SavedSearch, TextField};

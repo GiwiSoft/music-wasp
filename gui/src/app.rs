@@ -7,8 +7,8 @@ use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
 use musicwasp_core::tags::TagSnapshot;
 use musicwasp_core::{
-    AlbumGroup, Filter, Library, Player, Playlist, PlaylistFolder, SavedSearch, ScanProgress,
-    ScanReport, SortKey, TagEdit, Track,
+    AlbumGroup, Filter, Library, Player, Playlist, PlaylistFolder, ReconcilePlan, SavedSearch,
+    ScanProgress, ScanReport, SortKey, TagEdit, Track,
 };
 use notify::Watcher as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -486,6 +486,12 @@ pub struct HygieneState {
     pub selected: BTreeSet<i64>,
     /// Ids awaiting confirmation before they are removed from the database.
     pub pending: Option<Vec<i64>>,
+    /// Dry-run rename preview; `None` until the user asks for one.
+    pub reconcile: Option<ReconcilePlan>,
+    /// Missing-row ids ticked in the rename preview.
+    pub rename_selected: BTreeSet<i64>,
+    /// Rename candidates awaiting confirmation.
+    pub pending_renames: Option<Vec<i64>>,
     pub status: Option<String>,
 }
 
@@ -2348,8 +2354,105 @@ impl App {
             duplicate_groups,
             selected,
             pending: None,
+            reconcile: None,
+            rename_selected: BTreeSet::new(),
+            pending_renames: None,
             status: None,
         });
+    }
+
+    /// Read-only rename detection: match vanished rows against files on disk.
+    /// Nothing is written until the preview is applied.
+    pub fn reconcile_hygiene(&mut self) {
+        if self.hygiene.is_none() {
+            self.scan_hygiene();
+        }
+        let roots: Vec<PathBuf> = self
+            .settings
+            .watch_folders
+            .iter()
+            .map(PathBuf::from)
+            .filter(|path| path.is_dir())
+            .collect();
+        let status = if roots.is_empty() {
+            "Scan a folder first: renames are detected inside watched folders.".to_string()
+        } else {
+            match self.lib.reconcile(&roots) {
+                Ok(plan) => {
+                    let text = format!(
+                        "{} vanished row(s), {} possible rename(s), {} file(s) scanned",
+                        plan.missing.len(),
+                        plan.candidates.len(),
+                        plan.scanned_files
+                    );
+                    if let Some(state) = &mut self.hygiene {
+                        state.rename_selected =
+                            plan.candidates.iter().map(|c| c.track.id).collect();
+                        state.reconcile = Some(plan);
+                        state.pending_renames = None;
+                    }
+                    text
+                }
+                Err(e) => format!("could not scan for renames: {e}"),
+            }
+        };
+        self.message = status.clone();
+        if let Some(state) = &mut self.hygiene {
+            state.status = Some(status);
+        }
+    }
+
+    /// Apply the accepted relocation preview. Audio files are never modified.
+    pub fn apply_hygiene_renames(&mut self, ids: &[i64]) {
+        let Some(state) = &self.hygiene else {
+            return;
+        };
+        let Some(plan) = &state.reconcile else {
+            return;
+        };
+        let wanted: BTreeSet<i64> = ids.iter().copied().collect();
+        let candidates: Vec<_> = plan
+            .candidates
+            .iter()
+            .filter(|candidate| wanted.contains(&candidate.track.id))
+            .cloned()
+            .collect();
+        if candidates.is_empty() {
+            return;
+        }
+        match self.lib.apply_reconcile(&candidates) {
+            Ok(outcome) => {
+                let removed: BTreeSet<i64> = outcome.removed.iter().copied().collect();
+                let (queue_pos, current_removed) =
+                    remove_tracks_from_queue(&mut self.queue, self.queue_pos, &removed);
+                self.queue_pos = queue_pos;
+                if current_removed {
+                    if let Some(player) = &self.player {
+                        player.stop();
+                    }
+                    self.playing_id = None;
+                    self.art = None;
+                    self.art_key = None;
+                }
+                self.selected.retain(|id| !removed.contains(id));
+                if self.anchor.is_some_and(|id| removed.contains(&id)) {
+                    self.anchor = None;
+                }
+
+                self.message = format!("relocated {} track(s) to their new paths", outcome.moved);
+                self.scan_hygiene();
+                if let Some(state) = &mut self.hygiene {
+                    state.status = Some(self.message.clone());
+                }
+                self.mark_browser_dirty();
+            }
+            Err(e) => {
+                self.message = format!("could not apply renames: {e}");
+                if let Some(state) = &mut self.hygiene {
+                    state.status = Some(self.message.clone());
+                }
+            }
+        }
     }
 
     /// Remove rows from the library only. Audio files are never deleted.
@@ -4859,6 +4962,12 @@ impl App {
         // Debug hook: MUSICWASP_HYGIENE=1 opens the library hygiene window.
         if self.frames == 20 && std::env::var("MUSICWASP_HYGIENE").is_ok() {
             self.open_hygiene();
+        }
+
+        // Debug hook: MUSICWASP_RECONCILE=1 also runs the rename preview.
+        if self.frames == 30 && std::env::var("MUSICWASP_RECONCILE").is_ok() {
+            self.show_hygiene = true;
+            self.reconcile_hygiene();
         }
 
         let shot_frame = std::env::var("MUSICWASP_SCREENSHOT_FRAME")

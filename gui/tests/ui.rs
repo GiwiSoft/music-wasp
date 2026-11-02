@@ -412,6 +412,69 @@ fn can_create_an_empty_playlist_from_the_dialog() {
 }
 
 #[test]
+fn hygiene_preview_finds_renames_and_applies_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[SeedTrack {
+            file: "one.wav",
+            title: "Moved",
+            artist: "Artist",
+            album: "Album",
+            year: 2026,
+            track_no: 1,
+        }],
+    );
+
+    let music = dir.path().join("music");
+    std::fs::rename(music.join("one.wav"), music.join("renamed.wav")).unwrap();
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.state_mut().settings.watch_folders = vec![music.to_string_lossy().to_string()];
+    harness.state_mut().open_hygiene();
+    harness.state_mut().reconcile_hygiene();
+
+    let plan = harness
+        .state()
+        .hygiene
+        .as_ref()
+        .and_then(|state| state.reconcile.as_ref())
+        .expect("rename preview");
+    assert_eq!(plan.candidates.len(), 1);
+    assert!(plan.candidates[0].new_path.ends_with("renamed.wav"));
+    assert_eq!(plan.candidates[0].track.path, plan.missing[0].path);
+
+    let id = plan.candidates[0].track.id;
+    harness.state_mut().apply_hygiene_renames(&[id]);
+    harness.run_steps(2);
+
+    let tracks = harness
+        .state()
+        .lib
+        .query(
+            &musicwasp_core::Filter::default(),
+            musicwasp_core::SortKey::Title,
+            true,
+        )
+        .unwrap();
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(tracks[0].id, id);
+    assert!(tracks[0].path.ends_with("renamed.wav"));
+    assert!(harness
+        .state()
+        .hygiene
+        .as_ref()
+        .is_some_and(|state| state.missing.is_empty()));
+    assert!(harness
+        .state()
+        .hygiene
+        .as_ref()
+        .is_some_and(|state| state.reconcile.is_none()));
+}
+
+#[test]
 fn advanced_search_and_column_manager_update_the_ui() {
     let dir = tempfile::tempdir().unwrap();
     let mut env = TestEnv::new(dir.path());

@@ -8,7 +8,7 @@ use crate::settings::{TrackColumn, TrackLayout};
 use crate::theme as th;
 use egui::{Color32, RichText, WidgetInfo, WidgetType};
 use egui_extras::{Column, TableBuilder};
-use musicwasp_core::{Playlist, PlaylistFolder, SortKey, Track};
+use musicwasp_core::{Playlist, PlaylistFolder, ReconcileCandidate, SortKey, Track};
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 
@@ -3586,6 +3586,59 @@ fn hygiene_row(ui: &mut egui::Ui, selected: &mut BTreeSet<i64>, track: &Track) {
     });
 }
 
+fn rename_row(ui: &mut egui::Ui, selected: &mut BTreeSet<i64>, candidate: &ReconcileCandidate) {
+    ui.horizontal(|ui| {
+        let mut checked = selected.contains(&candidate.track.id);
+        if ui.checkbox(&mut checked, "").changed() {
+            if checked {
+                selected.insert(candidate.track.id);
+            } else {
+                selected.remove(&candidate.track.id);
+            }
+        }
+        let track = &candidate.track;
+        let mut label = if track.title.is_empty() {
+            "(untitled)".to_string()
+        } else {
+            track.title.clone()
+        };
+        if !track.artist.is_empty() {
+            label.push_str("  -  ");
+            label.push_str(&track.artist);
+        }
+        ui.add(egui::Label::new(RichText::new(label).size(11.5).color(th::text())).truncate());
+        if candidate.replaces_id.is_some() {
+            ui.label(
+                RichText::new("merges watcher duplicate")
+                    .size(9.5)
+                    .color(th::accent()),
+            );
+        }
+    });
+    for (prefix, path) in [("from", &candidate.track.path), ("to", &candidate.new_path)] {
+        ui.horizontal(|ui| {
+            ui.add_space(22.0);
+            ui.add(
+                egui::Label::new(
+                    RichText::new(format!("{prefix}  {path}"))
+                        .size(9.5)
+                        .color(th::text_dim()),
+                )
+                .truncate(),
+            )
+            .on_hover_text(path);
+        });
+    }
+    ui.horizontal(|ui| {
+        ui.add_space(22.0);
+        ui.label(
+            RichText::new(format!("matches: {}", candidate.reasons.join(" · ")))
+                .size(9.5)
+                .color(th::text_dim()),
+        );
+    });
+}
+
 pub fn hygiene_window(app: &mut App, ctx: &egui::Context) {
     if !app.show_hygiene {
         return;
@@ -3597,16 +3650,31 @@ pub fn hygiene_window(app: &mut App, ctx: &egui::Context) {
 
     enum Act {
         Rescan,
+        FindRenames,
         SelectMissing,
         SelectDuplicates,
+        SelectRenames,
         Clear,
+        ClearRenames,
         Ask(Vec<i64>),
+        AskRenames(Vec<i64>),
         Confirm,
+        ConfirmRenames,
         Cancel,
+        CancelRenames,
     }
     let mut act: Option<Act> = None;
     let mut open = app.show_hygiene;
     let duplicate_tracks: usize = state.duplicate_groups.iter().map(|group| group.len()).sum();
+    let rename_candidates = state
+        .reconcile
+        .as_ref()
+        .map_or(0, |plan| plan.candidates.len());
+    let rename_ids: BTreeSet<i64> = state
+        .reconcile
+        .as_ref()
+        .map(|plan| plan.candidates.iter().map(|c| c.track.id).collect())
+        .unwrap_or_default();
 
     egui::Window::new(tr("menu.library_hygiene"))
         .open(&mut open)
@@ -3661,9 +3729,18 @@ pub fn hygiene_window(app: &mut App, ctx: &egui::Context) {
                                         act = Some(Act::SelectMissing);
                                     }
                                     if ui.small_button("Prune all").clicked() {
-                                        act = Some(Act::Ask(
-                                            state.missing.iter().map(|track| track.id).collect(),
-                                        ));
+                                        // Rows with a rename match are removed
+                                        // from the preview instead; pruning them
+                                        // here would lose their history.
+                                        let ids: Vec<i64> = state
+                                            .missing
+                                            .iter()
+                                            .filter(|track| !rename_ids.contains(&track.id))
+                                            .map(|track| track.id)
+                                            .collect();
+                                        if !ids.is_empty() {
+                                            act = Some(Act::Ask(ids));
+                                        }
                                     }
                                 });
                                 for track in &state.missing {
@@ -3717,10 +3794,91 @@ pub fn hygiene_window(app: &mut App, ctx: &egui::Context) {
                             }
                         }
                     });
+
+                    ui.add_space(4.0);
+                    egui::CollapsingHeader::new(format!("Possible renames ({rename_candidates})"))
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            if let Some(plan) = &state.reconcile {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} file(s) scanned · nothing changes until you apply",
+                                        plan.scanned_files
+                                    ))
+                                    .size(10.0)
+                                    .color(th::text_dim()),
+                                );
+                                if plan.candidates.is_empty() {
+                                    ui.label(
+                                        RichText::new(
+                                            "No vanished row matches a file on disk. \
+                                         Prune the missing entries below if the files are gone.",
+                                        )
+                                        .size(10.5)
+                                        .color(th::text_dim()),
+                                    );
+                                } else {
+                                    ui.horizontal(|ui| {
+                                        if ui.small_button("Select all").clicked() {
+                                            act = Some(Act::SelectRenames);
+                                        }
+                                        if ui.small_button("Clear").clicked() {
+                                            act = Some(Act::ClearRenames);
+                                        }
+                                    });
+                                    for candidate in &plan.candidates {
+                                        ui.add_space(6.0);
+                                        rename_row(ui, &mut state.rename_selected, candidate);
+                                    }
+                                }
+                            } else {
+                                ui.label(
+                                    RichText::new(
+                                        "Find rows whose files were renamed outside MusicWasp. \
+                                     Matches use tags, size, duration and mtime.",
+                                    )
+                                    .size(10.5)
+                                    .color(th::text_dim()),
+                                );
+                                if ui
+                                    .button(icons::with(icons::MAGNIFYING_GLASS, "Find renames"))
+                                    .clicked()
+                                {
+                                    act = Some(Act::FindRenames);
+                                }
+                            }
+                        });
                 });
 
             ui.separator();
-            if let Some(ids) = &state.pending {
+            if let Some(ids) = &state.pending_renames {
+                let count = ids.len();
+                ui.label(
+                    RichText::new(format!("Relocate {count} track(s) to their new paths?"))
+                        .size(12.0)
+                        .strong()
+                        .color(th::accent()),
+                );
+                ui.label(
+                    RichText::new(
+                        "Ratings, playlists and play history stay attached. \
+                         Audio files are not modified.",
+                    )
+                    .size(10.5)
+                    .color(th::text_dim()),
+                );
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(icons::with(icons::ARROWS_CLOCKWISE, "Apply renames"))
+                        .clicked()
+                    {
+                        act = Some(Act::ConfirmRenames);
+                    }
+                    if ui.button(tr("common.cancel")).clicked() {
+                        act = Some(Act::CancelRenames);
+                    }
+                });
+            } else if let Some(ids) = &state.pending {
                 let count = ids.len();
                 ui.label(
                     RichText::new(format!("Remove {count} track(s) from the library?"))
@@ -3765,6 +3923,23 @@ pub fn hygiene_window(app: &mut App, ctx: &egui::Context) {
                     if ui.small_button("Clear selection").clicked() && !state.selected.is_empty() {
                         act = Some(Act::Clear);
                     }
+                    if rename_candidates > 0 {
+                        let label = format!("Apply {} rename(s)", state.rename_selected.len());
+                        if ui
+                            .add_enabled(
+                                !state.rename_selected.is_empty(),
+                                egui::Button::new(icons::with(icons::ARROWS_CLOCKWISE, &label)),
+                            )
+                            .on_hover_text(
+                                "Updates the indexed paths only; audio files are untouched",
+                            )
+                            .clicked()
+                        {
+                            act = Some(Act::AskRenames(
+                                state.rename_selected.iter().copied().collect(),
+                            ));
+                        }
+                    }
                 });
             }
             if let Some(status) = &state.status {
@@ -3775,9 +3950,50 @@ pub fn hygiene_window(app: &mut App, ctx: &egui::Context) {
     app.show_hygiene = open;
     match act {
         Some(Act::Rescan) => app.scan_hygiene(),
+        Some(Act::FindRenames) => app.reconcile_hygiene(),
+        Some(Act::SelectRenames) => {
+            if let Some(state) = &mut app.hygiene {
+                if let Some(plan) = &state.reconcile {
+                    state.rename_selected = plan.candidates.iter().map(|c| c.track.id).collect();
+                }
+            }
+        }
+        Some(Act::ClearRenames) => {
+            if let Some(state) = &mut app.hygiene {
+                state.rename_selected.clear();
+            }
+        }
+        Some(Act::AskRenames(ids)) => {
+            if let Some(state) = &mut app.hygiene {
+                state.pending_renames = Some(ids);
+            }
+        }
+        Some(Act::ConfirmRenames) => {
+            let ids = app
+                .hygiene
+                .as_mut()
+                .and_then(|state| state.pending_renames.take())
+                .unwrap_or_default();
+            app.apply_hygiene_renames(&ids);
+        }
+        Some(Act::CancelRenames) => {
+            if let Some(state) = &mut app.hygiene {
+                state.pending_renames = None;
+            }
+        }
         Some(Act::SelectMissing) => {
             if let Some(state) = &mut app.hygiene {
-                state.selected = state.missing.iter().map(|track| track.id).collect();
+                let rename_ids: BTreeSet<i64> = state
+                    .reconcile
+                    .as_ref()
+                    .map(|plan| plan.candidates.iter().map(|c| c.track.id).collect())
+                    .unwrap_or_default();
+                state.selected = state
+                    .missing
+                    .iter()
+                    .filter(|track| !rename_ids.contains(&track.id))
+                    .map(|track| track.id)
+                    .collect();
             }
         }
         Some(Act::SelectDuplicates) => {
