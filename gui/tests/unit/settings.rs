@@ -104,8 +104,10 @@ fn column_config_round_trips_and_normalizes() {
 
 #[test]
 fn hiding_every_column_still_leaves_a_usable_table() {
-    let mut columns = ColumnConfig::default();
-    columns.hidden = TrackColumn::ALL.to_vec();
+    let mut columns = ColumnConfig {
+        hidden: TrackColumn::ALL.to_vec(),
+        ..Default::default()
+    };
     assert_eq!(columns.visible(), vec![TrackColumn::Title]);
 
     columns.move_column(TrackColumn::Format, -1);

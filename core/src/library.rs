@@ -5,7 +5,7 @@ use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::{Accessor, AudioFile, ItemKey};
 use lofty::probe::Probe;
 use lofty::tag::{Tag, TagExt};
-use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, types::Value, Connection};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -77,13 +77,16 @@ impl Library {
     }
 
     /// Read-only preview of vanished rows matched to files still on disk.
-    pub fn reconcile(&self, roots: &[PathBuf]) -> Result<ReconcilePlan> {
-        reconcile(&self.conn, roots)
+    pub fn reconcile(&self, roots: &[PathBuf]) -> Result<crate::reconcile::ReconcilePlan> {
+        crate::reconcile::reconcile(&self.conn, roots)
     }
 
     /// Apply accepted reconciliation candidates. Files are never modified.
-    pub fn apply_reconcile(&self, candidates: &[ReconcileCandidate]) -> Result<ReconcileOutcome> {
-        apply_reconcile(&self.conn, candidates)
+    pub fn apply_reconcile(
+        &self,
+        candidates: &[crate::reconcile::ReconcileCandidate],
+    ) -> Result<crate::reconcile::ReconcileOutcome> {
+        crate::reconcile::apply(&self.conn, candidates)
     }
 
     /// Albums for the cover grid, grouped by album and album artist.
@@ -578,431 +581,6 @@ pub fn missing_tracks(conn: &Connection) -> Result<Vec<Track>> {
         .collect())
 }
 
-/// A vanished library row matched to an audio file that still exists on disk.
-#[derive(Debug, Clone, Serialize)]
-pub struct ReconcileCandidate {
-    /// The indexed row that lost its file. Ratings and play history live here.
-    pub track: Track,
-    pub new_path: String,
-    /// Row that already owns `new_path`, when the watcher re-imported the
-    /// renamed file before reconciliation ran. Applying the move merges it away.
-    pub replaces_id: Option<i64>,
-    pub score: i64,
-    pub reasons: Vec<String>,
-}
-
-/// Read-only preview of what a reconciliation scan would do.
-#[derive(Debug, Clone, Default, Serialize)]
-pub struct ReconcilePlan {
-    /// Every row whose indexed file is gone.
-    pub missing: Vec<Track>,
-    /// Missing rows with no convincing file match; pruning them stays manual.
-    pub unmatched: Vec<Track>,
-    pub candidates: Vec<ReconcileCandidate>,
-    pub scanned_files: usize,
-}
-
-/// Result of applying a reconciliation preview.
-#[derive(Debug, Clone, Default, Serialize)]
-pub struct ReconcileOutcome {
-    pub moved: usize,
-    /// Duplicate rows removed because the watcher had re-imported the file.
-    pub removed: Vec<i64>,
-}
-
-/// Match vanished rows against files that exist on disk. This never writes:
-/// callers show the plan and apply the accepted candidates explicitly.
-///
-/// Matching uses the old row's size, mtime, duration and tags. Files that are
-/// already indexed become merge candidates and need two independent file-level
-/// signals (size, mtime, duration), so two unrelated tracks that only share
-/// tags are not merged by accident.
-pub fn reconcile(conn: &Connection, roots: &[PathBuf]) -> Result<ReconcilePlan> {
-    let tracks = list(conn, None)?;
-    let missing: Vec<Track> = tracks
-        .iter()
-        .filter(|track| !Path::new(&track.path).is_file())
-        .cloned()
-        .collect();
-    let mut plan = ReconcilePlan {
-        missing: missing.clone(),
-        ..Default::default()
-    };
-    if missing.is_empty() {
-        return Ok(plan);
-    }
-    let roots: Vec<PathBuf> = roots.iter().filter(|root| root.is_dir()).cloned().collect();
-    if roots.is_empty() {
-        plan.unmatched = missing;
-        return Ok(plan);
-    }
-
-    // File size and mtime are not part of `Track`, so keep them aside for both
-    // the missing rows and the rows that already own a file on disk.
-    let mut meta = HashMap::new();
-    {
-        let mut stmt = conn.prepare("SELECT id, size_bytes, mtime FROM tracks")?;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            meta.insert(
-                row.get::<_, i64>(0)?,
-                (row.get::<_, i64>(1)?, row.get::<_, i64>(2)?),
-            );
-        }
-    }
-    let by_id: HashMap<i64, &Track> = tracks.iter().map(|track| (track.id, track)).collect();
-    let by_path: HashMap<PathBuf, i64> = tracks
-        .iter()
-        .map(|track| (PathBuf::from(&track.path), track.id))
-        .collect();
-
-    struct DiskFile {
-        path: PathBuf,
-        owner: Option<i64>,
-        size: i64,
-        mtime: i64,
-        duration: u64,
-        title: String,
-        artist: String,
-        album: String,
-        format: String,
-    }
-
-    let mut files: Vec<DiskFile> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for root in &roots {
-        for entry in WalkDir::new(root).follow_links(true).into_iter().flatten() {
-            if !entry.file_type().is_file() || !is_audio_path(entry.path()) {
-                continue;
-            }
-            let path = entry.path().to_path_buf();
-            if !seen.insert(path.clone()) {
-                continue;
-            }
-            let Ok(direct) = std::fs::metadata(&path) else {
-                continue;
-            };
-            let owner = by_path.get(&path).copied();
-            let file = match owner.and_then(|id| by_id.get(&id).copied()) {
-                // Already indexed: reuse the stored tags instead of reading them.
-                Some(track) => DiskFile {
-                    path,
-                    owner,
-                    size: meta.get(&track.id).map_or(0, |m| m.0),
-                    mtime: meta.get(&track.id).map_or(0, |m| m.1),
-                    duration: track.duration_secs,
-                    title: track.title.clone(),
-                    artist: track.artist.clone(),
-                    album: track.album.clone(),
-                    format: track.format.clone(),
-                },
-                // Not indexed yet: read tags once and remember they are fresh.
-                None => match read_tags(&path) {
-                    Ok(info) => DiskFile {
-                        path,
-                        owner: None,
-                        size: direct.len() as i64,
-                        mtime: file_mtime(&direct),
-                        duration: info.duration_secs,
-                        title: info.title,
-                        artist: info.artist,
-                        album: info.album,
-                        format: info.format,
-                    },
-                    Err(_) => continue,
-                },
-            };
-            files.push(file);
-        }
-    }
-    plan.scanned_files = files.len();
-
-    // Bucket files by the cheap signals so each missing row only scores a
-    // handful of candidates instead of walking a huge library.
-    let mut by_file_meta: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
-    let mut by_size: HashMap<i64, Vec<usize>> = HashMap::new();
-    let mut by_duration: HashMap<u64, Vec<usize>> = HashMap::new();
-    let mut by_tags: HashMap<(String, String, String), Vec<usize>> = HashMap::new();
-    for (index, file) in files.iter().enumerate() {
-        if file.size > 0 {
-            by_size.entry(file.size).or_default().push(index);
-            if file.mtime > 0 {
-                by_file_meta
-                    .entry((file.size, file.mtime))
-                    .or_default()
-                    .push(index);
-            }
-        }
-        if file.duration > 0 {
-            by_duration.entry(file.duration).or_default().push(index);
-        }
-        if let Some(key) = tag_key(&file.title, &file.artist, &file.album) {
-            by_tags.entry(key).or_default().push(index);
-        }
-    }
-
-    // (score, prefer unindexed, missing index, file index)
-    let mut pairs: Vec<(i64, bool, usize, usize)> = Vec::new();
-    for (missing_index, track) in missing.iter().enumerate() {
-        let (size, mtime) = meta.get(&track.id).copied().unwrap_or((0, 0));
-        let mut indexes: Vec<usize> = Vec::new();
-        if let Some(list) = by_file_meta.get(&(size, mtime)) {
-            indexes.extend_from_slice(list);
-        }
-        if let Some(list) = by_size.get(&size) {
-            indexes.extend_from_slice(list);
-        }
-        if let Some(list) = by_duration.get(&track.duration_secs) {
-            indexes.extend_from_slice(list);
-        }
-        if let Some(key) = tag_key(&track.title, &track.artist, &track.album) {
-            if let Some(list) = by_tags.get(&key) {
-                indexes.extend_from_slice(list);
-            }
-        }
-        indexes.sort_unstable();
-        indexes.dedup();
-
-        for file_index in indexes {
-            let file = &files[file_index];
-            if file.owner == Some(track.id) {
-                continue;
-            }
-            let (score, file_signals, tag_pair) = reconcile_score(
-                track,
-                size,
-                mtime,
-                &file.title,
-                &file.artist,
-                &file.album,
-                file.size,
-                file.mtime,
-                file.duration,
-                &file.format,
-            );
-            let qualifies = score >= 6 && (file_signals > 0 || tag_pair);
-            // Merging deletes an existing row, so demand two independent file
-            // signals (for example the size and mtime a rename preserves).
-            if qualifies && (file.owner.is_none() || file_signals >= 2) {
-                pairs.push((score, file.owner.is_none(), missing_index, file_index));
-            }
-        }
-    }
-    pairs.sort_by(|a, b| {
-        b.0.cmp(&a.0)
-            .then_with(|| b.1.cmp(&a.1))
-            .then_with(|| a.2.cmp(&b.2))
-            .then_with(|| files[a.3].path.cmp(&files[b.3].path))
-    });
-
-    let mut used_missing = vec![false; missing.len()];
-    let mut used_files = vec![false; files.len()];
-    for (score, _, missing_index, file_index) in pairs {
-        if used_missing[missing_index] || used_files[file_index] {
-            continue;
-        }
-        used_missing[missing_index] = true;
-        used_files[file_index] = true;
-        let track = &missing[missing_index];
-        let file = &files[file_index];
-        let (size, mtime) = meta.get(&track.id).copied().unwrap_or((0, 0));
-        plan.candidates.push(ReconcileCandidate {
-            track: track.clone(),
-            new_path: file.path.to_string_lossy().to_string(),
-            replaces_id: file.owner,
-            score,
-            reasons: reconcile_reasons(
-                track,
-                size,
-                mtime,
-                &file.title,
-                &file.artist,
-                &file.album,
-                file.size,
-                file.mtime,
-                file.duration,
-                &file.format,
-            ),
-        });
-    }
-    let matched: std::collections::HashSet<i64> =
-        plan.candidates.iter().map(|c| c.track.id).collect();
-    plan.unmatched = missing
-        .into_iter()
-        .filter(|track| !matched.contains(&track.id))
-        .collect();
-    plan.candidates
-        .sort_by_key(|candidate| std::cmp::Reverse(candidate.score));
-    Ok(plan)
-}
-
-/// Normalized artist/title/album key used for the candidate buckets.
-fn tag_key(title: &str, artist: &str, album: &str) -> Option<(String, String, String)> {
-    let title = normalize_tag(title);
-    if title.is_empty() {
-        return None;
-    }
-    Some((title, normalize_tag(artist), normalize_tag(album)))
-}
-
-/// Score one missing row against one file. Returns the score, how many file
-/// level signals matched, and whether title and artist matched together.
-#[allow(clippy::too_many_arguments)]
-fn reconcile_score(
-    track: &Track,
-    size: i64,
-    mtime: i64,
-    title: &str,
-    artist: &str,
-    album: &str,
-    file_size: i64,
-    file_mtime: i64,
-    file_duration: u64,
-    file_format: &str,
-) -> (i64, usize, bool) {
-    let size_eq = size > 0 && size == file_size;
-    let mtime_eq = mtime > 0 && mtime == file_mtime;
-    let duration_eq = track.duration_secs > 0 && track.duration_secs == file_duration;
-    let old_title = normalize_tag(&track.title);
-    let title_eq = !old_title.is_empty() && old_title == normalize_tag(title);
-    let artist_eq = !normalize_tag(&track.artist).is_empty()
-        && normalize_tag(&track.artist) == normalize_tag(artist);
-    let album_eq = !normalize_tag(&track.album).is_empty()
-        && normalize_tag(&track.album) == normalize_tag(album);
-    let format_eq = !track.format.is_empty() && track.format.eq_ignore_ascii_case(file_format);
-
-    let mut score = 0;
-    if size_eq {
-        score += 4;
-    }
-    if mtime_eq {
-        score += 4;
-    }
-    if duration_eq {
-        score += 2;
-    }
-    if title_eq {
-        score += 3;
-    }
-    if artist_eq {
-        score += 2;
-    }
-    if album_eq {
-        score += 1;
-    }
-    if format_eq {
-        score += 1;
-    }
-    let file_signals = [size_eq, mtime_eq, duration_eq]
-        .into_iter()
-        .filter(|matched| *matched)
-        .count();
-    (score, file_signals, title_eq && artist_eq)
-}
-
-/// Human-readable reasons shown in the dry-run preview.
-#[allow(clippy::too_many_arguments)]
-fn reconcile_reasons(
-    track: &Track,
-    size: i64,
-    mtime: i64,
-    title: &str,
-    artist: &str,
-    album: &str,
-    file_size: i64,
-    file_mtime: i64,
-    file_duration: u64,
-    file_format: &str,
-) -> Vec<String> {
-    let mut reasons = Vec::new();
-    if size > 0 && size == file_size {
-        reasons.push("size".to_string());
-    }
-    if mtime > 0 && mtime == file_mtime {
-        reasons.push("mtime".to_string());
-    }
-    if track.duration_secs > 0 && track.duration_secs == file_duration {
-        reasons.push("duration".to_string());
-    }
-    if !normalize_tag(&track.title).is_empty()
-        && normalize_tag(&track.title) == normalize_tag(title)
-    {
-        reasons.push("title".to_string());
-    }
-    if !normalize_tag(&track.artist).is_empty()
-        && normalize_tag(&track.artist) == normalize_tag(artist)
-    {
-        reasons.push("artist".to_string());
-    }
-    if !normalize_tag(&track.album).is_empty()
-        && normalize_tag(&track.album) == normalize_tag(album)
-    {
-        reasons.push("album".to_string());
-    }
-    if !track.format.is_empty() && track.format.eq_ignore_ascii_case(file_format) {
-        reasons.push("format".to_string());
-    }
-    reasons
-}
-
-/// Apply a reviewed preview. Rows keep their identity, ratings and history;
-/// only the path and cached file metadata change. When the watcher already
-/// imported the renamed file as a new row, that duplicate is merged away.
-pub fn apply_reconcile(
-    conn: &Connection,
-    candidates: &[ReconcileCandidate],
-) -> Result<ReconcileOutcome> {
-    let mut outcome = ReconcileOutcome::default();
-    if candidates.is_empty() {
-        return Ok(outcome);
-    }
-    let tx = conn.unchecked_transaction()?;
-    for candidate in candidates {
-        let path = Path::new(&candidate.new_path);
-        anyhow::ensure!(path.is_file(), "file is gone: {}", candidate.new_path);
-        let meta = std::fs::metadata(path)?;
-        let size = meta.len() as i64;
-        let mtime = file_mtime(&meta);
-
-        let occupant: Option<(i64, i64, i64)> = tx
-            .query_row(
-                "SELECT id, size_bytes, mtime FROM tracks WHERE path = ?1 AND id <> ?2",
-                params![candidate.new_path, candidate.track.id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .optional()?;
-        if let Some((id, stored_size, stored_mtime)) = occupant {
-            anyhow::ensure!(
-                stored_size == size && stored_mtime == mtime,
-                "another library entry already points at {}; rescan before applying",
-                candidate.new_path
-            );
-            tx.execute("DELETE FROM tracks WHERE id = ?1", params![id])?;
-            outcome.removed.push(id);
-        }
-
-        let changed = tx.execute(
-            "UPDATE tracks SET path = ?1 WHERE id = ?2",
-            params![candidate.new_path, candidate.track.id],
-        )?;
-        anyhow::ensure!(changed == 1, "track row disappeared; rescan");
-        // Re-read the file so a rename that also changed tags keeps the row in
-        // sync; the row id (and with it ratings and history) stays untouched.
-        refresh_file(&tx, path)?;
-        outcome.moved += 1;
-    }
-    tx.commit()?;
-    Ok(outcome)
-}
-
-fn file_mtime(meta: &std::fs::Metadata) -> i64 {
-    meta.modified()
-        .ok()
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0)
-}
-
 /// Delete library rows without touching the files. Returns the number removed.
 pub fn remove_tracks(conn: &Connection, ids: &[i64]) -> Result<usize> {
     if ids.is_empty() {
@@ -1049,7 +627,7 @@ pub fn duplicate_groups(conn: &Connection) -> Result<Vec<Vec<Track>>> {
     Ok(find_duplicate_groups(list(conn, None)?))
 }
 
-fn normalize_tag(value: &str) -> String {
+pub(crate) fn normalize_tag(value: &str) -> String {
     value
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -1422,12 +1000,7 @@ where
                 continue;
             }
         };
-        let mtime = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+        let mtime = file_mtime(&meta);
 
         report.found += 1;
 
@@ -1527,15 +1100,18 @@ fn existing_files(conn: &Connection, root: &Path) -> Result<HashMap<String, (i64
     Ok(existing)
 }
 
+pub(crate) fn file_mtime(meta: &std::fs::Metadata) -> i64 {
+    meta.modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 /// Re-read one file and upsert it (used after tag edits).
 pub fn refresh_file(conn: &Connection, path: &Path) -> Result<()> {
     let meta = std::fs::metadata(path)?;
-    let mtime = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let mtime = file_mtime(&meta);
     let info = read_tags(path)?;
 
     conn.execute(
@@ -1587,6 +1163,26 @@ struct TagInfo {
     bitrate: u32,
     channels: u8,
     format: String,
+}
+
+/// The tag subset reconciliation needs, so the full `TagInfo` stays private.
+pub(crate) struct AudioSummary {
+    pub duration_secs: u64,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub format: String,
+}
+
+pub(crate) fn audio_summary(path: &Path) -> Option<AudioSummary> {
+    let info = read_tags(path).ok()?;
+    Some(AudioSummary {
+        duration_secs: info.duration_secs,
+        title: info.title,
+        artist: info.artist,
+        album: info.album,
+        format: info.format,
+    })
 }
 
 fn read_tags(path: &Path) -> Result<TagInfo> {

@@ -5,6 +5,7 @@
 
 pub mod app;
 mod equalizer;
+mod hygiene;
 pub mod i18n;
 pub mod icons;
 #[cfg(target_os = "linux")]

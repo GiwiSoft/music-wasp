@@ -79,9 +79,7 @@ impl Skin {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         definitions
             .iter()
-            .find(|definition| {
-                definition.id == id || definition.aliases.iter().any(|alias| *alias == id)
-            })
+            .find(|definition| definition.id == id || definition.aliases.contains(&id))
             .map(|definition| Skin { id: definition.id })
             .unwrap_or(Self::WASP)
     }

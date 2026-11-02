@@ -2396,10 +2396,7 @@ impl App {
                 Err(e) => format!("could not scan for renames: {e}"),
             }
         };
-        self.message = status.clone();
-        if let Some(state) = &mut self.hygiene {
-            state.status = Some(status);
-        }
+        self.hygiene_message(status);
     }
 
     /// Apply the accepted relocation preview. Audio files are never modified.
@@ -2422,36 +2419,14 @@ impl App {
         }
         match self.lib.apply_reconcile(&candidates) {
             Ok(outcome) => {
-                let removed: BTreeSet<i64> = outcome.removed.iter().copied().collect();
-                let (queue_pos, current_removed) =
-                    remove_tracks_from_queue(&mut self.queue, self.queue_pos, &removed);
-                self.queue_pos = queue_pos;
-                if current_removed {
-                    if let Some(player) = &self.player {
-                        player.stop();
-                    }
-                    self.playing_id = None;
-                    self.art = None;
-                    self.art_key = None;
-                }
-                self.selected.retain(|id| !removed.contains(id));
-                if self.anchor.is_some_and(|id| removed.contains(&id)) {
-                    self.anchor = None;
-                }
-
-                self.message = format!("relocated {} track(s) to their new paths", outcome.moved);
-                self.scan_hygiene();
-                if let Some(state) = &mut self.hygiene {
-                    state.status = Some(self.message.clone());
-                }
-                self.mark_browser_dirty();
+                let removed: BTreeSet<i64> = outcome.removed.into_iter().collect();
+                self.forget_tracks(&removed);
+                self.finish_hygiene(format!(
+                    "relocated {} track(s) to their new paths",
+                    outcome.moved
+                ));
             }
-            Err(e) => {
-                self.message = format!("could not apply renames: {e}");
-                if let Some(state) = &mut self.hygiene {
-                    state.status = Some(self.message.clone());
-                }
-            }
+            Err(e) => self.hygiene_message(format!("could not apply renames: {e}")),
         }
     }
 
@@ -2463,37 +2438,56 @@ impl App {
         let removed: BTreeSet<i64> = ids.iter().copied().collect();
         match self.lib.remove_tracks(ids) {
             Ok(count) => {
-                let (queue_pos, current_removed) =
-                    remove_tracks_from_queue(&mut self.queue, self.queue_pos, &removed);
-                self.queue_pos = queue_pos;
-                if current_removed {
-                    if let Some(player) = &self.player {
-                        player.stop();
-                    }
-                    self.playing_id = None;
-                    self.art = None;
-                    self.art_key = None;
-                }
-                self.selected.retain(|id| !removed.contains(id));
-                if self.anchor.is_some_and(|id| removed.contains(&id)) {
-                    self.anchor = None;
-                }
-
-                self.message =
-                    format!("removed {count} track(s) from the library; audio files were kept");
-                self.scan_hygiene();
-                if let Some(state) = &mut self.hygiene {
-                    state.status = Some(self.message.clone());
-                }
-                self.mark_browser_dirty();
+                self.forget_tracks(&removed);
+                self.finish_hygiene(format!(
+                    "removed {count} track(s) from the library; audio files were kept"
+                ));
             }
             Err(e) => {
-                self.message = format!("could not remove tracks from the library: {e}");
-                if let Some(state) = &mut self.hygiene {
-                    state.status = Some(self.message.clone());
-                }
+                self.hygiene_message(format!("could not remove tracks from the library: {e}"))
             }
         }
+    }
+
+    /// Drop removed rows from the queue and the selection, stopping playback
+    /// when the current track was one of them.
+    fn forget_tracks(&mut self, removed: &BTreeSet<i64>) {
+        if removed.is_empty() {
+            return;
+        }
+        let (queue_pos, current_removed) =
+            remove_tracks_from_queue(&mut self.queue, self.queue_pos, removed);
+        self.queue_pos = queue_pos;
+        if current_removed {
+            if let Some(player) = &self.player {
+                player.stop();
+            }
+            self.playing_id = None;
+            self.art = None;
+            self.art_key = None;
+        }
+        self.selected.retain(|id| !removed.contains(id));
+        if self.anchor.is_some_and(|id| removed.contains(&id)) {
+            self.anchor = None;
+        }
+    }
+
+    /// Show a maintenance result in the toolbar and in the open window.
+    fn hygiene_message(&mut self, message: String) {
+        self.message = message;
+        if let Some(state) = &mut self.hygiene {
+            state.status = Some(self.message.clone());
+        }
+    }
+
+    /// Publish a maintenance result, rescan the hygiene lists, refresh views.
+    fn finish_hygiene(&mut self, message: String) {
+        self.message = message;
+        self.scan_hygiene();
+        if let Some(state) = &mut self.hygiene {
+            state.status = Some(self.message.clone());
+        }
+        self.mark_browser_dirty();
     }
 
     // ---- album grid and cover tools ----
@@ -4751,7 +4745,7 @@ impl eframe::App for App {
         crate::ui::columns_window(self, &ctx);
         crate::ui::smart_dialog(self, &ctx);
         crate::ui::settings_window(self, &ctx);
-        crate::ui::hygiene_window(self, &ctx);
+        crate::hygiene::window(self, &ctx);
         crate::ui::cover_picker(self, &ctx);
         crate::ui::folder_picker(self, &ctx);
         crate::ui::autotag_window(self, &ctx);
