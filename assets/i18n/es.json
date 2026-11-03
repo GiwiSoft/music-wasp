@@ -51,7 +51,7 @@
   "ui.play_next": "Reproducir siguiente",
   "ui.add_to_queue": "Añadir a la cola",
   "ui.rename": "Renombrar",
-  "ui.edit_tags": "Editar etiquetas",
+  "ui.edit_tags": "Editar propiedades",
   "ui.find_metadata": "Buscar metadatos",
   "ui.remove_from_playlist": "Quitar de la lista",
   "ui.add_to_playlist": "Añadir a la lista",

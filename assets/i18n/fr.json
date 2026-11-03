@@ -51,7 +51,7 @@
   "ui.play_next": "Lire ensuite",
   "ui.add_to_queue": "Ajouter à la file",
   "ui.rename": "Renommer",
-  "ui.edit_tags": "Modifier les métadonnées",
+  "ui.edit_tags": "Modifier les propriétés",
   "ui.find_metadata": "Rechercher les métadonnées",
   "ui.remove_from_playlist": "Retirer de la playlist",
   "ui.add_to_playlist": "Ajouter à la playlist",

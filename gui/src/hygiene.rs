@@ -360,8 +360,8 @@ fn confirm_bar(
     let mut act = None;
     ui.label(RichText::new(title).size(12.0).strong().color(th::accent()));
     ui.label(hint(note));
-    ui.horizontal(|ui| {
-        if ui.button(action).clicked() {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if crate::dialog::primary_button(ui, &action, true).clicked() {
             act = Some(confirm);
         }
         if ui.button(tr("common.cancel")).clicked() {

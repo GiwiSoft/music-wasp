@@ -23,6 +23,8 @@ pub struct TagEdit {
     pub year: Option<i32>,
     pub track_no: Option<i32>,
     pub disc_no: Option<i32>,
+    /// Per-track ReplayGain in dB, stored as REPLAYGAIN_TRACK_GAIN.
+    pub replay_gain: Option<f32>,
 }
 
 impl TagEdit {
@@ -36,6 +38,7 @@ impl TagEdit {
             && self.year.is_none()
             && self.track_no.is_none()
             && self.disc_no.is_none()
+            && self.replay_gain.is_none()
     }
 
     pub fn from_track(t: &Track) -> Self {
@@ -48,6 +51,7 @@ impl TagEdit {
             year: t.year,
             track_no: t.track_no,
             disc_no: t.disc_no,
+            replay_gain: None,
         }
     }
 }
@@ -111,10 +115,23 @@ pub fn write_fields(path: &Path, edit: &TagEdit, skip_empty: bool) -> Result<()>
     } else if !skip_empty {
         tag.remove_disk();
     }
+    if let Some(gain) = edit.replay_gain {
+        tag.insert_text(ItemKey::ReplayGainTrackGain, format!("{gain:.2} dB"));
+    } else if !skip_empty {
+        tag.remove_key(&ItemKey::ReplayGainTrackGain);
+    }
 
     tag.save_to_path(path, WriteOptions::default())
         .with_context(|| format!("cannot write tags to {}", path.display()))?;
     Ok(())
+}
+
+fn parse_gain(raw: &str) -> Option<f32> {
+    raw.trim()
+        .trim_end_matches(|c: char| c.eq_ignore_ascii_case(&'d') || c.eq_ignore_ascii_case(&'b'))
+        .trim()
+        .parse()
+        .ok()
 }
 
 /// One embedded picture, stored in a form that survives JSON persistence.
@@ -159,6 +176,9 @@ impl TagSnapshot {
             year: tag.year().map(|year| year as i32),
             track_no: tag.track().map(|track| track as i32),
             disc_no: tag.disk().map(|disc| disc as i32),
+            replay_gain: tag
+                .get_string(&ItemKey::ReplayGainTrackGain)
+                .and_then(parse_gain),
         };
         let pictures = tag
             .pictures()

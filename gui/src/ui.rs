@@ -2135,18 +2135,13 @@ pub fn cover_picker(app: &mut App, ctx: &egui::Context) {
                 });
 
             ui.separator();
-            ui.horizontal(|ui| {
-                let enabled = picker.selected.is_some();
-                if ui
-                    .add_enabled(enabled, egui::Button::new("Use this image"))
-                    .clicked()
-                {
-                    choose = picker.selected.clone();
-                }
-                if ui.button(tr("common.cancel")).clicked() {
-                    cancel = true;
-                }
-            });
+            let enabled = picker.selected.is_some();
+            let (use_clicked, cancel_clicked) =
+                crate::dialog::save_cancel(ui, "Use this image", enabled);
+            if use_clicked {
+                choose = picker.selected.clone();
+            }
+            cancel |= cancel_clicked;
         });
 
     if let Some(dir) = navigate {
@@ -2959,6 +2954,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
         return;
     };
 
+    let mut open = true;
     let mut save = false;
     let mut cancel = false;
     let mut batch_action: Option<BatchAction> = None;
@@ -2966,15 +2962,25 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
     let batch = state.batch;
     let count = state.paths.len();
     let title = if batch {
-        format!("Batch edit · {count} tracks")
+        format!("Batch properties · {count} tracks")
     } else {
         tr("ui.edit_tags").to_string()
     };
     let hint = if batch { "(unchanged)" } else { "" };
 
     egui::Window::new(title)
+        .open(&mut open)
         .collapsible(false)
         .resizable(false)
+        .default_width(470.0)
+        .frame(
+            egui::Frame::window(&ctx.style_of(ctx.theme())).inner_margin(egui::Margin {
+                left: 6,
+                right: 6,
+                top: 6,
+                bottom: 6,
+            }),
+        )
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             if batch {
@@ -3050,6 +3056,39 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                     state.edit.track_no = (track_no > 0).then_some(track_no);
                     state.edit.disc_no = (disc_no > 0).then_some(disc_no);
 
+                    let gain_label = ui.label(
+                        RichText::new("Volume (ReplayGain)")
+                            .size(12.0)
+                            .color(th::text_dim()),
+                    );
+                    gain_label.on_hover_text(
+                        "Per-track gain in dB, written as REPLAYGAIN_TRACK_GAIN.                          Playback applies it when Settings → Apply ReplayGain tags is on.",
+                    );
+                    let mut has_gain = state.edit.replay_gain.is_some();
+                    let mut gain = state.edit.replay_gain.unwrap_or(0.0);
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut has_gain, "");
+                        ui.scope(|ui| {
+                            ui.spacing_mut().slider_width = 180.0;
+                            ui.add_enabled(
+                                has_gain,
+                                egui::Slider::new(&mut gain, -24.0..=24.0)
+                                    .suffix(" dB")
+                                    .step_by(0.1)
+                                    .fixed_decimals(1),
+                            );
+                        });
+                        if batch && !has_gain {
+                            ui.label(
+                                RichText::new("leave unchanged")
+                                    .size(9.5)
+                                    .color(th::text_dim()),
+                            );
+                        }
+                    });
+                    ui.end_row();
+                    state.edit.replay_gain = has_gain.then_some(gain);
+
                     if batch {
                         ui.label(
                             RichText::new("0 keeps the existing number")
@@ -3123,30 +3162,30 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
             }
 
             ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                let save_label = if batch {
-                    format!("Save to {count} files")
+            ui.label(
+                RichText::new(if batch {
+                    "Only filled fields are written"
                 } else {
-                    tr("common.save").to_string()
-                };
-                if ui.button(save_label).clicked() {
-                    save = true;
-                }
-                if ui.button(tr("common.cancel")).clicked() {
-                    cancel = true;
-                }
-                ui.label(
-                    RichText::new(if batch {
-                        "Only filled fields are written"
-                    } else {
-                        "Writes tags into the file itself"
-                    })
-                    .size(10.0)
-                    .color(th::text_dim()),
-                );
-            });
+                    "Writes tags into the file itself"
+                })
+                .size(10.0)
+                .color(th::text_dim()),
+            );
+            ui.add_space(4.0);
+            let save_label = if batch {
+                format!("Save to {count} files")
+            } else {
+                tr("common.save").to_string()
+            };
+            let (save_clicked, cancel_clicked) =
+                crate::dialog::save_cancel(ui, &save_label, true);
+            save |= save_clicked;
+            cancel |= cancel_clicked;
         });
 
+    if !open {
+        cancel = true;
+    }
     if let Some(action) = batch_action {
         app.apply_batch_action(action);
     }
@@ -3163,11 +3202,13 @@ pub fn rename_window(app: &mut App, ctx: &egui::Context) {
         return;
     };
 
+    let mut open = true;
     let mut commit = false;
     let mut cancel = false;
     let title = icons::with(icons::PENCIL_SIMPLE, &state.target.title());
 
     egui::Window::new(title)
+        .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .default_width(320.0)
@@ -3203,19 +3244,16 @@ pub fn rename_window(app: &mut App, ctx: &egui::Context) {
             }
 
             ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if icons::button(ui, icons::CHECK, tr("common.save")).clicked() {
-                    commit = true;
-                }
-                if icons::button(ui, icons::X, tr("common.cancel")).clicked() {
-                    cancel = true;
-                }
-                ui.label(
-                    RichText::new("Enter saves, Escape cancels")
-                        .size(10.0)
-                        .color(th::text_dim()),
-                );
-            });
+            ui.label(
+                RichText::new("Enter saves, Escape cancels")
+                    .size(10.0)
+                    .color(th::text_dim()),
+            );
+            ui.add_space(4.0);
+            let (save_clicked, cancel_clicked) =
+                crate::dialog::save_cancel(ui, tr("common.save"), true);
+            commit |= save_clicked;
+            cancel |= cancel_clicked;
 
             if resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 commit = true;
@@ -3225,6 +3263,9 @@ pub fn rename_window(app: &mut App, ctx: &egui::Context) {
             }
         });
 
+    if !open {
+        cancel = true;
+    }
     if commit {
         app.commit_rename();
     } else if cancel {
@@ -3238,9 +3279,11 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
     };
     let mut empty = app.playlist_dialog_empty;
 
+    let mut open = true;
     let mut create = false;
     let mut cancel = false;
     egui::Window::new(tr("ui.new_playlist"))
+        .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -3290,16 +3333,15 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
                 create = true;
             }
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                if ui.button(tr("common.create")).clicked() {
-                    create = true;
-                }
-                if ui.button(tr("common.cancel")).clicked() {
-                    cancel = true;
-                }
-            });
+            let (create_clicked, cancel_clicked) =
+                crate::dialog::save_cancel(ui, tr("common.create"), true);
+            create |= create_clicked;
+            cancel |= cancel_clicked;
         });
 
+    if !open {
+        cancel = true;
+    }
     app.playlist_dialog_empty = empty;
     app.playlist_dialog = Some(name);
     if create {
@@ -3326,9 +3368,11 @@ pub fn folder_dialog(app: &mut App, ctx: &egui::Context) {
         .map(|path| format!("New folder in {path}"))
         .unwrap_or_else(|| tr("ui.new_playlist_folder").to_string());
 
+    let mut open = true;
     let mut create = false;
     let mut cancel = false;
     egui::Window::new(title)
+        .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -3353,16 +3397,15 @@ pub fn folder_dialog(app: &mut App, ctx: &egui::Context) {
                 );
             }
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                if ui.button(tr("common.create")).clicked() {
-                    create = true;
-                }
-                if ui.button(tr("common.cancel")).clicked() {
-                    cancel = true;
-                }
-            });
+            let (create_clicked, cancel_clicked) =
+                crate::dialog::save_cancel(ui, tr("common.create"), true);
+            create |= create_clicked;
+            cancel |= cancel_clicked;
         });
 
+    if !open {
+        cancel = true;
+    }
     if create {
         app.folder_dialog = Some(draft);
         app.commit_folder_dialog();
@@ -3385,10 +3428,12 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
     } else {
         format!("Export \"{}\" as M3U", draft.name)
     };
+    let mut open = true;
     let mut commit = false;
     let mut cancel = false;
 
     egui::Window::new(title)
+        .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .default_width(540.0)
@@ -3455,33 +3500,29 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
             }
 
             ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if icons::button(
-                    ui,
-                    if importing {
-                        icons::DOWNLOAD_SIMPLE
-                    } else {
-                        icons::UPLOAD_SIMPLE
-                    },
-                    if importing {
-                        tr("ui.import")
-                    } else {
-                        tr("ui.export")
-                    },
-                )
-                .clicked()
-                {
-                    commit = true;
-                }
-                if icons::button(ui, icons::X, tr("common.cancel")).clicked() {
-                    cancel = true;
-                }
-            });
+            let label = icons::with(
+                if importing {
+                    icons::DOWNLOAD_SIMPLE
+                } else {
+                    icons::UPLOAD_SIMPLE
+                },
+                if importing {
+                    tr("ui.import")
+                } else {
+                    tr("ui.export")
+                },
+            );
+            let (commit_clicked, cancel_clicked) = crate::dialog::save_cancel(ui, &label, true);
+            commit |= commit_clicked;
+            cancel |= cancel_clicked;
             if path_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 commit = true;
             }
         });
 
+    if !open {
+        cancel = true;
+    }
     if commit {
         app.m3u_dialog = Some(draft);
         app.commit_m3u_dialog();
@@ -3498,6 +3539,7 @@ pub fn columns_window(app: &mut App, ctx: &egui::Context) {
         return;
     }
     let mut open = true;
+    let mut close = false;
     let mut config = app.settings.columns.clone();
     let mut reset = false;
 
@@ -3582,8 +3624,13 @@ pub fn columns_window(app: &mut App, ctx: &egui::Context) {
                         .color(th::text_dim()),
                 );
             });
+            ui.add_space(8.0);
+            close = crate::dialog::close_row(ui);
         });
 
+    if close {
+        open = false;
+    }
     if reset {
         config.reset();
     }
@@ -3604,6 +3651,7 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
     };
 
     let editing = draft.id.is_some();
+    let mut open = true;
     let mut save = false;
     let mut cancel = false;
     egui::Window::new(if editing {
@@ -3611,6 +3659,7 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
     } else {
         tr("ui.save_search")
     })
+    .open(&mut open)
     .collapsible(false)
     .resizable(false)
     .default_width(460.0)
@@ -3652,14 +3701,10 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
         }
 
         ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            if icons::button(ui, icons::BOOKMARK_SIMPLE, tr("common.save")).clicked() {
-                save = true;
-            }
-            if icons::button(ui, icons::X, tr("common.cancel")).clicked() {
-                cancel = true;
-            }
-        });
+        let (save_clicked, cancel_clicked) =
+            crate::dialog::save_cancel(ui, tr("common.save"), true);
+        save |= save_clicked;
+        cancel |= cancel_clicked;
         if (name_resp.has_focus() || query_resp.has_focus())
             && ui.input(|i| i.key_pressed(egui::Key::Enter))
         {
@@ -3667,6 +3712,9 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
         }
     });
 
+    if !open {
+        cancel = true;
+    }
     if save {
         app.saved_search_dialog = Some(draft);
         app.commit_saved_search_dialog();
@@ -3683,6 +3731,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     }
 
     let mut open = true;
+    let mut close = false;
     let mut reset = false;
     let mut unbind: Option<crate::settings::Action> = None;
     let mut rebind: Option<crate::settings::Action> = None;
@@ -4171,8 +4220,13 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     );
                 });
             }
+            ui.add_space(8.0);
+            close = crate::dialog::close_row(ui);
         });
 
+    if close {
+        open = false;
+    }
     app.settings_tab = tab;
 
     if app.captured_this_frame {
@@ -4251,6 +4305,7 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
     let mut open = true;
     let mut navigate: Option<PathBuf> = None;
     let mut choose = false;
+    let mut cancel = false;
     let mut toggle_hidden = false;
 
     egui::Window::new("Choose music folder")
@@ -4324,20 +4379,15 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
                 });
 
             ui.separator();
-            ui.horizontal(|ui| {
-                if ui
-                    .button(tr("ui.use_this_folder"))
-                    .on_hover_text("Scan this folder")
-                    .clicked()
-                {
-                    choose = true;
-                }
-                ui.label(
-                    RichText::new(tr("ui.music_folders_are_scanned_recursively"))
-                        .size(10.0)
-                        .color(th::text_dim()),
-                );
-            });
+            ui.label(
+                RichText::new(tr("ui.music_folders_are_scanned_recursively"))
+                    .size(10.0)
+                    .color(th::text_dim()),
+            );
+            let (choose_clicked, cancel_clicked) =
+                crate::dialog::save_cancel(ui, tr("ui.use_this_folder"), true);
+            choose |= choose_clicked;
+            cancel |= cancel_clicked;
         });
 
     if toggle_hidden {
@@ -4358,7 +4408,7 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
         app.scan_clicked();
         return;
     }
-    if !open {
+    if cancel || !open {
         app.picker = None;
     }
 }
@@ -4709,17 +4759,22 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                             ui.checkbox(&mut state.embed_art, "Embed front cover");
                             let can_apply =
                                 mapped > 0 && state.release.is_some() && !state.loading_release;
-                            let response = ui
-                                .add_enabled(
-                                    can_apply,
-                                    egui::Button::new(format!("Apply to {mapped} track(s)")),
-                                )
-                                .on_disabled_hover_text(
-                                    "Wait for the release track list and map at least one file",
-                                );
-                            if response.clicked() {
-                                apply = true;
-                            }
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let response = crate::dialog::primary_button(
+                                        ui,
+                                        &format!("Apply to {mapped} track(s)"),
+                                        can_apply,
+                                    )
+                                    .on_disabled_hover_text(
+                                        "Wait for the release track list and map at least one file",
+                                    );
+                                    if response.clicked() {
+                                        apply = true;
+                                    }
+                                },
+                            );
                         });
                         if let Some(candidate) = candidates.get(state.selected) {
                             ui.label(
@@ -4927,26 +4982,20 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
         }
 
         ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            if ui
-                .button(if editing {
-                    "Save changes"
-                } else {
-                    tr("common.create")
-                })
-                .clicked()
-            {
-                create = true;
-            }
-            if ui.button(tr("common.cancel")).clicked() {
-                cancel = true;
-            }
-            ui.label(
-                RichText::new("Smart playlists re-query the library every time they open")
-                    .size(10.0)
-                    .color(th::text_dim()),
-            );
-        });
+        ui.label(
+            RichText::new("Smart playlists re-query the library every time they open")
+                .size(10.0)
+                .color(th::text_dim()),
+        );
+        ui.add_space(4.0);
+        let save_label = if editing {
+            "Save changes"
+        } else {
+            tr("common.create")
+        };
+        let (create_clicked, cancel_clicked) = crate::dialog::save_cancel(ui, save_label, true);
+        create |= create_clicked;
+        cancel |= cancel_clicked;
     });
 
     if let Some(index) = remove_rule {

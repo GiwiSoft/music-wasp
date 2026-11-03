@@ -42,7 +42,7 @@
   "transport.hint": "Double-click a track to play",
   "ui.drop_audio_files": "Drop audio files",
   "ui.edit_saved_search": "Edit saved search",
-  "ui.edit_tags": "Edit tags",
+  "ui.edit_tags": "Edit properties",
   "ui.edit": "Edit…",
   "menu.equalizer": "Equalizer",
   "ui.equalizer_dsp_ctrl_e": "Equalizer / DSP (Ctrl+E)",

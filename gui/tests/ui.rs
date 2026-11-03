@@ -366,6 +366,7 @@ fn folder_context_menu_creates_a_playlist_in_that_folder() {
     assert!(harness.state().playlist_dialog_folder == Some(folder));
     assert!(harness.query_by_label_contains("Destination:").is_some());
 
+    harness.run_steps(3);
     harness.get_by_label("Create").click();
     harness.run_steps(2);
 

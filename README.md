@@ -15,7 +15,7 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - Star ratings, play and skip counts, listening history filters and history sorting
 - Persistent track columns, compact rows and album-art rows
 - Native playback with gapless preloading, crossfade, ReplayGain, EQ and output selection
-- Tag editing, batch tag actions and undo
+- Properties editing with per-track ReplayGain, batch actions and undo
 - MusicBrainz auto-tagging with a reviewable file-to-track mapping
 - Album grid with cover fetch, replacement and `cover.jpg` sidecars
 - Manual and smart playlists, nested folders and M3U import/export

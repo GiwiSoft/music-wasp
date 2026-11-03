@@ -11,6 +11,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
     }
 
     let mut open = true;
+    let mut close = false;
     egui::Window::new("Equalizer")
         .open(&mut open)
         .collapsible(false)
@@ -133,8 +134,13 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                 .size(10.0)
                 .color(th::text_dim()),
             );
+            ui.add_space(6.0);
+            close = crate::dialog::close_row(ui);
         });
 
+    if close {
+        open = false;
+    }
     if !open {
         app.show_equalizer = false;
     }

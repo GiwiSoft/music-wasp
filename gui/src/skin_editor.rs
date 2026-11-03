@@ -50,17 +50,14 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                     }
                 });
             ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if ui.button("Save to skins.json").clicked() {
-                    save = true;
-                }
-                if ui.button("Reset").clicked() {
-                    reset = true;
-                }
-                if ui.button("Cancel").clicked() {
-                    cancel = true;
-                }
-            });
+            if ui.small_button("Reset").clicked() {
+                reset = true;
+            }
+            ui.add_space(4.0);
+            let (save_clicked, cancel_clicked) =
+                crate::dialog::save_cancel(ui, "Save to skins.json", true);
+            save |= save_clicked;
+            cancel |= cancel_clicked;
             if let Some(status) = &state.status {
                 ui.label(RichText::new(status).size(10.5).color(theme::accent()));
             }

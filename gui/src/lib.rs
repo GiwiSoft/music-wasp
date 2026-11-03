@@ -5,6 +5,7 @@
 
 pub mod app;
 mod backup_dialog;
+mod dialog;
 mod equalizer;
 mod hygiene;
 pub mod i18n;

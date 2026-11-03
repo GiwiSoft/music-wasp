@@ -88,23 +88,18 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                         .strong()
                         .color(th::accent()),
                 );
-                ui.horizontal(|ui| {
-                    if ui
-                        .button("Restore library")
-                        .on_hover_text("The current database is backed up first")
-                        .clicked()
-                    {
-                        restore = true;
-                    }
-                    if ui.button("Cancel").clicked() {
-                        cancel = true;
-                    }
-                });
-            } else if ui
-                .add_enabled(!draft.path.trim().is_empty(), egui::Button::new("Restore…"))
-                .clicked()
-            {
-                ask = true;
+                let (restore_clicked, cancel_clicked) =
+                    crate::dialog::save_cancel(ui, "Restore library", true);
+                restore |= restore_clicked;
+                cancel |= cancel_clicked;
+            } else {
+                let (restore_clicked, cancel_clicked) = crate::dialog::save_cancel(
+                    ui,
+                    "Restore…",
+                    !draft.path.trim().is_empty(),
+                );
+                ask |= restore_clicked;
+                cancel |= cancel_clicked;
             }
 
             if let Some(status) = &draft.status {

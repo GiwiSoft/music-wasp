@@ -58,7 +58,7 @@ impl Action {
             Action::Stop => "Stop",
             Action::VolumeUp => "Volume up",
             Action::VolumeDown => "Volume down",
-            Action::EditTags => "Edit tags",
+            Action::EditTags => "Edit properties",
             Action::Rename => "Rename field or playlist",
             Action::FocusSearch => "Focus search box",
             Action::OpenSettings => "Open settings",

@@ -1133,6 +1133,7 @@ pub fn common_fields(tracks: &[Track]) -> TagEdit {
         year: same_number(|t| t.year),
         track_no: same_number(|t| t.track_no),
         disc_no: same_number(|t| t.disc_no),
+        replay_gain: None,
     }
 }
 
@@ -4447,7 +4448,12 @@ impl App {
             .collect();
 
         let (edit, batch) = if tracks.len() == 1 {
-            (TagEdit::from_track(&tracks[0]), false)
+            let track = &tracks[0];
+            (
+                musicwasp_core::tags::read(Path::new(&track.path))
+                    .unwrap_or_else(|_| TagEdit::from_track(track)),
+                false,
+            )
         } else {
             (common_fields(&tracks), true)
         };
@@ -4864,7 +4870,8 @@ impl App {
                         let path = PathBuf::from(&track.path);
                         self.store_tag_undo(std::slice::from_ref(&path))
                             .and_then(|()| {
-                                let mut edit = TagEdit::from_track(&track);
+                                let mut edit = musicwasp_core::tags::read(&path)
+                                    .unwrap_or_else(|_| TagEdit::from_track(&track));
                                 field.apply(&mut edit, &text)?;
                                 musicwasp_core::tags::write(&path, &edit)
                                     .map_err(|e| e.to_string())?;

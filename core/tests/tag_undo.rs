@@ -59,6 +59,7 @@ fn undo_restores_metadata_and_cover_from_disk() {
             year: Some(1997),
             track_no: Some(4),
             disc_no: Some(1),
+            replay_gain: None,
         },
     )
     .unwrap();
@@ -95,4 +96,40 @@ fn undo_restores_metadata_and_cover_from_disk() {
 
     tags::clear_undo(&undo_path);
     assert!(tags::load_undo(&undo_path).unwrap().is_none());
+}
+
+#[test]
+fn replay_gain_round_trips_and_can_be_cleared() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("gain.wav");
+    write_wav(&path, 4_410);
+
+    tags::write(
+        &path,
+        &TagEdit {
+            title: "Gain".into(),
+            replay_gain: Some(-6.5),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let read = tags::read(&path).unwrap();
+    let gain = read.replay_gain.expect("replay gain was written");
+    assert!((gain + 6.5).abs() < 0.01, "unexpected gain {gain}");
+
+    // Editing another property must not drop the gain.
+    let mut edit = read.clone();
+    edit.title = "Renamed".into();
+    tags::write(&path, &edit).unwrap();
+    assert!(tags::read(&path).unwrap().replay_gain.is_some());
+
+    tags::write(
+        &path,
+        &TagEdit {
+            replay_gain: None,
+            ..edit
+        },
+    )
+    .unwrap();
+    assert!(tags::read(&path).unwrap().replay_gain.is_none());
 }
