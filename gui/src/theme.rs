@@ -157,6 +157,20 @@ impl Skin {
     pub fn background_path(self) -> Option<PathBuf> {
         self.definition().background
     }
+
+    /// Optional linear gradient stops for the window background.
+    pub fn background_gradient(self) -> Option<Vec<Color32>> {
+        self.definition().background_gradient
+    }
+
+    /// Gradient direction in degrees: 0 = left-to-right, 90 = top-to-bottom.
+    pub fn background_angle(self) -> f32 {
+        self.definition().background_angle
+    }
+
+    pub fn has_background(self) -> bool {
+        self.background_path().is_some() || self.background_gradient().is_some()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -172,6 +186,8 @@ struct SkinDefinition {
     palette: Palette,
     backdrop: Option<[Color32; 4]>,
     background: Option<PathBuf>,
+    background_gradient: Option<Vec<Color32>>,
+    background_angle: f32,
     icon_light: bool,
     icon_path: Option<PathBuf>,
 }
@@ -190,6 +206,8 @@ impl SkinDefinition {
             palette: Palette::default(),
             backdrop: None,
             background: None,
+            background_gradient: None,
+            background_angle: 135.0,
             icon_light: false,
             icon_path: None,
         }
@@ -235,6 +253,10 @@ struct SkinEntry {
     backdrop: Option<Vec<String>>,
     #[serde(default)]
     background: Option<String>,
+    #[serde(default)]
+    background_gradient: Option<Vec<String>>,
+    #[serde(default)]
+    background_angle: Option<f32>,
     #[serde(default)]
     icon: Option<String>,
 }
@@ -303,6 +325,21 @@ fn parse_skin(entry: SkinEntry, base_dir: Option<&Path>) -> Result<SkinDefinitio
         Some(_) => return Err("backdrop must contain four colours".to_string()),
         None => default_backdrop(entry.glass, entry.light),
     };
+    let background_gradient = match entry.background_gradient {
+        Some(colors) => {
+            if colors.len() < 2 {
+                return Err("background_gradient needs at least two colours".to_string());
+            }
+            Some(
+                colors
+                    .iter()
+                    .map(|color| parse_required_color(color))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+        }
+        None => None,
+    };
+    let background_angle = entry.background_angle.unwrap_or(135.0);
     let background = entry.background.as_deref().and_then(|path| {
         let path = path.trim();
         if path.is_empty() {
@@ -346,6 +383,8 @@ fn parse_skin(entry: SkinEntry, base_dir: Option<&Path>) -> Result<SkinDefinitio
         palette,
         backdrop,
         background,
+        background_gradient,
+        background_angle,
         icon_light,
         icon_path,
     })
@@ -664,6 +703,11 @@ fn entry_value(
     if let Some(path) = &definition.background {
         entry["background"] = serde_json::Value::String(path.to_string_lossy().to_string());
     }
+    if let Some(colors) = &definition.background_gradient {
+        entry["background_gradient"] =
+            serde_json::json!(colors.iter().map(|color| hex(*color)).collect::<Vec<_>>());
+        entry["background_angle"] = serde_json::json!(definition.background_angle);
+    }
     if let Some(path) = &definition.icon_path {
         entry["icon"] = serde_json::Value::String(path.to_string_lossy().to_string());
     } else {
@@ -774,7 +818,7 @@ pub fn preview(ctx: &egui::Context, skin: Skin, palette: Palette) {
 
 fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
     let glass = skin.is_glass();
-    let palette = if skin.background_path().is_some() {
+    let palette = if skin.has_background() {
         with_background_alpha(palette)
     } else {
         palette
@@ -905,6 +949,10 @@ pub fn apply_text_scale(ctx: &egui::Context, large: bool) {
 /// Paint the colourful gradient behind the translucent glass panels.
 pub fn paint_backdrop(ui: &egui::Ui, skin: Skin) {
     let rect = ui.max_rect();
+    let gradient = skin.background_gradient();
+    if let Some(colors) = &gradient {
+        paint_linear_gradient(ui.painter(), rect, colors, skin.background_angle());
+    }
     if let Some(path) = skin.background_path() {
         if let Some(texture) = background_texture(ui.ctx(), &path) {
             let size = texture.size_vec2();
@@ -926,6 +974,15 @@ pub fn paint_backdrop(ui: &egui::Ui, skin: Skin) {
                 return;
             }
         }
+    }
+    if gradient.is_some() {
+        let overlay = if skin.is_light() {
+            Color32::from_white_alpha(45)
+        } else {
+            Color32::from_black_alpha(70)
+        };
+        ui.painter().rect_filled(rect, 0.0, overlay);
+        return;
     }
 
     let Some(colors) = skin.backdrop() else {
@@ -968,8 +1025,9 @@ pub fn paint_backdrop(ui: &egui::Ui, skin: Skin) {
 /// Surfaces become partially transparent when a wallpaper is set, so the
 /// image remains visible behind panels without hurting text contrast.
 fn with_background_alpha(palette: Palette) -> Palette {
-    let fade = |color: Color32, alpha: u8| {
-        Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
+    let fade = |color: Color32, max_alpha: u8| {
+        let [r, g, b, alpha] = color.to_srgba_unmultiplied();
+        Color32::from_rgba_unmultiplied(r, g, b, alpha.min(max_alpha))
     };
     Palette {
         bg_dark: fade(palette.bg_dark, 205),
@@ -982,6 +1040,59 @@ fn with_background_alpha(palette: Palette) -> Palette {
         widget_hover: fade(palette.widget_hover, 215),
         ..palette
     }
+}
+
+fn paint_linear_gradient(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    colors: &[Color32],
+    angle_degrees: f32,
+) {
+    let angle = angle_degrees.to_radians();
+    let direction = egui::vec2(angle.cos(), angle.sin());
+    let perpendicular = egui::vec2(-direction.y, direction.x);
+    let half_span =
+        rect.width().abs() * direction.x.abs() + rect.height().abs() * direction.y.abs();
+    let reach = rect.size().length();
+    let center = rect.center();
+    let start = center - direction * (half_span * 0.5);
+
+    const BANDS: usize = 64;
+    for band in 0..BANDS {
+        let t0 = band as f32 / BANDS as f32;
+        let t1 = (band + 1) as f32 / BANDS as f32;
+        let color = gradient_color(colors, (t0 + t1) * 0.5);
+        let p0 = start + direction * (half_span * t0);
+        let p1 = start + direction * (half_span * t1);
+        let points = vec![
+            p0 - perpendicular * reach,
+            p0 + perpendicular * reach,
+            p1 + perpendicular * reach,
+            p1 - perpendicular * reach,
+        ];
+        painter.add(egui::Shape::convex_polygon(
+            points,
+            color,
+            egui::Stroke::NONE,
+        ));
+    }
+}
+
+fn gradient_color(colors: &[Color32], t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    if colors.len() == 1 {
+        return colors[0];
+    }
+    let scaled = t * (colors.len() - 1) as f32;
+    let index = (scaled.floor() as usize).min(colors.len() - 2);
+    let local = scaled - index as f32;
+    let a = colors[index];
+    let b = colors[index + 1];
+    Color32::from_rgb(
+        (a.r() as f32 * (1.0 - local) + b.r() as f32 * local).round() as u8,
+        (a.g() as f32 * (1.0 - local) + b.g() as f32 * local).round() as u8,
+        (a.b() as f32 * (1.0 - local) + b.b() as f32 * local).round() as u8,
+    )
 }
 
 fn background_texture(ctx: &egui::Context, path: &Path) -> Option<egui::TextureHandle> {

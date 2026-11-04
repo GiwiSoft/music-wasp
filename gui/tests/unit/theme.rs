@@ -103,3 +103,60 @@ fn external_skin_json_parses_colours_aliases_and_icons() {
         Color32::from_rgb(0x11, 0x11, 0x11)
     );
 }
+
+#[test]
+fn external_skin_json_parses_background_gradients() {
+    let definitions = parse_skin_file(
+        r##"[
+            {
+                "id": "gradient",
+                "label": "Gradient",
+                "background_gradient": ["#010203", "#405060", "#a0b0c0"],
+                "background_angle": 45,
+                "palette": {
+                    "bg_dark": "#010203",
+                    "text": "#ffffff"
+                }
+            }
+        ]"##,
+        None,
+    )
+    .unwrap();
+    let skin = &definitions[0];
+    assert_eq!(
+        skin.background_gradient,
+        Some(vec![
+            Color32::from_rgb(1, 2, 3),
+            Color32::from_rgb(0x40, 0x50, 0x60),
+            Color32::from_rgb(0xa0, 0xb0, 0xc0),
+        ])
+    );
+    assert_eq!(skin.background_angle, 45.0);
+
+    let bad = parse_skin_file(
+        r##"[{"id": "bad", "background_gradient": ["#ffffff"]}]"##,
+        None,
+    );
+    assert!(bad.is_err());
+}
+
+#[test]
+fn new_style_skins_keep_their_light_flags() {
+    for id in ["material_light", "cosmic_light", "cupertino_light"] {
+        let skin = Skin::from_id(id);
+        assert_eq!(skin.id(), id, "{id} is missing");
+        assert!(skin.is_light(), "{id} must be a light skin");
+        assert!(skin.has_background() == (id.starts_with("cosmic")), "{id}");
+        if id == "cosmic_light" {
+            assert_eq!(
+                skin.background_gradient().unwrap()[0],
+                Color32::from_rgb(0xF0, 0xE6, 0xFF)
+            );
+        }
+    }
+    for id in ["material_dark", "cosmic_dark", "cupertino_dark"] {
+        let skin = Skin::from_id(id);
+        assert_eq!(skin.id(), id, "{id} is missing");
+        assert!(!skin.is_light(), "{id} must be a dark skin");
+    }
+}

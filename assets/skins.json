@@ -242,12 +242,12 @@
         "widget_weak": "#FFFFFF0A",
         "widget_hover": "#FFFFFF2A"
       },
-      "backdrop": [
-        "#090818",
-        "#16123A",
-        "#0A2630",
-        "#050310"
-      ]
+      "background_gradient": [
+        "#12072B",
+        "#1A1745",
+        "#0B3A4A"
+      ],
+      "background_angle": 135.0
     },
     {
       "id": "cosmic_light",
@@ -268,12 +268,12 @@
         "widget_weak": "#FFFFFF78",
         "widget_hover": "#FFFFFFD8"
       },
-      "backdrop": [
-        "#E3D4FF",
-        "#D0E8FF",
-        "#FFD6EC",
-        "#F2EAFF"
-      ]
+      "background_gradient": [
+        "#F0E6FF",
+        "#E4F2FF",
+        "#FFE6F4"
+      ],
+      "background_angle": 135.0
     },
     {
       "id": "cupertino_dark",
