@@ -159,5 +159,7 @@
   "filter.clear": "Borrar filtros de reproducción",
   "column.rating": "Valoración",
   "sort.date_added": "Fecha de añadido",
-  "column.album": "Álbum"
+  "column.album": "Álbum",
+  "settings.look_and_feel": "Apariencia",
+  "settings.track_options": "Opciones de pistas"
 }

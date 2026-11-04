@@ -159,5 +159,7 @@
   "filter.clear": "Hörfilter löschen",
   "column.rating": "Bewertung",
   "sort.date_added": "Hinzugefügt am",
-  "column.album": "Album"
+  "column.album": "Album",
+  "settings.look_and_feel": "Aussehen",
+  "settings.track_options": "Titeloptionen"
 }

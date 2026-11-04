@@ -6,6 +6,7 @@
 
 use egui::{Color32, CornerRadius, Stroke, Visuals};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 
@@ -151,6 +152,11 @@ impl Skin {
     pub fn icon_path(self) -> Option<PathBuf> {
         self.definition().icon_path
     }
+
+    /// Optional background image, typically extracted from a Winamp skin.
+    pub fn background_path(self) -> Option<PathBuf> {
+        self.definition().background
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +171,7 @@ struct SkinDefinition {
     compact: bool,
     palette: Palette,
     backdrop: Option<[Color32; 4]>,
+    background: Option<PathBuf>,
     icon_light: bool,
     icon_path: Option<PathBuf>,
 }
@@ -182,6 +189,7 @@ impl SkinDefinition {
             compact: false,
             palette: Palette::default(),
             backdrop: None,
+            background: None,
             icon_light: false,
             icon_path: None,
         }
@@ -225,6 +233,8 @@ struct SkinEntry {
     palette: PaletteEntry,
     #[serde(default)]
     backdrop: Option<Vec<String>>,
+    #[serde(default)]
+    background: Option<String>,
     #[serde(default)]
     icon: Option<String>,
 }
@@ -293,6 +303,20 @@ fn parse_skin(entry: SkinEntry, base_dir: Option<&Path>) -> Result<SkinDefinitio
         Some(_) => return Err("backdrop must contain four colours".to_string()),
         None => default_backdrop(entry.glass, entry.light),
     };
+    let background = entry.background.as_deref().and_then(|path| {
+        let path = path.trim();
+        if path.is_empty() {
+            return None;
+        }
+        let path = PathBuf::from(path);
+        Some(if path.is_absolute() {
+            path
+        } else if let Some(base_dir) = base_dir {
+            base_dir.join(path)
+        } else {
+            path
+        })
+    });
     let (icon_light, icon_path) = match entry.icon.as_deref() {
         Some("light") => (true, None),
         Some("dark") => (false, None),
@@ -321,6 +345,7 @@ fn parse_skin(entry: SkinEntry, base_dir: Option<&Path>) -> Result<SkinDefinitio
         compact: entry.compact,
         palette,
         backdrop,
+        background,
         icon_light,
         icon_path,
     })
@@ -601,12 +626,8 @@ fn unique_copy(definition: &SkinDefinition) -> (String, String) {
     (id, label)
 }
 
-fn entry_value(
-    definition: &SkinDefinition,
-    palette: Palette,
-    include_aliases: bool,
-) -> serde_json::Value {
-    let colors = PaletteField::ALL
+fn palette_json(palette: Palette) -> serde_json::Map<String, serde_json::Value> {
+    PaletteField::ALL
         .iter()
         .map(|field| {
             (
@@ -614,7 +635,15 @@ fn entry_value(
                 serde_json::Value::String(hex(field.get(&palette))),
             )
         })
-        .collect::<serde_json::Map<_, _>>();
+        .collect()
+}
+
+fn entry_value(
+    definition: &SkinDefinition,
+    palette: Palette,
+    include_aliases: bool,
+) -> serde_json::Value {
+    let colors = palette_json(palette);
     let mut entry = serde_json::json!({
         "id": definition.id,
         "label": definition.label,
@@ -631,6 +660,9 @@ fn entry_value(
     if let Some(backdrop) = definition.backdrop {
         entry["backdrop"] =
             serde_json::json!(backdrop.iter().map(|color| hex(*color)).collect::<Vec<_>>());
+    }
+    if let Some(path) = &definition.background {
+        entry["background"] = serde_json::Value::String(path.to_string_lossy().to_string());
     }
     if let Some(path) = &definition.icon_path {
         entry["icon"] = serde_json::Value::String(path.to_string_lossy().to_string());
@@ -697,6 +729,8 @@ fn hex(color: Color32) -> String {
 }
 
 static ACTIVE: OnceLock<RwLock<Palette>> = OnceLock::new();
+static BACKGROUNDS: OnceLock<RwLock<HashMap<PathBuf, (u128, egui::TextureHandle)>>> =
+    OnceLock::new();
 
 /// Extra UI scale used by the larger-font accessibility mode.
 pub const LARGE_TEXT_SCALE: f32 = 1.2;
@@ -740,6 +774,11 @@ pub fn preview(ctx: &egui::Context, skin: Skin, palette: Palette) {
 
 fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
     let glass = skin.is_glass();
+    let palette = if skin.background_path().is_some() {
+        with_background_alpha(palette)
+    } else {
+        palette
+    };
     *active()
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = palette;
@@ -865,10 +904,33 @@ pub fn apply_text_scale(ctx: &egui::Context, large: bool) {
 
 /// Paint the colourful gradient behind the translucent glass panels.
 pub fn paint_backdrop(ui: &egui::Ui, skin: Skin) {
+    let rect = ui.max_rect();
+    if let Some(path) = skin.background_path() {
+        if let Some(texture) = background_texture(ui.ctx(), &path) {
+            let size = texture.size_vec2();
+            if size.x > 0.0 && size.y > 0.0 {
+                let scale = (rect.width() / size.x).max(rect.height() / size.y);
+                let drawn = egui::Rect::from_center_size(rect.center(), size * scale);
+                ui.painter().image(
+                    texture.id(),
+                    drawn,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+                let overlay = if skin.is_light() {
+                    Color32::from_white_alpha(60)
+                } else {
+                    Color32::from_black_alpha(95)
+                };
+                ui.painter().rect_filled(rect, 0.0, overlay);
+                return;
+            }
+        }
+    }
+
     let Some(colors) = skin.backdrop() else {
         return;
     };
-    let rect = ui.max_rect();
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(rect.left_top(), colors[0]);
     mesh.colored_vertex(rect.right_top(), colors[1]);
@@ -901,6 +963,60 @@ pub fn paint_backdrop(ui: &egui::Ui, skin: Skin) {
         rect.width().min(rect.height()) * 0.38,
         violet,
     );
+}
+
+/// Surfaces become partially transparent when a wallpaper is set, so the
+/// image remains visible behind panels without hurting text contrast.
+fn with_background_alpha(palette: Palette) -> Palette {
+    let fade = |color: Color32, alpha: u8| {
+        Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
+    };
+    Palette {
+        bg_dark: fade(palette.bg_dark, 205),
+        bg_panel: fade(palette.bg_panel, 195),
+        bg_row_alt: fade(palette.bg_row_alt, 175),
+        bg_selected: fade(palette.bg_selected, 220),
+        extreme_bg: fade(palette.extreme_bg, 215),
+        widget_inactive: fade(palette.widget_inactive, 205),
+        widget_weak: fade(palette.widget_weak, 200),
+        widget_hover: fade(palette.widget_hover, 215),
+        ..palette
+    }
+}
+
+fn background_texture(ctx: &egui::Context, path: &Path) -> Option<egui::TextureHandle> {
+    let meta = std::fs::metadata(path).ok()?;
+    let stamp = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |duration| duration.as_nanos())
+        ^ (meta.len() as u128).rotate_left(17);
+    let cache = BACKGROUNDS.get_or_init(|| RwLock::new(HashMap::new()));
+    if let Some((cached_stamp, texture)) = cache
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(path)
+    {
+        if *cached_stamp == stamp {
+            return Some(texture.clone());
+        }
+    }
+    let image = image::open(path).ok()?.to_rgba8();
+    let color = egui::ColorImage::from_rgba_unmultiplied(
+        [image.width() as usize, image.height() as usize],
+        image.as_raw(),
+    );
+    let texture = ctx.load_texture(
+        format!("skin-background-{}", path.display()),
+        color,
+        egui::TextureOptions::LINEAR,
+    );
+    cache
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(path.to_path_buf(), (stamp, texture.clone()));
+    Some(texture)
 }
 
 #[cfg(test)]

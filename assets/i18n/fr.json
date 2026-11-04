@@ -159,5 +159,7 @@
   "filter.clear": "Effacer les filtres d'écoute",
   "column.rating": "Note",
   "sort.date_added": "Date d'ajout",
-  "column.album": "Album"
+  "column.album": "Album",
+  "settings.look_and_feel": "Apparence",
+  "settings.track_options": "Options des pistes"
 }

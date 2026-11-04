@@ -583,8 +583,13 @@ fn advanced_search_and_column_manager_update_the_ui() {
         harness.state().show_settings,
         "settings window did not open"
     );
+    assert!(harness.query_by_label("Look and feel").is_some());
+    harness.get_by_label("Track options").click_accesskit();
+    harness.run_steps(1);
     assert!(harness.query_by_label("Scan").is_some());
     assert!(harness.query_by_label("Library").is_some());
+    harness.get_by_label("General").click_accesskit();
+    harness.run_steps(1);
     harness
         .get_by_role_and_label(Role::CheckBox, "Larger text and controls")
         .click_accesskit();
@@ -597,6 +602,8 @@ fn advanced_search_and_column_manager_update_the_ui() {
     assert_eq!(harness.state().settings.skin, Skin::HIGH_CONTRAST);
 
     harness.state_mut().set_language(Language::French);
+    harness.run_steps(1);
+    harness.get_by_label("Options des pistes").click_accesskit();
     harness.run_steps(1);
     assert!(harness.query_by_label("Scanner").is_some());
     assert!(harness.query_by_label("Bibliothèque").is_some());

@@ -48,6 +48,8 @@ impl From<SessionView> for View {
 pub enum SettingsTab {
     #[default]
     General,
+    LookAndFeel,
+    Tracks,
     Keybindings,
     About,
 }
@@ -5502,6 +5504,8 @@ impl App {
             self.settings_tab = match std::env::var("MUSICWASP_SETTINGS_TAB").as_deref() {
                 Ok("keybindings") => SettingsTab::Keybindings,
                 Ok("about") => SettingsTab::About,
+                Ok("look") => SettingsTab::LookAndFeel,
+                Ok("tracks") => SettingsTab::Tracks,
                 _ => SettingsTab::General,
             };
         }

@@ -160,5 +160,7 @@
   "ui.folder_to_scan": "folder to scan",
   "ui.no_playlists_yet": "no playlists yet",
   "ui.not_translated_at_all": "not translated at all",
-  "ui.search_or_artist_radiohead_year_1997": "search or artist:\"radiohead\" year:1997"
+  "ui.search_or_artist_radiohead_year_1997": "search or artist:\"radiohead\" year:1997",
+  "settings.look_and_feel": "Look and feel",
+  "settings.track_options": "Track options"
 }

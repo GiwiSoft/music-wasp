@@ -3762,6 +3762,16 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut tab, SettingsTab::General, tr("settings.general"));
+                ui.selectable_value(
+                    &mut tab,
+                    SettingsTab::LookAndFeel,
+                    tr("settings.look_and_feel"),
+                );
+                ui.selectable_value(
+                    &mut tab,
+                    SettingsTab::Tracks,
+                    tr("settings.track_options"),
+                );
                 ui.selectable_value(&mut tab, SettingsTab::Keybindings, tr("settings.keybindings"));
                 ui.selectable_value(&mut tab, SettingsTab::About, tr("settings.about"));
             });
@@ -3769,6 +3779,121 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
             ui.add_space(4.0);
 
             if tab == SettingsTab::General {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(tr("settings.language_section"))
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                egui::ComboBox::from_id_salt("language_select")
+                    .selected_text(RichText::new(app.settings.language.label()).size(12.0))
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for language in Language::ALL {
+                            if ui
+                                .selectable_label(
+                                    app.settings.language == language,
+                                    language.label(),
+                                )
+                                .clicked()
+                            {
+                                chosen_language = Some(language);
+                            }
+                        }
+                    });
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(tr("settings.accessibility_section"))
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                let mut large_fonts = app.settings.large_fonts;
+                if ui
+                    .checkbox(
+                        &mut large_fonts,
+                        RichText::new(tr("ui.larger_text_and_controls")).size(11.5),
+                    )
+                    .on_hover_text("Scales the whole interface, including tables and dialogs")
+                    .changed()
+                {
+                    app.set_large_fonts(ctx, large_fonts);
+                }
+                ui.label(
+                    RichText::new(
+                        "Use Tab and Shift+Tab to move through controls; tooltips describe icon-only buttons.",
+                    )
+                    .size(10.0)
+                    .color(th::text_dim()),
+                );
+
+            }
+
+            if tab == SettingsTab::LookAndFeel {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(tr("settings.skin_section"))
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                egui::ComboBox::from_id_salt("skin_select")
+                    .selected_text(RichText::new(app.settings.skin.label()).size(12.0))
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for skin in crate::theme::Skin::all() {
+                            if ui
+                                .selectable_label(app.settings.skin == skin, skin.label())
+                                .clicked()
+                            {
+                                chosen_skin = Some(skin);
+                            }
+                        }
+                    });
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(tr("ui.skins_apply_immediately_and_are_remembered_in_settings_json"))
+                        .size(10.5)
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if ui.small_button("Open skins folder").clicked() {
+                        open_skins = true;
+                    }
+                    if ui.small_button("Reload skins").clicked() {
+                        reload_skins = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.small_button("Duplicate selected skin").clicked() {
+                        duplicate_skin = true;
+                    }
+                    if ui.small_button("Edit colours…").clicked() {
+                        edit_skin = true;
+                    }
+                });
+
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("WINDOW")
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                ui.checkbox(&mut mini_player, "Mini player (always on top)");
+                #[cfg(target_os = "linux")]
+                ui.checkbox(&mut tray_enabled, "Tray icon");
+
+            }
+
+            if tab == SettingsTab::Tracks {
+
                 ui.label(
                     RichText::new(tr("library.section"))
                         .size(10.0)
@@ -3817,112 +3942,6 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         open_restore = true;
                     }
                 });
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(tr("settings.language_section"))
-                        .size(10.0)
-                        .strong()
-                        .color(th::text_dim()),
-                );
-                ui.add_space(4.0);
-                egui::ComboBox::from_id_salt("language_select")
-                    .selected_text(RichText::new(app.settings.language.label()).size(12.0))
-                    .width(220.0)
-                    .show_ui(ui, |ui| {
-                        for language in Language::ALL {
-                            if ui
-                                .selectable_label(
-                                    app.settings.language == language,
-                                    language.label(),
-                                )
-                                .clicked()
-                            {
-                                chosen_language = Some(language);
-                            }
-                        }
-                    });
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(tr("settings.skin_section"))
-                        .size(10.0)
-                        .strong()
-                        .color(th::text_dim()),
-                );
-                ui.add_space(4.0);
-                egui::ComboBox::from_id_salt("skin_select")
-                    .selected_text(RichText::new(app.settings.skin.label()).size(12.0))
-                    .width(220.0)
-                    .show_ui(ui, |ui| {
-                        for skin in crate::theme::Skin::all() {
-                            if ui
-                                .selectable_label(app.settings.skin == skin, skin.label())
-                                .clicked()
-                            {
-                                chosen_skin = Some(skin);
-                            }
-                        }
-                    });
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new(tr("ui.skins_apply_immediately_and_are_remembered_in_settings_json"))
-                        .size(10.5)
-                        .color(th::text_dim()),
-                );
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    if ui.small_button("Open skins folder").clicked() {
-                        open_skins = true;
-                    }
-                    if ui.small_button("Reload skins").clicked() {
-                        reload_skins = true;
-                    }
-                    if ui.small_button("Duplicate selected skin").clicked() {
-                        duplicate_skin = true;
-                    }
-                    if ui.small_button("Edit colours…").clicked() {
-                        edit_skin = true;
-                    }
-                });
-
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new("WINDOW")
-                        .size(10.0)
-                        .strong()
-                        .color(th::text_dim()),
-                );
-                ui.add_space(4.0);
-                ui.checkbox(&mut mini_player, "Mini player (always on top)");
-                #[cfg(target_os = "linux")]
-                ui.checkbox(&mut tray_enabled, "Tray icon");
-
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(tr("settings.accessibility_section"))
-                        .size(10.0)
-                        .strong()
-                        .color(th::text_dim()),
-                );
-                ui.add_space(4.0);
-                let mut large_fonts = app.settings.large_fonts;
-                if ui
-                    .checkbox(
-                        &mut large_fonts,
-                        RichText::new(tr("ui.larger_text_and_controls")).size(11.5),
-                    )
-                    .on_hover_text("Scales the whole interface, including tables and dialogs")
-                    .changed()
-                {
-                    app.set_large_fonts(ctx, large_fonts);
-                }
-                ui.label(
-                    RichText::new(
-                        "Use Tab and Shift+Tab to move through controls; tooltips describe icon-only buttons.",
-                    )
-                    .size(10.0)
-                    .color(th::text_dim()),
-                );
-
                 ui.add_space(8.0);
                 let mut watching = app.settings.watch_enabled;
                 if ui
@@ -4061,7 +4080,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         .color(th::text_dim()),
                     );
                 }
-            }
+                        }
 
             if tab == SettingsTab::Keybindings {
                 ui.label(
@@ -4214,7 +4233,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         reset = true;
                     }
                     ui.label(
-                        RichText::new("Themes, watching, shortcuts and session are reset.")
+                        RichText::new("Language, appearance and session are reset.")
                             .size(10.0)
                             .color(th::text_dim()),
                     );
