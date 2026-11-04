@@ -3,7 +3,9 @@
     {
       "id": "wasp",
       "label": "MusicWasp Dark",
-      "aliases": ["amber"],
+      "aliases": [
+        "amber"
+      ],
       "icon": "dark",
       "palette": {
         "bg_dark": "#161a16",
@@ -130,7 +132,12 @@
         "widget_weak": "#ffffff0a",
         "widget_hover": "#ffffff28"
       },
-      "backdrop": ["#091226", "#07282f", "#1f0e34", "#04070e"]
+      "backdrop": [
+        "#091226",
+        "#07282f",
+        "#1f0e34",
+        "#04070e"
+      ]
     },
     {
       "id": "liquid_glass_light",
@@ -151,12 +158,19 @@
         "widget_weak": "#ffffff5f",
         "widget_hover": "#ffffffeb"
       },
-      "backdrop": ["#ecf4ff", "#ddf7ff", "#ffeef9", "#f7fbff"]
+      "backdrop": [
+        "#ecf4ff",
+        "#ddf7ff",
+        "#ffeef9",
+        "#f7fbff"
+      ]
     },
     {
       "id": "light",
       "label": "MusicWasp Light",
-      "aliases": ["paper"],
+      "aliases": [
+        "paper"
+      ],
       "icon": "light",
       "light": true,
       "palette": {
@@ -171,6 +185,131 @@
         "widget_inactive": "#ddd8ce",
         "widget_weak": "#e6e2da",
         "widget_hover": "#d0cabe"
+      }
+    },
+    {
+      "id": "material_dark",
+      "label": "Material Dark",
+      "icon": "dark",
+      "palette": {
+        "bg_dark": "#121016",
+        "bg_panel": "#1D1B20",
+        "bg_row_alt": "#25232A",
+        "bg_selected": "#4F378B88",
+        "accent": "#D0BCFF",
+        "text_dim": "#938F99",
+        "text": "#E6E1E5",
+        "extreme_bg": "#0B0A0E",
+        "widget_inactive": "#2B2930",
+        "widget_weak": "#211F26",
+        "widget_hover": "#36343B"
+      }
+    },
+    {
+      "id": "material_light",
+      "label": "Material Light",
+      "icon": "light",
+      "light": true,
+      "palette": {
+        "bg_dark": "#FEF7FF",
+        "bg_panel": "#FFFFFF",
+        "bg_row_alt": "#F7F2FA",
+        "bg_selected": "#EADDFF",
+        "accent": "#6750A4",
+        "text_dim": "#49454F",
+        "text": "#1D1B20",
+        "extreme_bg": "#F3EDF7",
+        "widget_inactive": "#E7E0EC",
+        "widget_weak": "#F3EDF7",
+        "widget_hover": "#DED8E1"
+      }
+    },
+    {
+      "id": "cosmic_dark",
+      "label": "Cosmic Dark",
+      "icon": "dark",
+      "glass": true,
+      "palette": {
+        "bg_dark": "#0B0A1FCC",
+        "bg_panel": "#171532C9",
+        "bg_row_alt": "#FFFFFF12",
+        "bg_selected": "#6C5CE755",
+        "accent": "#8BE9FD",
+        "text_dim": "#B9B2E6",
+        "text": "#F3F0FF",
+        "extreme_bg": "#05040ED4",
+        "widget_inactive": "#FFFFFF14",
+        "widget_weak": "#FFFFFF0A",
+        "widget_hover": "#FFFFFF2A"
+      },
+      "backdrop": [
+        "#090818",
+        "#16123A",
+        "#0A2630",
+        "#050310"
+      ]
+    },
+    {
+      "id": "cosmic_light",
+      "label": "Cosmic Light",
+      "icon": "light",
+      "light": true,
+      "glass": true,
+      "palette": {
+        "bg_dark": "#F3ECFFB8",
+        "bg_panel": "#FFFFFFB8",
+        "bg_row_alt": "#6B4FD414",
+        "bg_selected": "#7C5CFF3D",
+        "accent": "#6C4CFF",
+        "text_dim": "#6F678C",
+        "text": "#201B33",
+        "extreme_bg": "#FBF7FFD0",
+        "widget_inactive": "#FFFFFFA0",
+        "widget_weak": "#FFFFFF78",
+        "widget_hover": "#FFFFFFD8"
+      },
+      "backdrop": [
+        "#E3D4FF",
+        "#D0E8FF",
+        "#FFD6EC",
+        "#F2EAFF"
+      ]
+    },
+    {
+      "id": "cupertino_dark",
+      "label": "Cupertino Dark",
+      "icon": "dark",
+      "palette": {
+        "bg_dark": "#1C1C1E",
+        "bg_panel": "#2C2C2E",
+        "bg_row_alt": "#3A3A3C",
+        "bg_selected": "#0A84FF40",
+        "accent": "#0A84FF",
+        "text_dim": "#98989F",
+        "text": "#F2F2F7",
+        "extreme_bg": "#141416",
+        "widget_inactive": "#3A3A3C",
+        "widget_weak": "#2C2C2E",
+        "widget_hover": "#48484A"
+      }
+    },
+    {
+      "id": "cupertino_light",
+      "label": "Cupertino Light",
+      "icon": "light",
+      "light": true,
+      "palette": {
+        "bg_dark": "#F2F2F7",
+        "bg_panel": "#FFFFFF",
+        "bg_row_alt": "#F2F2F7",
+        "bg_selected": "#007AFF33",
+        "accent": "#007AFF",
+        "text_dim": "#6E6E73",
+        "text": "#1C1C1E",
+        "extreme_bg": "#E5E5EA",
+        "widget_inactive": "#E5E5EA",
+        "widget_weak": "#F2F2F7",
+        "widget_hover": "#D1D1D6"
       }
     }
   ]

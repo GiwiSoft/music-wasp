@@ -23,7 +23,7 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - Timestamped library database backups and safe restore
 - Tag-based file organizer with preview, collision detection and undo
 - English, French, German and Spanish UI
-- Nine built-in skins, custom JSON skins, background images, a live colour editor and high-contrast mode
+- Fifteen built-in skins, custom JSON skins, background images, a live colour editor and high-contrast mode
 - Disc folders, saved searches, session restore and ListenBrainz scrobbling
 - Compact always-on-top mini player and optional Linux tray controls
 - Linux MPRIS2 desktop controls and native Wayland drag-and-drop

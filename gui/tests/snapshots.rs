@@ -104,6 +104,24 @@ fn main_skins_and_accessibility_states() {
             Skin::from_id("winamp_classic"),
             false,
         ),
+        ("skins_material_dark", Skin::from_id("material_dark"), false),
+        (
+            "skins_material_light",
+            Skin::from_id("material_light"),
+            false,
+        ),
+        ("skins_cosmic_dark", Skin::from_id("cosmic_dark"), false),
+        ("skins_cosmic_light", Skin::from_id("cosmic_light"), false),
+        (
+            "skins_cupertino_dark",
+            Skin::from_id("cupertino_dark"),
+            false,
+        ),
+        (
+            "skins_cupertino_light",
+            Skin::from_id("cupertino_light"),
+            false,
+        ),
         ("accessibility_large_text", Skin::WASP, true),
         (
             "accessibility_high_contrast_large_text",
