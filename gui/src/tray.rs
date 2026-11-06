@@ -133,6 +133,17 @@ pub struct TrayController {
     last: Mutex<(String, String, bool, bool)>,
 }
 
+impl Drop for TrayController {
+    fn drop(&mut self) {
+        // Dropping the handle alone is not enough: the ksni service thread
+        // keeps the StatusNotifierItem registered, so disabling or re-enabling
+        // the tray would leave a stale icon behind. Its command channel is no
+        // longer drained by the app, which made "Quit" in that stale menu do
+        // nothing. Unregister explicitly and wait for the service to finish.
+        self.handle.shutdown().wait();
+    }
+}
+
 impl TrayController {
     pub fn spawn(ctx: &egui::Context) -> Result<Self, String> {
         let commands = Arc::new(Mutex::new(Vec::new()));

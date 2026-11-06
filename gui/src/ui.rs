@@ -2571,39 +2571,49 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
         let text_size = if compact { 11.0 } else { 12.0 };
         let small_size = if compact { 10.5 } else { 11.5 };
 
-        // If the configured widths fit, keep them all. Otherwise the widest
-        // column becomes the flexible one so the table never overflows.
+        // If the configured widths fit, keep them all. Otherwise shrink every
+        // resizable column proportionally, down to its minimum, so the last
+        // column (Rating) is never clipped off the right edge.
         let spacing = ui.spacing().item_spacing.x;
         let extra_columns = visible_columns.len() + usize::from(art_column) + 1;
-        let desired_total: f32 = visible_columns
+        let configured_widths: Vec<f32> = visible_columns
             .iter()
             .map(|column| app.settings.columns.width(*column))
-            .sum::<f32>()
-            + spacing * extra_columns as f32
-            + if art_column { 44.0 } else { 0.0 };
+            .collect();
+        let chrome = spacing * extra_columns as f32 + if art_column { 44.0 } else { 0.0 };
+        let configured_total: f32 = configured_widths.iter().sum::<f32>() + chrome;
         let available = (ui.available_width() - 12.0).max(160.0);
-        let flex_column = if desired_total > available {
-            visible_columns
-                .iter()
-                .copied()
-                .find(|column| *column == TrackColumn::Title)
-                .or_else(|| {
-                    visible_columns
-                        .iter()
-                        .copied()
-                        .find(|column| *column != TrackColumn::Number)
-                })
-                .or_else(|| visible_columns.first().copied())
-        } else {
-            None
-        };
+        let shrunk = configured_total > available + 0.5;
+        let mut column_widths = configured_widths.clone();
+        if shrunk {
+            let mut excess = configured_total - available;
+            for _ in 0..3 {
+                let slack: f32 = visible_columns
+                    .iter()
+                    .enumerate()
+                    .map(|(index, column)| (column_widths[index] - column.min_width()).max(0.0))
+                    .sum();
+                if slack <= 0.5 {
+                    break;
+                }
+                let take = (excess / slack).clamp(0.0, 1.0);
+                for (index, column) in visible_columns.iter().enumerate() {
+                    let minimum = column.min_width();
+                    column_widths[index] -= (column_widths[index] - minimum).max(0.0) * take;
+                }
+                excess = column_widths.iter().sum::<f32>() + chrome - available;
+                if excess <= 0.5 {
+                    break;
+                }
+            }
+        }
 
         // The table draws its own texture lookups for the album-art layout.
         // Take the cache out so the track slice can stay borrowed immutably.
         let mut covers = std::mem::take(&mut app.album_covers);
         let mut captured_widths: Vec<f32> = Vec::new();
         let table_id = format!(
-            "tracks-{}-{}-{}",
+            "tracks-{}-{}",
             match layout {
                 TrackLayout::Standard => "standard",
                 TrackLayout::Compact => "compact",
@@ -2614,9 +2624,6 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                 .map(|column| format!("{column:?}"))
                 .collect::<Vec<_>>()
                 .join("-"),
-            flex_column
-                .map(|column| format!("{column:?}"))
-                .unwrap_or_else(|| "none".to_string())
         );
         let row_painter = ui.painter().clone();
         let mut table = TableBuilder::new(ui)
@@ -2631,19 +2638,10 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
         if art_column {
             table = table.column(Column::exact(44.0).clip(true));
         }
-        for column in &visible_columns {
-            let width = app.settings.columns.width(*column);
+        for (index, column) in visible_columns.iter().enumerate() {
+            let width = column_widths[index];
             let minimum = column.min_width();
-            table = if Some(*column) == flex_column {
-                table.column(
-                    Column::remainder()
-                        .at_least(minimum)
-                        .clip(true)
-                        .resizable(false),
-                )
-            } else {
-                table.column(Column::initial(width).at_least(minimum).clip(true))
-            };
+            table = table.column(Column::initial(width).at_least(minimum).clip(true));
         }
         // Absorb unused room when every configured width fits.
         table = table.column(Column::remainder().resizable(false));
@@ -2995,13 +2993,14 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
         }
         let mut persist_columns = Vec::new();
         let mut persist_widths = Vec::new();
-        for (index, column) in visible_columns.iter().enumerate() {
-            if Some(*column) == flex_column {
-                continue;
-            }
-            if let Some(width) = captured_widths.get(index) {
-                persist_columns.push(*column);
-                persist_widths.push(*width);
+        // Auto-shrunk widths are a viewport compromise, not a user choice:
+        // keep the configured widths for when the window grows again.
+        if !shrunk {
+            for (index, column) in visible_columns.iter().enumerate() {
+                if let Some(width) = captured_widths.get(index) {
+                    persist_columns.push(*column);
+                    persist_widths.push(*width);
+                }
             }
         }
         app.update_column_widths(&persist_columns, &persist_widths);
