@@ -1,6 +1,6 @@
 use super::{
     apply_click, auto_number_tracks, best_release_track, clamp_seek, common_fields, list_subdirs,
-    mapping_matches, normalize_case_value, queue_insert_next, queue_reorder,
+    load_cover_texture, mapping_matches, normalize_case_value, queue_insert_next, queue_reorder,
     remove_tracks_from_queue, restore_queue, sanitize_file_name, suggested_mappings, BatchCase,
     BatchField, CoverCache, TrackField,
 };
@@ -25,6 +25,54 @@ fn cover_cache_evicts_the_least_recently_used_album() {
     assert_eq!(cache.len(), 1);
     cache.clear();
     assert_eq!(cache.len(), 0);
+}
+
+fn write_silent_wav(path: &std::path::Path) {
+    use std::io::Write;
+    let frames: u32 = 800;
+    let mut file = std::fs::File::create(path).unwrap();
+    file.write_all(b"RIFF").unwrap();
+    file.write_all(&(36 + frames).to_le_bytes()).unwrap();
+    file.write_all(b"WAVEfmt ").unwrap();
+    file.write_all(&16u32.to_le_bytes()).unwrap();
+    file.write_all(&1u16.to_le_bytes()).unwrap();
+    file.write_all(&1u16.to_le_bytes()).unwrap();
+    file.write_all(&8000u32.to_le_bytes()).unwrap();
+    file.write_all(&8000u32.to_le_bytes()).unwrap();
+    file.write_all(&1u16.to_le_bytes()).unwrap();
+    file.write_all(&8u16.to_le_bytes()).unwrap();
+    file.write_all(b"data").unwrap();
+    file.write_all(&frames.to_le_bytes()).unwrap();
+    file.write_all(&vec![0x80u8; frames as usize]).unwrap();
+}
+
+#[test]
+fn cover_cache_decodes_artwork_in_the_background() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("track.wav");
+    write_silent_wav(&wav);
+    image::RgbImage::from_pixel(8, 8, image::Rgb([90, 180, 40]))
+        .save(dir.path().join("cover.jpg"))
+        .unwrap();
+
+    let ctx = egui::Context::default();
+    let mut cache = CoverCache::with_capacity(4);
+    assert!(
+        load_cover_texture(&ctx, &mut cache, "demo", &wav).is_none(),
+        "first call must not block on decoding"
+    );
+    assert!(cache.is_pending("demo"));
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        cache.pump(&ctx);
+        if matches!(cache.get("demo"), Some(Some(_))) {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "cover did not load");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(!cache.is_pending("demo"));
 }
 
 #[test]

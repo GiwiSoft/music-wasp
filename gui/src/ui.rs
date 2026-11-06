@@ -2030,8 +2030,7 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
         ui.visuals().panel_fill,
     );
 
-    let groups = app.album_groups.clone();
-    if groups.is_empty() {
+    if app.album_groups.is_empty() {
         ui.centered_and_justified(|ui| {
             ui.label(
                 RichText::new(tr("ui.no_albums_yet_scan_a_music_folder_first"))
@@ -2050,6 +2049,10 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
     }
     let mut act: Option<Act> = None;
     let ctx = ui.ctx().clone();
+    // Borrow the groups instead of cloning every album each frame, and take the
+    // cover cache out so disjoint fields can be borrowed together.
+    let mut covers = std::mem::take(&mut app.album_covers);
+    let groups = &app.album_groups;
 
     ui.add_space(4.0);
     ui.horizontal(|ui| {
@@ -2122,10 +2125,29 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                                 }),
                             );
                         }
-                        if let Some(texture) = app.album_cover_texture(&ctx, group) {
+                        let cover_key = crate::app::album_key(&group.album, &group.artist);
+                        let texture = crate::app::load_cover_texture(
+                            &ctx,
+                            &mut covers,
+                            &cover_key,
+                            std::path::Path::new(&group.path),
+                        );
+                        if let Some(texture) = texture {
                             egui::Image::new((texture.id(), cover.size()))
                                 .corner_radius(th::corner(9))
                                 .paint_at(ui, cover);
+                        } else if covers.is_pending(&cover_key) {
+                            // Decoding in the background: keep the tile calm
+                            // instead of flashing "NO COVER".
+                            ui.painter()
+                                .rect_filled(cover, th::corner(9), th::bg_row_alt());
+                            ui.painter().text(
+                                cover.center(),
+                                egui::Align2::CENTER_CENTER,
+                                icons::MUSIC_NOTES.as_str(),
+                                egui::FontId::proportional(28.0),
+                                th::alpha(th::text_dim(), 90),
+                            );
                         } else {
                             ui.painter()
                                 .rect_filled(cover, th::corner(9), th::bg_row_alt());
@@ -2221,6 +2243,8 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(gap);
             }
         });
+
+    app.album_covers = covers;
 
     match act {
         Some(Act::Open(album)) => app.open_album(&album),

@@ -790,7 +790,7 @@ pub fn apply_click(
 /// edit leaves them alone.
 /// Best release track for one local file: exact disc/track, then title, then
 /// the closest duration, finally the first track.
-fn album_key(album: &str, artist: &str) -> String {
+pub(crate) fn album_key(album: &str, artist: &str) -> String {
     format!("{}\u{1f}{}", album.to_lowercase(), artist.to_lowercase())
 }
 
@@ -808,12 +808,32 @@ pub(crate) fn track_cover_key(track: &Track) -> String {
 /// 25 MiB of CPU-side image data, plus the GPU copies.
 const ALBUM_COVER_CACHE_CAPACITY: usize = 192;
 
+/// Maximum covers decoded in parallel. More requests than this wait in the
+/// channel, which keeps fast scrolling from queueing the whole library.
+const ALBUM_COVER_WORKERS: usize = 3;
+
+/// Keep the queue short so covers for the current viewport are not stuck
+/// behind hundreds of tiles the user already scrolled past.
+const ALBUM_COVER_PENDING_LIMIT: usize = 48;
+
+/// One cover still being loaded in the background.
+struct CoverJob {
+    key: String,
+    path: PathBuf,
+    id: u64,
+}
+
 /// Small LRU cache for album artwork. Negative results are cached too, so a
-/// coverless album is not re-read on every frame.
+/// coverless album is not re-read on every frame. Decoding runs on worker
+/// threads; the UI only uploads finished textures.
 pub(crate) struct CoverCache {
     entries: HashMap<String, Option<egui::TextureHandle>>,
     order: VecDeque<String>,
     capacity: usize,
+    pending: HashMap<String, u64>,
+    next_request: u64,
+    jobs: Option<std::sync::mpsc::Sender<CoverJob>>,
+    done: Option<std::sync::mpsc::Receiver<(String, u64, Option<egui::ColorImage>)>>,
 }
 
 impl Default for CoverCache {
@@ -828,6 +848,91 @@ impl CoverCache {
             entries: HashMap::new(),
             order: VecDeque::new(),
             capacity: capacity.max(1),
+            pending: HashMap::new(),
+            next_request: 0,
+            jobs: None,
+            done: None,
+        }
+    }
+
+    /// Upload finished covers and drop them from the pending set. Call once at
+    /// the start of every frame.
+    pub(crate) fn pump(&mut self, ctx: &egui::Context) {
+        let mut finished = Vec::new();
+        if let Some(done) = &self.done {
+            while let Ok(item) = done.try_recv() {
+                finished.push(item);
+            }
+        }
+        for (key, id, image) in finished {
+            // A cover replaced while its old job was running must not come back.
+            if self.pending.get(&key) != Some(&id) {
+                continue;
+            }
+            self.pending.remove(&key);
+            let texture = image.map(|color| {
+                ctx.load_texture(
+                    format!("album-cover-{key}"),
+                    color,
+                    egui::TextureOptions::LINEAR,
+                )
+            });
+            self.insert(key, texture);
+        }
+    }
+
+    /// True while a cover for `key` is being decoded.
+    pub(crate) fn is_pending(&self, key: &str) -> bool {
+        self.pending.contains_key(key)
+    }
+
+    fn request(&mut self, ctx: &egui::Context, key: &str, path: &Path) {
+        if self.pending.contains_key(key) {
+            return;
+        }
+        if self.jobs.is_none() {
+            let (job_tx, job_rx) = std::sync::mpsc::channel::<CoverJob>();
+            let (done_tx, done_rx) = std::sync::mpsc::channel();
+            let job_rx = std::sync::Arc::new(std::sync::Mutex::new(job_rx));
+            for _ in 0..ALBUM_COVER_WORKERS {
+                let job_rx = std::sync::Arc::clone(&job_rx);
+                let done_tx = done_tx.clone();
+                let ctx = ctx.clone();
+                std::thread::spawn(move || loop {
+                    let job = {
+                        let guard = job_rx.lock().unwrap_or_else(|error| error.into_inner());
+                        guard.recv()
+                    };
+                    let Ok(job) = job else {
+                        break;
+                    };
+                    let image = decode_cover(&job.path);
+                    if done_tx.send((job.key, job.id, image)).is_err() {
+                        break;
+                    }
+                    // Wake the UI thread so the finished texture is uploaded
+                    // even when the app is otherwise idle.
+                    ctx.request_repaint();
+                });
+            }
+            self.jobs = Some(job_tx);
+            self.done = Some(done_rx);
+        }
+        if self.pending.len() >= ALBUM_COVER_PENDING_LIMIT {
+            return;
+        }
+        self.next_request = self.next_request.wrapping_add(1);
+        let id = self.next_request;
+        let sent = self.jobs.as_ref().is_some_and(|jobs| {
+            jobs.send(CoverJob {
+                key: key.to_string(),
+                path: path.to_path_buf(),
+                id,
+            })
+            .is_ok()
+        });
+        if sent {
+            self.pending.insert(key.to_string(), id);
         }
     }
 
@@ -855,8 +960,17 @@ impl CoverCache {
     pub(crate) fn remove(&mut self, key: &str) {
         self.entries.remove(key);
         self.order.retain(|item| item != key);
+        self.pending.remove(key);
     }
 
+    /// Drop cached covers that are no longer part of the album list.
+    pub(crate) fn retain(&mut self, keep: impl Fn(&str) -> bool) {
+        self.entries.retain(|key, _| keep(key));
+        self.order.retain(|key| keep(key));
+        self.pending.retain(|key, _| keep(key));
+    }
+
+    #[cfg(test)]
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
         self.order.clear();
@@ -876,8 +990,9 @@ impl CoverCache {
     }
 }
 
-/// Load and cache a cover texture for one album. Shared by the album grid and
-/// the album-art track layout.
+/// Request a cover texture for one album. Returns immediately: the decode runs
+/// on a worker thread and the next [`CoverCache::pump`] uploads the texture.
+/// Shared by the album grid and the album-art track layout.
 pub(crate) fn load_cover_texture(
     ctx: &egui::Context,
     covers: &mut CoverCache,
@@ -887,22 +1002,20 @@ pub(crate) fn load_cover_texture(
     if let Some(cached) = covers.get(key) {
         return cached;
     }
+    covers.request(ctx, key, path);
+    None
+}
 
-    let texture = musicwasp_core::library::cover_art(path)
-        .and_then(|bytes| image::load_from_memory(&bytes).ok())
-        .map(|image| {
-            let image = image.resize(180, 180, image::imageops::FilterType::Triangle);
-            let rgba = image.to_rgba8();
-            let size = [rgba.width() as usize, rgba.height() as usize];
-            let color = egui::ColorImage::from_rgba_unmultiplied(size, &rgba.into_raw());
-            ctx.load_texture(
-                format!("album-cover-{key}"),
-                color,
-                egui::TextureOptions::LINEAR,
-            )
-        });
-    covers.insert(key.to_string(), texture.clone());
-    texture
+fn decode_cover(path: &Path) -> Option<egui::ColorImage> {
+    let bytes = musicwasp_core::library::cover_art(path)?;
+    let image = image::load_from_memory(&bytes).ok()?;
+    let image = image.resize(180, 180, image::imageops::FilterType::Triangle);
+    let rgba = image.to_rgba8();
+    let size = [rgba.width() as usize, rgba.height() as usize];
+    Some(egui::ColorImage::from_rgba_unmultiplied(
+        size,
+        &rgba.into_raw(),
+    ))
 }
 
 fn image_mime(data: &[u8]) -> Option<&'static str> {
@@ -2795,8 +2908,15 @@ impl App {
     fn refresh_album_groups(&mut self) {
         match self.lib.album_groups() {
             Ok(groups) => {
+                // Keep textures for albums that still exist. Rebuilding the
+                // grid (for example after a rating change) should not throw
+                // away every decoded cover.
+                let keys: std::collections::HashSet<String> = groups
+                    .iter()
+                    .map(|group| album_key(&group.album, &group.artist))
+                    .collect();
+                self.album_covers.retain(|key| keys.contains(key));
                 self.album_groups = groups;
-                self.album_covers.clear();
                 self.albums_dirty = false;
             }
             Err(e) => self.message = format!("could not load albums: {e}"),
@@ -5365,6 +5485,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
+        self.album_covers.pump(&ctx);
         crate::theme::paint_backdrop(root, self.settings.skin);
         self.capture_window(&ctx);
         if self.watch_dirty {

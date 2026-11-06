@@ -707,33 +707,55 @@ pub(crate) fn normalize_tag(value: &str) -> String {
 }
 
 pub fn album_groups(conn: &Connection) -> Result<Vec<AlbumGroup>> {
+    // Only the five fields the grid needs. Loading full Track rows (and sorting
+    // them in SQL) made opening the grid slow on large libraries.
+    let mut stmt = conn.prepare(
+        "SELECT album, artist, album_artist, id, path
+         FROM tracks
+         WHERE TRIM(album) <> ''
+         ORDER BY LOWER(album), LOWER(artist)",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, String>(4)?,
+        ))
+    })?;
+
     let mut groups: BTreeMap<(String, String), AlbumGroup> = BTreeMap::new();
-    for track in list(conn, None)? {
-        if track.album.trim().is_empty() {
-            continue;
-        }
-        let artist = album_artist_of(&track);
-        let key = (track.album.to_lowercase(), artist.to_lowercase());
-        let entry = groups.entry(key).or_insert_with(|| AlbumGroup {
-            album: track.album.clone(),
-            artist: artist.clone(),
-            track_count: 0,
-            representative_id: track.id,
-            path: track.path.clone(),
-        });
-        entry.track_count += 1;
-        if track.id < entry.representative_id {
-            entry.representative_id = track.id;
-            entry.path = track.path.clone();
+    for row in rows {
+        let (album, artist, album_artist, id, path) = row?;
+        let artist = if album_artist.trim().is_empty() {
+            artist
+        } else {
+            album_artist
+        };
+        let key = (album.to_lowercase(), artist.to_lowercase());
+        if let Some(entry) = groups.get_mut(&key) {
+            entry.track_count += 1;
+            if id < entry.representative_id {
+                entry.representative_id = id;
+                entry.path = path;
+            }
+        } else {
+            groups.insert(
+                key,
+                AlbumGroup {
+                    album,
+                    artist,
+                    track_count: 1,
+                    representative_id: id,
+                    path,
+                },
+            );
         }
     }
 
-    let mut out: Vec<AlbumGroup> = groups.into_values().collect();
-    out.sort_by(|a, b| {
-        (a.album.to_lowercase(), a.artist.to_lowercase())
-            .cmp(&(b.album.to_lowercase(), b.artist.to_lowercase()))
-    });
-    Ok(out)
+    // The map key is the same lowercase pair used for sorting.
+    Ok(groups.into_values().collect())
 }
 
 fn album_artist_of(track: &Track) -> String {
