@@ -20,3 +20,4 @@ pub mod theme;
 #[cfg(target_os = "linux")]
 mod tray;
 mod ui;
+pub(crate) mod visualizer;

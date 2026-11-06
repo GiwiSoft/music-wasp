@@ -397,6 +397,7 @@ pub struct DspSource<S> {
     shared: Arc<EqShared>,
     version: u64,
     processor: EqProcessor,
+    tap: Option<Arc<crate::analysis::AudioTap>>,
 }
 
 #[cfg(feature = "audio")]
@@ -404,7 +405,11 @@ impl<S> DspSource<S>
 where
     S: rodio::Source<Item = i16>,
 {
-    pub fn new(inner: S, shared: Arc<EqShared>) -> Self {
+    pub fn new(
+        inner: S,
+        shared: Arc<EqShared>,
+        tap: Option<Arc<crate::analysis::AudioTap>>,
+    ) -> Self {
         // Read the version first: a concurrent change after the snapshot is
         // then detected on the first sample instead of being missed.
         let version = shared.version();
@@ -415,6 +420,7 @@ where
             version,
             processor,
             shared,
+            tap,
         }
     }
 }
@@ -435,7 +441,11 @@ where
         }
         self.inner.next().map(|sample| {
             let value = sample as f32 / 32768.0;
-            (self.processor.process(value) * 32767.0) as i16
+            let processed = self.processor.process(value);
+            if let Some(tap) = &self.tap {
+                tap.push(processed);
+            }
+            (processed * 32767.0) as i16
         })
     }
 

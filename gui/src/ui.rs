@@ -737,6 +737,23 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                             app.toggle_album_view();
                             ui.close();
                         }
+                        let visualizer = ui.add(
+                            egui::Button::new(icons::with(icons::MONITOR_PLAY, "Visualizer"))
+                                .selected(app.settings.visualizer.enabled),
+                        );
+                        if visualizer.clicked() {
+                            let enabled = !app.settings.visualizer.enabled;
+                            app.set_visualizer_enabled(enabled, ui.ctx());
+                            ui.close();
+                        }
+                        if app.settings.visualizer.enabled
+                            && ui
+                                .button(icons::with(icons::MONITOR_PLAY, "Fullscreen visualizer"))
+                                .clicked()
+                        {
+                            app.viz_fullscreen = true;
+                            ui.close();
+                        }
                         let eq = ui.add(
                             egui::Button::new(icons::with(icons::SLIDERS, tr("menu.equalizer")))
                                 .selected(app.show_equalizer),
@@ -1411,6 +1428,22 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
 
     egui::CentralPanel::default().show(ui, |ui| {
         let avail = ui.available_size();
+        if app.settings.visualizer.enabled {
+            let rect = ui.max_rect();
+            if let Some(texture) = app.render_visualizer(ui.ctx(), rect.size()) {
+                ui.painter().image(
+                    texture,
+                    rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+                ui.painter().rect_filled(
+                    rect,
+                    egui::CornerRadius::ZERO,
+                    Color32::from_black_alpha(if th::skin().is_light() { 90 } else { 150 }),
+                );
+            }
+        }
         let art = (avail.y * 0.40).clamp(140.0, 330.0).min(avail.x * 0.42);
 
         ui.vertical_centered(|ui| {
@@ -1471,7 +1504,15 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                 .unwrap_or_else(|| "Pick a track in the library to start".to_string());
             ui.label(RichText::new(subtitle).size(14.0).color(th::text_dim()));
             if let Some(track) = &current_track {
-                if let Some(rating) = rating_stars(ui, track.rating, true, 18.0) {
+                let mut rating = None;
+                ui.allocate_ui_with_layout(
+                    egui::vec2(5.0 * 20.0, 24.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        rating = rating_stars(ui, track.rating, true, 18.0);
+                    },
+                );
+                if let Some(rating) = rating {
                     app.set_track_rating(track.id, rating);
                 }
             }
@@ -2020,6 +2061,143 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
 }
 
 /// Album grid with cover tiles. Right-click a tile for the cover tools.
+/// MilkDrop visualizer strip above the transport bar.
+pub fn visualizer_panel(app: &mut App, ui: &mut egui::Ui) {
+    if !app.settings.visualizer.enabled {
+        return;
+    }
+    egui::Panel::bottom("visualizer")
+        .resizable(true)
+        .default_size(230.0)
+        .min_size(140.0)
+        .max_size(560.0)
+        .frame(
+            egui::Frame::new()
+                .fill(th::bg_panel())
+                .inner_margin(egui::Margin::symmetric(10, 8)),
+        )
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(th::semibold("Visualizer", 10.5).color(th::text_dim()));
+                if let Some(visualizer) = &app.visualizer {
+                    ui.label(
+                        RichText::new(visualizer.current_name())
+                            .size(11.0)
+                            .color(th::text()),
+                    );
+                    ui.label(
+                        RichText::new(format!(
+                            "{} / {}",
+                            visualizer.current_index() + 1,
+                            visualizer.presets().len()
+                        ))
+                        .size(10.0)
+                        .color(th::text_dim()),
+                    );
+                }
+                if let Some(error) = &app.viz_error {
+                    ui.label(
+                        RichText::new(error.as_str())
+                            .size(10.0)
+                            .color(Color32::from_rgb(220, 110, 110)),
+                    );
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if icons::compact(ui, icons::X, "Hide the visualizer").clicked() {
+                        app.set_visualizer_enabled(false, ui.ctx());
+                    }
+                    if ui.button("Fullscreen").clicked() {
+                        app.viz_fullscreen = true;
+                        ui.ctx().request_repaint();
+                    }
+                    if icons::compact(ui, icons::SKIP_FORWARD, "Next preset").clicked() {
+                        app.next_visualizer_preset();
+                    }
+                    if icons::compact(ui, icons::SKIP_BACK, "Previous preset").clicked() {
+                        app.previous_visualizer_preset();
+                    }
+                    let shuffle =
+                        app.settings.visualizer.mode == crate::settings::VisualizerMode::Shuffle;
+                    if icons::toggle(ui, shuffle, icons::SHUFFLE, "Shuffle presets").clicked() {
+                        let mode = if shuffle {
+                            crate::settings::VisualizerMode::Selected
+                        } else {
+                            crate::settings::VisualizerMode::Shuffle
+                        };
+                        app.set_visualizer_mode(mode);
+                    }
+                });
+            });
+            ui.add_space(4.0);
+            let size = ui.available_size();
+            if let Some(texture) = app.render_visualizer(ui.ctx(), size) {
+                ui.add(egui::Image::new((texture, size)).corner_radius(th::corner(8)));
+            } else {
+                ui.centered_and_justified(|ui| {
+                    let text = app.viz_error.as_deref().unwrap_or("Visualizer unavailable");
+                    ui.label(RichText::new(text).size(11.0).color(th::text_dim()));
+                });
+            }
+        });
+}
+
+/// Full-window visualizer with a floating control strip.
+pub fn visualizer_fullscreen(app: &mut App, ui: &mut egui::Ui) {
+    egui::CentralPanel::default()
+        .frame(egui::Frame::new().fill(Color32::BLACK))
+        .show(ui, |ui| {
+            let rect = ui.max_rect();
+            if let Some(texture) = app.render_visualizer(ui.ctx(), rect.size()) {
+                ui.painter().image(
+                    texture,
+                    rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            } else {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    app.viz_error.as_deref().unwrap_or("Visualizer unavailable"),
+                    egui::FontId::proportional(16.0),
+                    Color32::LIGHT_GRAY,
+                );
+            }
+
+            let bar_rect = egui::Rect::from_min_size(
+                rect.min + egui::vec2(16.0, 14.0),
+                egui::vec2((rect.width() - 32.0).max(220.0), 40.0),
+            );
+            let mut bar = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(bar_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            );
+            egui::Frame::new()
+                .fill(Color32::from_black_alpha(145))
+                .corner_radius(th::pill())
+                .inner_margin(egui::Margin::symmetric(14, 6))
+                .show(&mut bar, |ui| {
+                    let name = app
+                        .visualizer
+                        .as_ref()
+                        .map(|visualizer| visualizer.current_name().to_string())
+                        .unwrap_or_default();
+                    ui.label(th::semibold(name, 12.0).color(Color32::WHITE));
+                    ui.add_space(8.0);
+                    if ui.button("Previous").clicked() {
+                        app.previous_visualizer_preset();
+                    }
+                    if ui.button("Next").clicked() {
+                        app.next_visualizer_preset();
+                    }
+                    if ui.button("Exit fullscreen").clicked() {
+                        app.viz_fullscreen = false;
+                    }
+                });
+        });
+}
+
 pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
     // No CentralPanel wraps this view, so paint the surface explicitly. The
     // fill stays translucent for wallpaper/gradient skins.
@@ -3973,6 +4151,13 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     let mut scrobble_enabled = app.settings.scrobble_listenbrainz;
     let mut scrobble_token = app.settings.listenbrainz_token.clone();
     let mut crossfade_value: Option<f32> = None;
+    let mut viz_enabled = app.settings.visualizer.enabled;
+    let mut viz_mode = app.settings.visualizer.mode;
+    let mut viz_preset: Option<String> = None;
+    let mut viz_interval: Option<u32> = None;
+    let mut viz_fps: Option<u32> = None;
+    let mut viz_next = false;
+    let mut viz_fullscreen = false;
     let conflicts = app.settings.conflicts();
     let mut tab = app.settings_tab;
 
@@ -3995,6 +4180,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     SettingsTab::Tracks,
                     tr("settings.track_options"),
                 );
+                ui.selectable_value(&mut tab, SettingsTab::Visualizer, "Visualizer");
                 ui.selectable_value(&mut tab, SettingsTab::Keybindings, tr("settings.keybindings"));
                 ui.selectable_value(&mut tab, SettingsTab::About, tr("settings.about"));
             });
@@ -4305,6 +4491,130 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 }
                         }
 
+            if tab == SettingsTab::Visualizer {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("MILKDROP VISUALIZER")
+                        .size(10.0)
+                        .strong()
+                        .color(th::text_dim()),
+                );
+                ui.add_space(4.0);
+                ui.checkbox(&mut viz_enabled, "Enable visualizer");
+                ui.label(
+                    RichText::new(
+                        "Shows a panel in the library view and behind the Now Playing screen.",
+                    )
+                    .size(10.0)
+                    .color(th::text_dim()),
+                );
+                if let Some(error) = &app.viz_error {
+                    ui.label(
+                        RichText::new(error.as_str())
+                            .size(10.0)
+                            .color(Color32::from_rgb(220, 110, 110)),
+                    );
+                }
+
+                ui.add_space(10.0);
+                ui.label(RichText::new("Preset mode").size(11.0).color(th::text()));
+                ui.radio_value(
+                    &mut viz_mode,
+                    crate::settings::VisualizerMode::Selected,
+                    "Selected preset",
+                );
+                ui.radio_value(
+                    &mut viz_mode,
+                    crate::settings::VisualizerMode::Shuffle,
+                    "Shuffle all presets",
+                );
+
+                if viz_mode == crate::settings::VisualizerMode::Selected {
+                    let presets: Vec<String> = app
+                        .visualizer
+                        .as_ref()
+                        .map(|visualizer| {
+                            visualizer
+                                .presets()
+                                .iter()
+                                .map(|preset| preset.name.clone())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if presets.is_empty() {
+                        ui.label(
+                            RichText::new("No presets loaded. Enable the visualizer first.")
+                                .size(10.0)
+                                .color(th::text_dim()),
+                        );
+                    } else {
+                        let selected = if app.settings.visualizer.preset.is_empty() {
+                            presets[0].clone()
+                        } else {
+                            app.settings.visualizer.preset.clone()
+                        };
+                        egui::ComboBox::from_id_salt("viz_preset")
+                            .selected_text(selected)
+                            .width(240.0)
+                            .show_ui(ui, |ui| {
+                                for name in &presets {
+                                    let is_selected = name == &app.settings.visualizer.preset;
+                                    if ui.selectable_label(is_selected, name).clicked() {
+                                        viz_preset = Some(name.clone());
+                                    }
+                                }
+                            });
+                    }
+                } else {
+                    let mut interval = app.settings.visualizer.interval_secs;
+                    if ui
+                        .add(
+                            egui::Slider::new(&mut interval, 10..=180)
+                                .text("seconds between presets"),
+                        )
+                        .changed()
+                    {
+                        viz_interval = Some(interval);
+                    }
+                }
+
+                ui.add_space(8.0);
+                let mut fps = app.settings.visualizer.fps;
+                egui::ComboBox::from_id_salt("viz_fps")
+                    .selected_text(format!("{fps} fps"))
+                    .show_ui(ui, |ui| {
+                        for value in [30, 60] {
+                            if ui
+                                .selectable_label(fps == value, format!("{value} fps"))
+                                .clicked()
+                            {
+                                fps = value;
+                            }
+                        }
+                    });
+                if fps != app.settings.visualizer.fps {
+                    viz_fps = Some(fps);
+                }
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Next preset").clicked() {
+                        viz_next = true;
+                    }
+                    if ui.button("Fullscreen").clicked() {
+                        viz_fullscreen = true;
+                    }
+                });
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(
+                        "Drop extra .milk / .milk2 files into the presets folder in the data directory.",
+                    )
+                    .size(9.5)
+                    .color(th::text_dim()),
+                );
+            }
+
             if tab == SettingsTab::Keybindings {
                 ui.label(
                     RichText::new(tr("ui.keyboard_shortcuts"))
@@ -4503,6 +4813,30 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     #[cfg(target_os = "linux")]
     if tray_enabled != app.settings.tray_enabled {
         app.set_tray_enabled(tray_enabled, ctx);
+    }
+    if viz_enabled != app.settings.visualizer.enabled {
+        app.set_visualizer_enabled(viz_enabled, ctx);
+    }
+    if viz_mode != app.settings.visualizer.mode {
+        app.set_visualizer_mode(viz_mode);
+    }
+    if let Some(name) = viz_preset {
+        app.select_visualizer_preset(&name);
+    }
+    if let Some(interval) = viz_interval {
+        app.settings.visualizer.interval_secs = interval.clamp(10, 180);
+        app.persist_settings();
+    }
+    if let Some(fps) = viz_fps {
+        app.settings.visualizer.fps = fps.clamp(15, 60);
+        app.persist_settings();
+    }
+    if viz_next {
+        app.next_visualizer_preset();
+    }
+    if viz_fullscreen {
+        app.ensure_visualizer();
+        app.viz_fullscreen = true;
     }
     if open_skins {
         app.open_skins_folder();

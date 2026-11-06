@@ -27,6 +27,7 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - Disc folders, saved searches, session restore and ListenBrainz scrobbling
 - Compact always-on-top mini player and optional Linux tray controls
 - Linux MPRIS2 desktop controls and native Wayland drag-and-drop
+- MilkDrop visualizer on wgpu: bundled presets, shuffle, library panel, Now Playing background and fullscreen
 
 ## Install
 
@@ -66,6 +67,18 @@ Optional Linux desktop launcher:
    library filters.
 5. Save selections as playlists or build smart playlists from rules.
 6. Use **Organize files from tags** to preview and apply folder/file renames, with undo.
+
+## Visualizer
+
+The app renders MilkDrop presets with `wgpu` and feeds them the post-EQ audio stream.
+
+- enable it from **Settings → Visualizer** or the main menu
+- six bundled presets, or drop extra `.milk` / `.milk2` files into `<data directory>/presets`
+- choose one preset or shuffle every 10-180 seconds, at 30 or 60 fps
+- shown above the transport bar, behind the Now Playing screen, and fullscreen with `F11`
+- `Esc` leaves fullscreen
+
+![Visualizer](docs/visualizer.png)
 
 ## CLI
 
@@ -116,3 +129,6 @@ GPL-3.0-only. See [LICENSE](LICENSE).
 
 The UI bundles the [Inter](https://rsms.me/inter/) typeface under the SIL Open Font License;
 see [`assets/fonts/OFL.txt`](assets/fonts/OFL.txt).
+
+The bundled MilkDrop presets come from [lactea](https://github.com/M0Rf30/lactea), authored by
+M0Rf30, under MIT OR Apache-2.0; see [`assets/presets/README.md`](assets/presets/README.md).

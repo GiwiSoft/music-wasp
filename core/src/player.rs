@@ -119,6 +119,7 @@ mod audio_impl {
     pub struct Player {
         tx: Sender<Cmd>,
         shared: Arc<Shared>,
+        tap: Arc<crate::analysis::AudioTap>,
         _join: thread::JoinHandle<()>,
     }
 
@@ -138,8 +139,11 @@ mod audio_impl {
             let (tx, rx) = mpsc::channel();
             let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
             let shared_thread = Arc::clone(&shared);
+            let tap = crate::analysis::AudioTap::new();
+            let tap_thread = Arc::clone(&tap);
 
-            let join = thread::spawn(move || audio_loop(rx, shared_thread, ready_tx, device));
+            let join =
+                thread::spawn(move || audio_loop(rx, shared_thread, tap_thread, ready_tx, device));
 
             match ready_rx.recv() {
                 Ok(Ok(())) => {}
@@ -150,8 +154,14 @@ mod audio_impl {
             Ok(Self {
                 tx,
                 shared,
+                tap,
                 _join: join,
             })
+        }
+
+        /// Post-EQ PCM for visualizers.
+        pub fn audio_tap(&self) -> Arc<crate::analysis::AudioTap> {
+            Arc::clone(&self.tap)
         }
 
         pub fn load_and_play(&self, path: &Path) {
@@ -269,6 +279,7 @@ mod audio_impl {
     fn audio_loop(
         rx: Receiver<Cmd>,
         shared: Arc<Shared>,
+        tap: Arc<crate::analysis::AudioTap>,
         ready: Sender<Result<(), String>>,
         device_name: Option<String>,
     ) {
@@ -341,7 +352,13 @@ mod audio_impl {
                                 .duration_ms
                                 .store((duration.as_secs_f64() * 1000.0) as u64, Ordering::Relaxed);
                             *shared.current.lock().unwrap() = Some(path.clone());
-                            sinks[0].append(DspSource::new(source, Arc::clone(&shared.eq)));
+                            tap.set_format(rate, source.channels());
+                            tap.clear();
+                            sinks[0].append(DspSource::new(
+                                source,
+                                Arc::clone(&shared.eq),
+                                Some(Arc::clone(&tap)),
+                            ));
                             sinks[0].play();
                             was_playing = true;
                             current_rate = Some(rate);
@@ -377,14 +394,22 @@ mod audio_impl {
                                 {
                                     let inactive = 1 - active;
                                     sinks[inactive].stop();
-                                    sinks[inactive]
-                                        .append(DspSource::new(source, Arc::clone(&shared.eq)));
+                                    tap.set_format(rate, source.channels());
+                                    sinks[inactive].append(DspSource::new(
+                                        source,
+                                        Arc::clone(&shared.eq),
+                                        Some(Arc::clone(&tap)),
+                                    ));
                                     sinks[inactive].pause();
                                     sinks[inactive].set_volume(0.0);
                                     pending = Some((path, duration));
                                 } else if fade.is_none() {
-                                    sinks[active]
-                                        .append(DspSource::new(source, Arc::clone(&shared.eq)));
+                                    tap.set_format(rate, source.channels());
+                                    sinks[active].append(DspSource::new(
+                                        source,
+                                        Arc::clone(&shared.eq),
+                                        Some(Arc::clone(&tap)),
+                                    ));
                                     queued.push_back((path, duration));
                                 }
                             }
@@ -426,6 +451,7 @@ mod audio_impl {
                     for sink in &sinks {
                         sink.stop();
                     }
+                    tap.clear();
                     queued.clear();
                     pending = None;
                     fade = None;
@@ -635,6 +661,10 @@ mod silent_impl {
         pub fn seek(&self, _secs: f64) {}
         pub fn set_volume(&self, _v: f32) {}
         pub fn set_equalizer(&self, _settings: Equalizer) {}
+        /// Post-EQ PCM for visualizers. The silent engine never has audio.
+        pub fn audio_tap(&self) -> Arc<crate::analysis::AudioTap> {
+            crate::analysis::AudioTap::new()
+        }
         pub fn take_finished(&self) -> bool {
             false
         }

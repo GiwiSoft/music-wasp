@@ -394,6 +394,43 @@ impl ColumnConfig {
     }
 }
 
+/// How the visualizer chooses the next preset.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualizerMode {
+    /// Stay on the selected preset.
+    #[default]
+    Selected,
+    /// Rotate through every preset in a random order.
+    Shuffle,
+}
+
+/// Visualizer preferences.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VisualizerSettings {
+    pub enabled: bool,
+    pub mode: VisualizerMode,
+    /// Preset name to restore at startup.
+    pub preset: String,
+    /// Seconds between automatic changes in shuffle mode.
+    pub interval_secs: u32,
+    /// Target frame rate: 30 or 60.
+    pub fps: u32,
+}
+
+impl Default for VisualizerSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: VisualizerMode::Selected,
+            preset: String::new(),
+            interval_secs: 45,
+            fps: 30,
+        }
+    }
+}
+
 /// Persisted state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -451,6 +488,9 @@ pub struct Settings {
     /// Show the Linux tray icon.
     #[serde(default)]
     pub tray_enabled: bool,
+    /// MilkDrop visualizer preferences.
+    #[serde(default)]
+    pub visualizer: VisualizerSettings,
     /// Template used by the file organizer.
     #[serde(default = "default_organize_pattern")]
     pub organize_pattern: String,
@@ -539,6 +579,7 @@ impl Default for Settings {
             watch_folders: Vec::new(),
             mini_player: false,
             tray_enabled: false,
+            visualizer: VisualizerSettings::default(),
             organize_pattern: default_organize_pattern(),
             organize_root: String::new(),
             session: Session::default(),
