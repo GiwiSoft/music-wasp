@@ -305,7 +305,8 @@ fn seed() -> u64 {
         | 1
 }
 
-/// Bundled presets: authored by M0Rf30 for lactea, MIT OR Apache-2.0.
+/// Bundled presets: six by M0Rf30 for lactea (MIT OR Apache-2.0) and the
+/// original MilkDrop `Geiss` presets (Ryan Geiss, shipped with MilkDrop).
 const BUNDLED: &[(&str, &[u8])] = &[
     (
         "Aurora Cathedral",
@@ -330,6 +331,94 @@ const BUNDLED: &[(&str, &[u8])] = &[
     (
         "Tramonto sul Golfo",
         include_bytes!("../../assets/presets/M0Rf30 - Tramonto sul Golfo.milk"),
+    ),
+    (
+        "Blur Mix 3",
+        include_bytes!("../../assets/presets/Geiss - Blur Mix 3.milk"),
+    ),
+    (
+        "Cauldron - painterly 5",
+        include_bytes!("../../assets/presets/Geiss - Cauldron - painterly 5.milk"),
+    ),
+    (
+        "Confetti",
+        include_bytes!("../../assets/presets/Geiss - Confetti (Kaleidoscope Mix).milk"),
+    ),
+    (
+        "Cosmic Dust 2",
+        include_bytes!("../../assets/presets/Geiss - Cosmic Dust 2.milk"),
+    ),
+    (
+        "Drop Shadow 1",
+        include_bytes!("../../assets/presets/Geiss - Drop Shadow 1.milk"),
+    ),
+    (
+        "Explosion 3",
+        include_bytes!("../../assets/presets/Geiss - Explosion 3.milk"),
+    ),
+    (
+        "Fog Tunnel",
+        include_bytes!("../../assets/presets/Geiss - Fog Tunnel.milk"),
+    ),
+    (
+        "Inkblot",
+        include_bytes!("../../assets/presets/Geiss - Inkblot.milk"),
+    ),
+    (
+        "Liquid Beats",
+        include_bytes!(
+            "../../assets/presets/Geiss - Liquid Beats (janky ripple warp reflecto).milk"
+        ),
+    ),
+    (
+        "Motion Blur 2 (Stahl RMX)",
+        include_bytes!(
+            "../../assets/presets/Geiss - Motion Blur 2 (Stahl's Neon Jelly 2 RMX).milk"
+        ),
+    ),
+    (
+        "Myriad Mosaics",
+        include_bytes!("../../assets/presets/Geiss - Myriad Mosaics.milk"),
+    ),
+    (
+        "Myriad Spirals",
+        include_bytes!("../../assets/presets/Geiss - Myriad Spirals.milk"),
+    ),
+    (
+        "Reaction Diffusion 2",
+        include_bytes!("../../assets/presets/Geiss - Reaction Diffusion 2.milk"),
+    ),
+    (
+        "Reaction Diffusion 3 (Lichen Mix)",
+        include_bytes!("../../assets/presets/Geiss - Reaction Diffusion 3 (Lichen Mix).milk"),
+    ),
+    (
+        "Reaction Diffusion 3 (Rippling Islands)",
+        include_bytes!(
+            "../../assets/presets/Geiss + Stahlregen - Reaction Diffusion 3 [Rippling Islands].milk"
+        ),
+    ),
+    (
+        "Reaction Diffusion 3 (Overload Mix 2)",
+        include_bytes!(
+            "../../assets/presets/Geiss and Zylot - Reaction Diffusion 3 (Overload Mix 2).milk"
+        ),
+    ),
+    (
+        "Skin Dots Multi-layer 3",
+        include_bytes!("../../assets/presets/Geiss - Skin Dots Multi-layer 3.milk"),
+    ),
+    (
+        "Spiral Artifact",
+        include_bytes!("../../assets/presets/Geiss - Spiral Artifact.milk"),
+    ),
+    (
+        "Swirlie 4",
+        include_bytes!("../../assets/presets/Geiss - Swirlie 4.milk"),
+    ),
+    (
+        "Tokamak Plus 4",
+        include_bytes!("../../assets/presets/Geiss - Tokamak Plus 4.milk"),
     ),
 ];
 
@@ -385,6 +474,33 @@ pub fn load_presets() -> Vec<Preset> {
     user.sort_by(|left, right| left.name.cmp(&right.name));
     presets.extend(user);
     presets
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod gpu_tests {
+    use super::*;
+
+    #[test]
+    fn every_bundled_preset_loads() {
+        let instance = wgpu::Instance::default();
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            ..Default::default()
+        }))
+        .expect("wgpu adapter");
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+                .expect("wgpu device");
+        let mut engine = Engine::new(&device, &queue, engine_config((320, 180), 44_100))
+            .expect("visualizer engine");
+        let presets = load_presets();
+        assert!(presets.len() >= BUNDLED.len());
+        for preset in presets.iter().take(BUNDLED.len()) {
+            engine
+                .load_preset(&preset.bytes, &preset.name, Transition::Cut)
+                .unwrap_or_else(|error| panic!("{}: {error}", preset.name));
+        }
+    }
 }
 
 #[cfg(test)]

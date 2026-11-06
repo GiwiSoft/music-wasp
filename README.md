@@ -73,7 +73,8 @@ Optional Linux desktop launcher:
 The app renders MilkDrop presets with `wgpu` and feeds them the post-EQ audio stream.
 
 - enable it from **Settings → Visualizer** or the main menu
-- six bundled presets, or drop extra `.milk` / `.milk2` files into `<data directory>/presets`
+- 26 bundled presets (lactea originals and Ryan Geiss classics), or drop extra `.milk` / `.milk2`
+  files into `<data directory>/presets`
 - choose one preset or shuffle every 10-180 seconds, at 30 or 60 fps
 - shown above the transport bar, behind the Now Playing screen, and fullscreen with `F11`
 - `Esc` leaves fullscreen
@@ -130,5 +131,7 @@ GPL-3.0-only. See [LICENSE](LICENSE).
 The UI bundles the [Inter](https://rsms.me/inter/) typeface under the SIL Open Font License;
 see [`assets/fonts/OFL.txt`](assets/fonts/OFL.txt).
 
-The bundled MilkDrop presets come from [lactea](https://github.com/M0Rf30/lactea), authored by
-M0Rf30, under MIT OR Apache-2.0; see [`assets/presets/README.md`](assets/presets/README.md).
+The bundled MilkDrop presets come from [lactea](https://github.com/M0Rf30/lactea) (MIT OR
+Apache-2.0) and the original Ryan Geiss preset pack collected by
+[projectM](https://github.com/projectM-visualizer/presets-milkdrop-original); see
+[`assets/presets/README.md`](assets/presets/README.md) for attribution.
