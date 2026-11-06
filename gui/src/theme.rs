@@ -773,19 +773,35 @@ fn hex(color: Color32) -> String {
 }
 
 static ACTIVE: OnceLock<RwLock<Palette>> = OnceLock::new();
+static ACTIVE_SKIN: OnceLock<RwLock<Skin>> = OnceLock::new();
 static BACKGROUNDS: OnceLock<RwLock<HashMap<PathBuf, (u128, egui::TextureHandle)>>> =
     OnceLock::new();
 
 /// Extra UI scale used by the larger-font accessibility mode.
 pub const LARGE_TEXT_SCALE: f32 = 1.2;
 
+/// Named font family holding the semibold face. Register it in
+/// [`crate::icons::install`]; use [`semibold`] instead of touching it directly.
+pub const SEMIBOLD_FAMILY: &str = "semibold";
+
 fn active() -> &'static RwLock<Palette> {
     ACTIVE.get_or_init(|| RwLock::new(Skin::default().palette()))
+}
+
+fn active_skin() -> &'static RwLock<Skin> {
+    ACTIVE_SKIN.get_or_init(|| RwLock::new(Skin::default()))
 }
 
 /// Palette currently painted by the UI.
 pub fn current() -> Palette {
     *active()
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Skin currently installed.
+pub fn skin() -> Skin {
+    *active_skin()
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
@@ -799,11 +815,97 @@ pub fn text() -> Color32 {
 pub fn text_dim() -> Color32 {
     current().text_dim
 }
+pub fn bg_dark() -> Color32 {
+    current().bg_dark
+}
+pub fn bg_panel() -> Color32 {
+    current().bg_panel
+}
 pub fn bg_row_alt() -> Color32 {
     current().bg_row_alt
 }
 pub fn bg_selected() -> Color32 {
     current().bg_selected
+}
+
+pub fn is_compact() -> bool {
+    skin().is_compact()
+}
+
+pub fn is_square() -> bool {
+    skin().is_square()
+}
+
+/// Rounded corner for ordinary surfaces, flattened for the classic square
+/// skins and tightened for compact ones.
+pub fn corner(radius: u8) -> CornerRadius {
+    if is_square() {
+        CornerRadius::ZERO
+    } else if is_compact() {
+        CornerRadius::same(radius.saturating_sub(2).max(1))
+    } else {
+        CornerRadius::same(radius)
+    }
+}
+
+/// Fully rounded corners, for pills and circular controls.
+pub fn pill() -> CornerRadius {
+    CornerRadius::same(255)
+}
+
+/// Blend `a` towards `b`; `t = 0` keeps `a`, `t = 1` yields `b`.
+pub fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    Color32::from_rgba_unmultiplied(
+        lerp(a.r(), b.r()),
+        lerp(a.g(), b.g()),
+        lerp(a.b(), b.b()),
+        lerp(a.a(), b.a()),
+    )
+}
+
+/// `color` at a new opacity.
+pub fn alpha(color: Color32, alpha: u8) -> Color32 {
+    let [r, g, b, _] = color.to_srgba_unmultiplied();
+    Color32::from_rgba_unmultiplied(r, g, b, alpha)
+}
+
+/// Hover wash for rows and panels: a faint step up from the background.
+pub fn hover_fill() -> Color32 {
+    let palette = current();
+    if skin().is_high_contrast() {
+        palette.widget_hover
+    } else {
+        blend(palette.widget_hover, palette.bg_dark, 0.62)
+    }
+}
+
+/// Hairline used for dividers and panel borders.
+pub fn hairline() -> Color32 {
+    let palette = current();
+    if skin().is_high_contrast() {
+        palette.widget_hover
+    } else {
+        blend(palette.widget_weak, palette.bg_dark, 0.35)
+    }
+}
+
+/// A raised surface colour (chips, search fields).
+pub fn raised() -> Color32 {
+    let palette = current();
+    if skin().is_high_contrast() {
+        palette.widget_inactive
+    } else {
+        blend(palette.widget_inactive, palette.bg_panel, 0.55)
+    }
+}
+
+/// Semibold text in the bundled display face.
+pub fn semibold(text: impl Into<String>, size: f32) -> egui::RichText {
+    egui::RichText::new(text)
+        .family(egui::FontFamily::Name(SEMIBOLD_FAMILY.into()))
+        .size(size)
 }
 
 /// Install `skin` and rebuild the egui visuals.
@@ -818,6 +920,9 @@ pub fn preview(ctx: &egui::Context, skin: Skin, palette: Palette) {
 
 fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
     let glass = skin.is_glass();
+    let square = skin.is_square();
+    let compact = skin.is_compact();
+    let high_contrast = skin.is_high_contrast();
     let palette = if skin.has_background() {
         with_background_alpha(palette)
     } else {
@@ -826,52 +931,66 @@ fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
     *active()
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = palette;
+    *active_skin()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = skin;
 
     let mut v = if skin.is_light() {
         Visuals::light()
     } else {
         Visuals::dark()
     };
+    let radius = if square {
+        0
+    } else if compact {
+        2
+    } else if glass {
+        9
+    } else {
+        6
+    };
+    let surface_radius = if square {
+        0
+    } else if compact {
+        4
+    } else if glass {
+        14
+    } else {
+        10
+    };
+    let hairline = if high_contrast {
+        palette.widget_hover
+    } else {
+        blend(palette.widget_weak, palette.bg_dark, 0.35)
+    };
+
     v.override_text_color = Some(palette.text);
     v.panel_fill = palette.bg_dark;
     v.window_fill = palette.bg_panel;
-    v.extreme_bg_color = palette.extreme_bg;
-    v.faint_bg_color = palette.bg_row_alt;
-    v.selection.bg_fill = palette.bg_selected;
-    v.selection.stroke = Stroke::new(
-        if skin.is_high_contrast() {
-            2.0
-        } else if glass {
-            1.5
-        } else {
-            1.0
-        },
-        palette.accent,
-    );
+    v.extreme_bg_color = if high_contrast {
+        palette.extreme_bg
+    } else {
+        blend(palette.extreme_bg, palette.bg_panel, 0.25)
+    };
+    v.faint_bg_color = if high_contrast {
+        palette.bg_row_alt
+    } else {
+        blend(palette.bg_row_alt, palette.bg_dark, 0.55)
+    };
+    v.selection.bg_fill = if high_contrast || palette.bg_selected.a() < 255 {
+        palette.bg_selected
+    } else {
+        blend(palette.bg_selected, palette.bg_dark, 0.26)
+    };
+    // A zero-width stroke still supplies the accent text colour that egui
+    // uses for selected labels; it simply does not paint an outline.
+    v.selection.stroke = Stroke::new(if high_contrast { 2.0 } else { 0.0 }, palette.accent);
     v.hyperlink_color = palette.accent;
-    v.window_stroke = Stroke::new(
-        if skin.is_high_contrast() { 2.0 } else { 1.0 },
-        palette.widget_hover,
-    );
-    if glass {
-        v.window_corner_radius = CornerRadius::same(14);
-        v.menu_corner_radius = CornerRadius::same(12);
-        v.window_shadow = egui::epaint::Shadow {
-            offset: [0, 14],
-            blur: 34,
-            spread: 0,
-            color: Color32::from_black_alpha(if skin.is_light() { 55 } else { 130 }),
-        };
-        v.popup_shadow = egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 24,
-            spread: 0,
-            color: Color32::from_black_alpha(if skin.is_light() { 45 } else { 110 }),
-        };
-        v.window_highlight_topmost = true;
-    } else if skin.is_square() {
-        v.window_corner_radius = CornerRadius::same(0);
-        v.menu_corner_radius = CornerRadius::same(0);
+    v.window_stroke = Stroke::new(1.0, hairline);
+    v.interact_cursor = Some(egui::CursorIcon::PointingHand);
+    v.window_corner_radius = CornerRadius::same(surface_radius);
+    v.menu_corner_radius = CornerRadius::same(surface_radius.saturating_sub(2));
+    if square {
         v.window_shadow = egui::epaint::Shadow {
             offset: [2, 2],
             blur: 0,
@@ -884,12 +1003,35 @@ fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
             spread: 0,
             color: Color32::from_black_alpha(180),
         };
+    } else {
+        let window_alpha = if skin.is_light() { 26 } else { 90 };
+        let popup_alpha = if skin.is_light() { 22 } else { 80 };
+        v.window_shadow = egui::epaint::Shadow {
+            offset: [0, if glass { 14 } else { 8 }],
+            blur: if glass { 34 } else { 22 },
+            spread: 0,
+            color: Color32::from_black_alpha(window_alpha),
+        };
+        v.popup_shadow = egui::epaint::Shadow {
+            offset: [0, if glass { 10 } else { 6 }],
+            blur: if glass { 24 } else { 16 },
+            spread: 0,
+            color: Color32::from_black_alpha(popup_alpha),
+        };
+        v.window_highlight_topmost = glass;
     }
+
     v.widgets.noninteractive.bg_fill = palette.bg_panel;
-    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, palette.widget_weak);
+    v.widgets.noninteractive.weak_bg_fill = palette.bg_panel;
+    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, hairline);
     v.widgets.inactive.bg_fill = palette.widget_inactive;
     v.widgets.inactive.weak_bg_fill = palette.widget_weak;
-    v.widgets.hovered.bg_fill = palette.widget_hover;
+    v.widgets.hovered.bg_fill = if high_contrast {
+        palette.widget_hover
+    } else {
+        blend(palette.widget_hover, palette.bg_dark, 0.62)
+    };
+    v.widgets.hovered.weak_bg_fill = palette.widget_hover;
     v.widgets.active.bg_fill = palette.accent;
     v.widgets.active.weak_bg_fill = palette.accent;
     v.widgets.active.fg_stroke = Stroke::new(
@@ -907,14 +1049,12 @@ fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
         &mut v.widgets.active,
         &mut v.widgets.open,
     ] {
-        w.corner_radius = CornerRadius::same(if glass {
-            8
-        } else if skin.is_square() {
-            0
-        } else {
-            3
-        });
+        w.corner_radius = CornerRadius::same(radius);
+        if !high_contrast {
+            w.bg_stroke = Stroke::NONE;
+        }
     }
+    v.widgets.noninteractive.corner_radius = CornerRadius::same(radius);
 
     ctx.set_theme(if skin.is_light() {
         egui::ThemePreference::Light
@@ -924,19 +1064,54 @@ fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
     ctx.set_visuals(v);
 
     ctx.all_styles_mut(|style| {
+        style.animation_time = 0.15;
         if glass {
             style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-            style.spacing.button_padding = egui::vec2(10.0, 6.0);
-            style.spacing.window_margin = egui::Margin::same(12);
-        } else if skin.is_compact() {
+            style.spacing.button_padding = egui::vec2(12.0, 6.0);
+            style.spacing.window_margin = egui::Margin::same(14);
+            style.spacing.menu_margin = egui::Margin::same(8);
+        } else if compact || square {
             style.spacing.item_spacing = egui::vec2(4.0, 2.0);
             style.spacing.button_padding = egui::vec2(6.0, 2.0);
-            style.spacing.window_margin = egui::Margin::same(4);
+            style.spacing.window_margin = egui::Margin::same(6);
+            style.spacing.menu_margin = egui::Margin::same(4);
         } else {
-            style.spacing.item_spacing = egui::vec2(6.0, 4.0);
-            style.spacing.button_padding = egui::vec2(8.0, 4.0);
+            style.spacing.item_spacing = egui::vec2(7.0, 5.0);
+            style.spacing.button_padding = egui::vec2(10.0, 5.0);
+            style.spacing.window_margin = egui::Margin::same(12);
+            style.spacing.menu_margin = egui::Margin::same(7);
         }
-        style.spacing.scroll.bar_width = 10.0;
+        style.spacing.interact_size.y = if compact || square { 18.0 } else { 24.0 };
+        style.spacing.scroll.bar_width = if compact { 8.0 } else { 10.0 };
+        if !compact && !square && !high_contrast {
+            // Overlay scrollbars keep the chrome quiet until the pointer
+            // enters a scrollable area.
+            let mut scroll = egui::style::ScrollStyle::floating();
+            scroll.floating_width = 5.0;
+            scroll.floating_allocated_width = 14.0;
+            scroll.bar_inner_margin = 2.0;
+            style.spacing.scroll = scroll;
+        }
+        style.text_styles.insert(
+            egui::TextStyle::Body,
+            egui::FontId::new(13.5, egui::FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Button,
+            egui::FontId::new(13.0, egui::FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Small,
+            egui::FontId::new(11.0, egui::FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Monospace,
+            egui::FontId::new(12.0, egui::FontFamily::Monospace),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Heading,
+            egui::FontId::new(20.0, egui::FontFamily::Name(SEMIBOLD_FAMILY.into())),
+        );
     });
 }
 

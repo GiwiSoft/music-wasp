@@ -102,18 +102,20 @@ pub fn ui(
 
     let mut state = state.lock().unwrap_or_else(|error| error.into_inner());
     let mut commands = Vec::new();
+    ui.visuals_mut().selection.bg_fill = th::accent();
 
     ui.vertical(|ui| {
         ui.horizontal(|ui| {
             ui.add(
                 egui::Label::new(
-                    RichText::new(if state.title.is_empty() {
-                        "Nothing playing"
-                    } else {
-                        state.title.as_str()
-                    })
-                    .size(13.0)
-                    .strong()
+                    th::semibold(
+                        if state.title.is_empty() {
+                            "Nothing playing"
+                        } else {
+                            state.title.as_str()
+                        },
+                        13.0,
+                    )
                     .color(th::text()),
                 )
                 .truncate(),

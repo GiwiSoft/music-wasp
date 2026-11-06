@@ -113,3 +113,6 @@ WATCH_MODE=check scripts/dev-watch.sh  # fast check
 ## License
 
 GPL-3.0-only. See [LICENSE](LICENSE).
+
+The UI bundles the [Inter](https://rsms.me/inter/) typeface under the SIL Open Font License;
+see [`assets/fonts/OFL.txt`](assets/fonts/OFL.txt).

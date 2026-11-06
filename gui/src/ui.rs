@@ -74,7 +74,7 @@ fn fold_button(ui: &mut egui::Ui, folded: bool, tooltip: &str) -> bool {
         icons::CARET_DOWN
     };
     let response = ui.add(
-        egui::Button::new(icons::text(icon, 12.0))
+        egui::Button::new(icons::text(icon, 11.0).color(th::text_dim()))
             .frame(false)
             .min_size(egui::vec2(18.0, 18.0)),
     );
@@ -84,19 +84,85 @@ fn fold_button(ui: &mut egui::Ui, folded: bool, tooltip: &str) -> bool {
 
 /// Section title; clicking it also folds the section.
 fn section_label(ui: &mut egui::Ui, icon: egui_phosphor_icons::Icon, title: &str) -> bool {
-    let text = RichText::new(format!("{} {}", icon.as_str(), title))
-        .size(10.0)
-        .strong()
-        .color(th::text_dim());
+    let text = th::semibold(format!("{} {}", icon.as_str(), title), 10.5).color(th::text_dim());
     ui.add(egui::Label::new(text).sense(egui::Sense::click()))
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
+}
+
+/// A full-width navigation row with a pill highlight, used by the browser.
+/// `indent` shifts the label for nested playlists.
+fn nav_row(
+    ui: &mut egui::Ui,
+    selected: bool,
+    indent: f32,
+    text: impl Into<String>,
+) -> egui::Response {
+    let label = text.into();
+    let height = if th::is_compact() { 20.0 } else { 26.0 };
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width().max(1.0), height),
+        egui::Sense::click_and_drag(),
+    );
+    response.widget_info(|| {
+        WidgetInfo::selected(
+            WidgetType::SelectableLabel,
+            ui.is_enabled(),
+            selected,
+            &label,
+        )
+    });
+
+    if selected {
+        ui.painter()
+            .rect_filled(rect, th::corner(7), ui.visuals().selection.bg_fill);
+    } else if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, th::corner(7), th::hover_fill());
+    }
+    if selected {
+        let bar = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + 3.0, rect.center().y - 6.5),
+            egui::vec2(3.0, 13.0),
+        );
+        ui.painter().rect_filled(bar, th::pill(), th::accent());
+    }
+
+    let color = if selected { th::accent() } else { th::text() };
+    let available = (rect.width() - indent - 22.0).max(12.0);
+    let rich = RichText::new(&label)
+        .size(if th::is_compact() { 12.0 } else { 13.0 })
+        .color(color);
+    let galley = egui::WidgetText::from(rich).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Truncate),
+        available,
+        egui::TextStyle::Button,
+    );
+    let pos = egui::pos2(
+        rect.left() + 12.0 + indent,
+        rect.center().y - galley.size().y * 0.5,
+    );
+    ui.painter().galley(pos, galley, color);
+    response
+}
+
+/// Thin horizontal rule with generous breathing room.
+fn divider(ui: &mut egui::Ui) {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 9.0), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        egui::Stroke::new(1.0, th::hairline()),
+    );
 }
 
 /// Draw a drop highlight around `rect`.
 fn drop_highlight(ui: &egui::Ui, rect: egui::Rect) {
     ui.painter().rect_stroke(
         rect,
-        3.0,
+        th::corner(7),
         egui::Stroke::new(1.5_f32, th::accent()),
         egui::StrokeKind::Inside,
     );
@@ -168,42 +234,43 @@ fn playlist_tree(
 
     for folder in folders.iter().filter(|folder| folder.parent_id == parent) {
         let mut row_act: Option<Act> = None;
-        ui.horizontal(|ui| {
-            ui.add_space(indent);
-            let resp =
-                ui.selectable_label(false, format!("{} {}", icons::FOLDER.as_str(), folder.name));
-            if resp.dnd_hover_payload::<DragPlaylist>().is_some() {
-                drop_highlight(ui, resp.rect);
-            }
-            if let Some(drag) = resp.dnd_release_payload::<DragPlaylist>() {
-                row_act = Some(if drag.smart {
-                    Act::MoveSmart(drag.id, Some(folder.id))
-                } else {
-                    Act::MovePlaylist(drag.id, Some(folder.id))
-                });
-            }
-            resp.context_menu(|ui| {
-                if ui.button(tr("ui.new_playlist_here")).clicked() {
-                    row_act = Some(Act::NewPlaylistInFolder(folder.id));
-                    ui.close();
-                }
-                if ui.button("New smart playlist here…").clicked() {
-                    row_act = Some(Act::NewSmartInFolder(folder.id));
-                    ui.close();
-                }
-                if ui.button(tr("ui.new_subfolder")).clicked() {
-                    row_act = Some(Act::NewFolder(Some(folder.id)));
-                    ui.close();
-                }
-                if ui.button(tr("ui.rename_folder")).clicked() {
-                    row_act = Some(Act::RenameFolder(folder.id));
-                    ui.close();
-                }
-                if ui.button(tr("ui.delete_folder")).clicked() {
-                    row_act = Some(Act::DeleteFolder(folder.id));
-                    ui.close();
-                }
+        let resp = nav_row(
+            ui,
+            false,
+            indent,
+            format!("{} {}", icons::FOLDER.as_str(), folder.name),
+        );
+        if resp.dnd_hover_payload::<DragPlaylist>().is_some() {
+            drop_highlight(ui, resp.rect);
+        }
+        if let Some(drag) = resp.dnd_release_payload::<DragPlaylist>() {
+            row_act = Some(if drag.smart {
+                Act::MoveSmart(drag.id, Some(folder.id))
+            } else {
+                Act::MovePlaylist(drag.id, Some(folder.id))
             });
+        }
+        resp.context_menu(|ui| {
+            if ui.button(tr("ui.new_playlist_here")).clicked() {
+                row_act = Some(Act::NewPlaylistInFolder(folder.id));
+                ui.close();
+            }
+            if ui.button("New smart playlist here…").clicked() {
+                row_act = Some(Act::NewSmartInFolder(folder.id));
+                ui.close();
+            }
+            if ui.button(tr("ui.new_subfolder")).clicked() {
+                row_act = Some(Act::NewFolder(Some(folder.id)));
+                ui.close();
+            }
+            if ui.button(tr("ui.rename_folder")).clicked() {
+                row_act = Some(Act::RenameFolder(folder.id));
+                ui.close();
+            }
+            if ui.button(tr("ui.delete_folder")).clicked() {
+                row_act = Some(Act::DeleteFolder(folder.id));
+                ui.close();
+            }
         });
         if row_act.is_some() {
             return row_act;
@@ -224,70 +291,65 @@ fn playlist_tree(
 
     for playlist in playlists.iter().filter(|p| p.folder_id == parent) {
         let mut row_act: Option<Act> = None;
-        ui.horizontal(|ui| {
-            ui.add_space(indent + 12.0);
-            let selected = matches!(view, View::Playlist(id) if id == playlist.id);
-            let label = format!(
-                "{} {} ({})",
-                icons::PLAYLIST.as_str(),
-                playlist.name,
-                playlist.count
-            );
-            let resp = ui.add(
-                egui::Button::selectable(selected, label).sense(egui::Sense::click_and_drag()),
-            );
-            os_zones.push(crate::app::OsDropZone {
-                playlist: Some(playlist.id),
-                rect: resp.rect,
-            });
-            resp.dnd_set_drag_payload(DragPlaylist {
-                id: playlist.id,
-                smart: false,
-            });
+        let selected = matches!(view, View::Playlist(id) if id == playlist.id);
+        let label = format!(
+            "{} {} ({})",
+            icons::PLAYLIST.as_str(),
+            playlist.name,
+            playlist.count
+        );
+        let resp = nav_row(ui, selected, indent + 12.0, label);
+        os_zones.push(crate::app::OsDropZone {
+            playlist: Some(playlist.id),
+            rect: resp.rect,
+        });
+        resp.dnd_set_drag_payload(DragPlaylist {
+            id: playlist.id,
+            smart: false,
+        });
 
-            if resp.dnd_hover_payload::<DragTracks>().is_some() || os_files_over(ui, resp.rect) {
-                drop_highlight(ui, resp.rect);
-            }
-            if let Some(drag) = resp.dnd_release_payload::<DragTracks>() {
-                row_act = Some(Act::DropOnPlaylist(
-                    playlist.id,
-                    drag.ids.clone(),
-                    drag.from_playlist,
-                ));
-            }
+        if resp.dnd_hover_payload::<DragTracks>().is_some() || os_files_over(ui, resp.rect) {
+            drop_highlight(ui, resp.rect);
+        }
+        if let Some(drag) = resp.dnd_release_payload::<DragTracks>() {
+            row_act = Some(Act::DropOnPlaylist(
+                playlist.id,
+                drag.ids.clone(),
+                drag.from_playlist,
+            ));
+        }
 
-            resp.context_menu(|ui| {
-                if ui.button(tr("ui.rename_2")).clicked() {
-                    row_act = Some(Act::RenamePlaylist(playlist.id));
+        resp.context_menu(|ui| {
+            if ui.button(tr("ui.rename_2")).clicked() {
+                row_act = Some(Act::RenamePlaylist(playlist.id));
+                ui.close();
+            }
+            if ui.button(tr("ui.export_m3u")).clicked() {
+                row_act = Some(Act::ExportPlaylist(playlist.id));
+                ui.close();
+            }
+            ui.menu_button(tr("ui.move_to_folder"), |ui| {
+                if playlist.folder_id.is_some() && ui.button(tr("ui.top_level")).clicked() {
+                    row_act = Some(Act::MovePlaylist(playlist.id, None));
                     ui.close();
                 }
-                if ui.button(tr("ui.export_m3u")).clicked() {
-                    row_act = Some(Act::ExportPlaylist(playlist.id));
-                    ui.close();
-                }
-                ui.menu_button(tr("ui.move_to_folder"), |ui| {
-                    if playlist.folder_id.is_some() && ui.button(tr("ui.top_level")).clicked() {
-                        row_act = Some(Act::MovePlaylist(playlist.id, None));
+                for folder in folders {
+                    let label = folder_menu_path(folders, folder.id);
+                    if ui.button(label).clicked() {
+                        row_act = Some(Act::MovePlaylist(playlist.id, Some(folder.id)));
                         ui.close();
                     }
-                    for folder in folders {
-                        let label = folder_menu_path(folders, folder.id);
-                        if ui.button(label).clicked() {
-                            row_act = Some(Act::MovePlaylist(playlist.id, Some(folder.id)));
-                            ui.close();
-                        }
-                    }
-                });
-                if ui.button(tr("ui.delete_playlist")).clicked() {
-                    row_act = Some(Act::DeletePlaylistAt(playlist.id));
-                    ui.close();
                 }
             });
-
-            if resp.clicked() {
-                row_act = Some(Act::Playlist(playlist.id));
+            if ui.button(tr("ui.delete_playlist")).clicked() {
+                row_act = Some(Act::DeletePlaylistAt(playlist.id));
+                ui.close();
             }
         });
+
+        if resp.clicked() {
+            row_act = Some(Act::Playlist(playlist.id));
+        }
         if row_act.is_some() {
             return row_act;
         }
@@ -298,52 +360,47 @@ fn playlist_tree(
         .filter(|playlist| playlist.folder_id == parent)
     {
         let mut row_act: Option<Act> = None;
-        ui.horizontal(|ui| {
-            ui.add_space(indent + 12.0);
-            let selected = matches!(view, View::Smart(id) if id == smart.id);
-            let label = format!("{} {}", icons::SPARKLE.as_str(), smart.name);
-            let resp = ui.add(
-                egui::Button::selectable(selected, label).sense(egui::Sense::click_and_drag()),
-            );
-            resp.dnd_set_drag_payload(DragPlaylist {
-                id: smart.id,
-                smart: true,
-            });
-            resp.context_menu(|ui| {
-                if ui.button("Edit rules…").clicked() {
-                    row_act = Some(Act::EditSmart(smart.id));
+        let selected = matches!(view, View::Smart(id) if id == smart.id);
+        let label = format!("{} {}", icons::SPARKLE.as_str(), smart.name);
+        let resp = nav_row(ui, selected, indent + 12.0, label);
+        resp.dnd_set_drag_payload(DragPlaylist {
+            id: smart.id,
+            smart: true,
+        });
+        resp.context_menu(|ui| {
+            if ui.button("Edit rules…").clicked() {
+                row_act = Some(Act::EditSmart(smart.id));
+                ui.close();
+            }
+            if ui.button(tr("ui.rename_2")).clicked() {
+                row_act = Some(Act::RenameSmart(smart.id));
+                ui.close();
+            }
+            if ui.button(tr("ui.export_m3u")).clicked() {
+                row_act = Some(Act::ExportSmart(smart.id));
+                ui.close();
+            }
+            ui.menu_button(tr("ui.move_to_folder"), |ui| {
+                if smart.folder_id.is_some() && ui.button(tr("ui.top_level")).clicked() {
+                    row_act = Some(Act::MoveSmart(smart.id, None));
                     ui.close();
                 }
-                if ui.button(tr("ui.rename_2")).clicked() {
-                    row_act = Some(Act::RenameSmart(smart.id));
-                    ui.close();
-                }
-                if ui.button(tr("ui.export_m3u")).clicked() {
-                    row_act = Some(Act::ExportSmart(smart.id));
-                    ui.close();
-                }
-                ui.menu_button(tr("ui.move_to_folder"), |ui| {
-                    if smart.folder_id.is_some() && ui.button(tr("ui.top_level")).clicked() {
-                        row_act = Some(Act::MoveSmart(smart.id, None));
+                for folder in folders {
+                    let label = folder_menu_path(folders, folder.id);
+                    if ui.button(label).clicked() {
+                        row_act = Some(Act::MoveSmart(smart.id, Some(folder.id)));
                         ui.close();
                     }
-                    for folder in folders {
-                        let label = folder_menu_path(folders, folder.id);
-                        if ui.button(label).clicked() {
-                            row_act = Some(Act::MoveSmart(smart.id, Some(folder.id)));
-                            ui.close();
-                        }
-                    }
-                });
-                if ui.button(tr("ui.delete_playlist")).clicked() {
-                    row_act = Some(Act::DeleteSmartAt(smart.id));
-                    ui.close();
                 }
             });
-            if resp.clicked() {
-                row_act = Some(Act::Smart(smart.id));
+            if ui.button(tr("ui.delete_playlist")).clicked() {
+                row_act = Some(Act::DeleteSmartAt(smart.id));
+                ui.close();
             }
         });
+        if resp.clicked() {
+            row_act = Some(Act::Smart(smart.id));
+        }
         if row_act.is_some() {
             return row_act;
         }
@@ -412,337 +469,385 @@ fn scan_controls(app: &mut App, ui: &mut egui::Ui) {
 }
 
 pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
-    egui::Panel::top("toolbar").show(ui, |ui| {
-        ui.add_space(5.0);
-        ui.horizontal(|ui| {
-            if let Some(logo) = &app.logo {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
-                ui.painter().image(
-                    logo.id(),
-                    rect,
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    Color32::WHITE,
-                );
-            }
-            ui.label(
-                RichText::new("MusicWasp")
-                    .size(19.0)
-                    .strong()
-                    .color(th::accent()),
-            );
-            ui.label(
-                RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-                    .size(10.0)
-                    .color(th::text_dim()),
-            );
-            ui.separator();
-            let mut view_label = app.view_title();
-            if view_label.chars().count() > 26 {
-                view_label = view_label.chars().take(25).collect::<String>() + "…";
-            }
-            ui.label(RichText::new(view_label).size(12.0).color(th::text()));
-            ui.separator();
-
-            let search_label = ui
-                .label(icons::text(icons::MAGNIFYING_GLASS, 13.0).color(th::text_dim()))
-                .on_hover_text(
-                    "Advanced search: artist:\"radiohead\" year:1997\n\
-                     Fields: title, artist, album, albumartist, genre, format,\n\
-                     year, track, disc, duration. Use >, <, >=, <= or 1990..1999.",
-                );
-            search_label.widget_info(|| {
-                WidgetInfo::labeled(WidgetType::Label, true, tr("ui.search_tracks"))
-            });
-            let search = ui
-                .add_sized(
-                    [180.0, 24.0],
-                    egui::TextEdit::singleline(&mut app.search)
-                        .id(egui::Id::new("search_box"))
-                        .hint_text(tr("ui.search_or_artist_radiohead_year_1997")),
-                )
-                .labelled_by(search_label.id);
-            if search.changed() {
-                app.mark_tracks_dirty();
-            }
-            if app.focus_search {
-                search.request_focus();
-                app.focus_search = false;
-            }
-
-            let mut save_search = false;
-            let mut apply_saved: Option<String> = None;
-            let mut edit_saved: Option<i64> = None;
-            let mut delete_saved: Option<i64> = None;
-            let saved = app.saved_searches.clone();
-            let saved_menu = ui.menu_button(icons::text(icons::BOOKMARK_SIMPLE, 14.0), |ui| {
-                if ui.button(tr("ui.save_current_search")).clicked() {
-                    save_search = true;
-                    ui.close();
+    egui::Panel::top("toolbar")
+        .frame(
+            egui::Frame::new()
+                .fill(th::bg_panel())
+                .inner_margin(egui::Margin::symmetric(12, 7)),
+        )
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if let Some(logo) = &app.logo {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                    ui.painter().image(
+                        logo.id(),
+                        rect,
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        Color32::WHITE,
+                    );
                 }
-                if !saved.is_empty() {
-                    ui.separator();
-                }
-                for saved in &saved {
-                    let response = ui
-                        .button(format!("{} {}", icons::STAR.as_str(), saved.name))
-                        .on_hover_text(&saved.query);
-                    if response.clicked() {
-                        apply_saved = Some(saved.query.clone());
-                        ui.close();
-                    }
-                    response.context_menu(|ui| {
-                        if ui.button(tr("ui.edit")).clicked() {
-                            edit_saved = Some(saved.id);
-                            ui.close();
-                        }
-                        if ui.button(tr("common.delete")).clicked() {
-                            delete_saved = Some(saved.id);
-                            ui.close();
-                        }
-                    });
-                }
-            });
-            let saved_menu = saved_menu.response;
-            saved_menu.widget_info(|| {
-                WidgetInfo::labeled(WidgetType::Button, true, tr("ui.saved_searches"))
-            });
-            saved_menu.on_hover_text(tr("ui.saved_searches"));
-            if save_search {
-                app.open_save_search_dialog();
-            }
-            if let Some(query) = apply_saved {
-                app.apply_search(&query);
-            }
-            if let Some(id) = edit_saved {
-                app.edit_saved_search(id);
-            }
-            if let Some(id) = delete_saved {
-                app.delete_saved_search(id);
-            }
-
-            let selected = app.selected_in_view().len();
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let menu = ui.menu_button(icons::text(icons::LIST, 16.0), |ui| {
-                    let settings = ui.add(
-                        egui::Button::new(icons::with(icons::GEAR, tr("settings.title")))
-                            .selected(app.show_settings),
-                    );
-                    if settings.clicked() {
-                        app.show_settings = !app.show_settings;
-                        ui.close();
-                    }
-                    let hygiene = ui.add(
-                        egui::Button::new(icons::with(icons::BROOM, tr("menu.library_hygiene")))
-                            .selected(app.show_hygiene),
-                    );
-                    if hygiene.clicked() {
-                        app.open_hygiene();
-                        ui.close();
-                    }
-                    let organizer = ui.add(
-                        egui::Button::new(icons::with(icons::FOLDER, "Organize files from tags…"))
-                            .selected(app.show_organize),
-                    );
-                    if organizer.clicked() {
-                        app.open_organize();
-                        ui.close();
-                    }
-                    if app.tag_undo.is_some() {
-                        let count = app.tag_undo.as_ref().map_or(0, Vec::len);
-                        let label = format!("{} ({count})", tr("ui.undo_last_tag_write"));
-                        let undo = ui.add(egui::Button::new(icons::with(
-                            icons::ARROW_COUNTER_CLOCKWISE,
-                            &label,
-                        )));
-                        if undo.clicked() {
-                            app.undo_last_tag_write();
-                            ui.close();
-                        }
-                    }
-                    if let Some(count) = app.move_undo.as_ref().map(Vec::len) {
-                        let undo = ui.add(egui::Button::new(icons::with(
-                            icons::ARROW_COUNTER_CLOCKWISE,
-                            &format!("Undo file moves ({count})"),
-                        )));
-                        if undo.clicked() {
-                            app.undo_file_moves();
-                            ui.close();
-                        }
-                    }
-                    ui.separator();
-                    let plain = ui.add(
-                        egui::Button::new(icons::with(
-                            icons::MONITOR_PLAY,
-                            if app.plain_view {
-                                tr("ui.back_to_the_library")
-                            } else {
-                                tr("ui.plain_now_playing_view")
-                            },
-                        ))
-                        .selected(app.plain_view),
-                    );
-                    if plain.clicked() {
-                        app.plain_view = !app.plain_view;
-                        ui.close();
-                    }
-                    let mini = ui.add(
-                        egui::Button::new(icons::with(icons::MONITOR_PLAY, "Mini player"))
-                            .selected(app.settings.mini_player),
-                    );
-                    if mini.clicked() {
-                        let enabled = !app.settings.mini_player;
-                        app.set_mini_player(enabled, ui.ctx());
-                        ui.close();
-                    }
-                    #[cfg(target_os = "linux")]
-                    {
-                        let tray = ui.add(
-                            egui::Button::new(icons::with(icons::MONITOR_PLAY, "Tray icon"))
-                                .selected(app.settings.tray_enabled),
+                ui.label(th::semibold("MusicWasp", 18.0).color(th::text()));
+                egui::Frame::new()
+                    .fill(th::raised())
+                    .corner_radius(th::corner(5))
+                    .inner_margin(egui::Margin::symmetric(5, 1))
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                                .size(9.0)
+                                .color(th::text_dim()),
                         );
-                        if tray.clicked() {
-                            let enabled = !app.settings.tray_enabled;
-                            app.set_tray_enabled(enabled, ui.ctx());
+                    });
+                ui.add_space(10.0);
+                let mut view_label = app.view_title();
+                if view_label.chars().count() > 26 {
+                    view_label = view_label.chars().take(25).collect::<String>() + "…";
+                }
+                ui.label(th::semibold(view_label, 12.5).color(th::text_dim()));
+                ui.add_space(8.0);
+
+                let mut search_label_id = None;
+                let search = egui::Frame::new()
+                    .fill(th::raised())
+                    .stroke(egui::Stroke::new(1.0, th::hairline()))
+                    .corner_radius(th::pill())
+                    .inner_margin(egui::Margin::symmetric(10, 3))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            let icon = ui
+                                .label(
+                                    icons::text(icons::MAGNIFYING_GLASS, 13.0)
+                                        .color(th::text_dim()),
+                                )
+                                .on_hover_text(
+                                    "Advanced search: artist:\"radiohead\" year:1997\n\
+                                 Fields: title, artist, album, albumartist, genre, format,\n\
+                                 year, track, disc, duration. Use >, <, >=, <= or 1990..1999.",
+                                );
+                            icon.widget_info(|| {
+                                WidgetInfo::labeled(WidgetType::Label, true, tr("ui.search_tracks"))
+                            });
+                            search_label_id = Some(icon.id);
+                            ui.add_sized(
+                                [168.0, 20.0],
+                                egui::TextEdit::singleline(&mut app.search)
+                                    .id(egui::Id::new("search_box"))
+                                    .frame(egui::Frame::new())
+                                    .margin(egui::Margin::ZERO)
+                                    .hint_text(tr("ui.search_or_artist_radiohead_year_1997")),
+                            )
+                        })
+                        .inner
+                    })
+                    .inner;
+                let search = if let Some(id) = search_label_id {
+                    search.labelled_by(id)
+                } else {
+                    search
+                };
+                if search.changed() {
+                    app.mark_tracks_dirty();
+                }
+                if app.focus_search {
+                    search.request_focus();
+                    app.focus_search = false;
+                }
+
+                let mut save_search = false;
+                let mut apply_saved: Option<String> = None;
+                let mut edit_saved: Option<i64> = None;
+                let mut delete_saved: Option<i64> = None;
+                let saved = app.saved_searches.clone();
+                let saved_menu = ui.menu_button(icons::text(icons::BOOKMARK_SIMPLE, 14.0), |ui| {
+                    if ui.button(tr("ui.save_current_search")).clicked() {
+                        save_search = true;
+                        ui.close();
+                    }
+                    if !saved.is_empty() {
+                        ui.separator();
+                    }
+                    for saved in &saved {
+                        let response = ui
+                            .button(format!("{} {}", icons::STAR.as_str(), saved.name))
+                            .on_hover_text(&saved.query);
+                        if response.clicked() {
+                            apply_saved = Some(saved.query.clone());
                             ui.close();
                         }
-                    }
-                    if ui
-                        .add_enabled(
-                            !app.plain_view,
-                            egui::Button::new(icons::with(icons::QUEUE, tr("menu.play_queue")))
-                                .selected(app.settings.queue_open),
-                        )
-                        .clicked()
-                    {
-                        app.settings.queue_open = !app.settings.queue_open;
-                        app.persist_settings();
-                        ui.close();
-                    }
-                    let columns = ui.add(
-                        egui::Button::new(icons::with(icons::COLUMNS, tr("menu.track_columns")))
-                            .selected(app.show_columns),
-                    );
-                    if columns.clicked() {
-                        app.show_columns = !app.show_columns;
-                        ui.close();
-                    }
-                    let grid = ui.add(
-                        egui::Button::new(icons::with(
-                            icons::GRID_FOUR,
-                            if app.album_view {
-                                tr("ui.back_to_the_track_list")
-                            } else {
-                                tr("menu.album_grid")
-                            },
-                        ))
-                        .selected(app.album_view),
-                    );
-                    if grid.clicked() {
-                        app.toggle_album_view();
-                        ui.close();
-                    }
-                    let eq = ui.add(
-                        egui::Button::new(icons::with(icons::SLIDERS, tr("menu.equalizer")))
-                            .selected(app.show_equalizer),
-                    );
-                    if eq.clicked() {
-                        app.show_equalizer = !app.show_equalizer;
-                        ui.close();
-                    }
-                    ui.separator();
-                    ui.menu_button(
-                        icons::with(icons::SORT_ASCENDING, tr("menu.sort_by")),
-                        |ui| {
-                            for (key, label) in [
-                                (SortKey::Rating, tr("column.rating")),
-                                (SortKey::PlayCount, tr("sort.play_count")),
-                                (SortKey::LastPlayed, tr("sort.last_played")),
-                                (SortKey::Added, tr("sort.date_added")),
-                            ] {
-                                if ui
-                                    .add(egui::Button::new(label).selected(app.sort == key))
-                                    .clicked()
-                                {
-                                    apply_sort(app, key);
-                                    ui.close();
-                                }
+                        response.context_menu(|ui| {
+                            if ui.button(tr("ui.edit")).clicked() {
+                                edit_saved = Some(saved.id);
+                                ui.close();
                             }
-                        },
-                    );
-                    ui.menu_button(icons::with(icons::FADERS, tr("menu.play_history")), |ui| {
-                        if ui
-                            .add(
-                                egui::Button::new(tr("filter.never_played"))
-                                    .selected(app.filter_never_played),
-                            )
-                            .clicked()
-                        {
-                            app.filter_never_played = !app.filter_never_played;
-                            app.mark_tracks_dirty();
+                            if ui.button(tr("common.delete")).clicked() {
+                                delete_saved = Some(saved.id);
+                                ui.close();
+                            }
+                        });
+                    }
+                });
+                let saved_menu = saved_menu.response;
+                saved_menu.widget_info(|| {
+                    WidgetInfo::labeled(WidgetType::Button, true, tr("ui.saved_searches"))
+                });
+                saved_menu.on_hover_text(tr("ui.saved_searches"));
+                if save_search {
+                    app.open_save_search_dialog();
+                }
+                if let Some(query) = apply_saved {
+                    app.apply_search(&query);
+                }
+                if let Some(id) = edit_saved {
+                    app.edit_saved_search(id);
+                }
+                if let Some(id) = delete_saved {
+                    app.delete_saved_search(id);
+                }
+
+                let selected = app.selected_in_view().len();
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let menu = ui.menu_button(icons::text(icons::LIST, 16.0), |ui| {
+                        let settings = ui.add(
+                            egui::Button::new(icons::with(icons::GEAR, tr("settings.title")))
+                                .selected(app.show_settings),
+                        );
+                        if settings.clicked() {
+                            app.show_settings = !app.show_settings;
                             ui.close();
                         }
-                        if ui
-                            .add(
-                                egui::Button::new(tr("filter.not_played_90"))
-                                    .selected(app.filter_not_played_90),
-                            )
-                            .clicked()
-                        {
-                            app.filter_not_played_90 = !app.filter_not_played_90;
-                            app.mark_tracks_dirty();
+                        let hygiene = ui.add(
+                            egui::Button::new(icons::with(
+                                icons::BROOM,
+                                tr("menu.library_hygiene"),
+                            ))
+                            .selected(app.show_hygiene),
+                        );
+                        if hygiene.clicked() {
+                            app.open_hygiene();
                             ui.close();
                         }
-                        if app.filter_never_played || app.filter_not_played_90 {
-                            ui.separator();
-                            if ui.button(tr("filter.clear")).clicked() {
-                                app.filter_never_played = false;
-                                app.filter_not_played_90 = false;
-                                app.mark_tracks_dirty();
+                        let organizer = ui.add(
+                            egui::Button::new(icons::with(
+                                icons::FOLDER,
+                                "Organize files from tags…",
+                            ))
+                            .selected(app.show_organize),
+                        );
+                        if organizer.clicked() {
+                            app.open_organize();
+                            ui.close();
+                        }
+                        if app.tag_undo.is_some() {
+                            let count = app.tag_undo.as_ref().map_or(0, Vec::len);
+                            let label = format!("{} ({count})", tr("ui.undo_last_tag_write"));
+                            let undo = ui.add(egui::Button::new(icons::with(
+                                icons::ARROW_COUNTER_CLOCKWISE,
+                                &label,
+                            )));
+                            if undo.clicked() {
+                                app.undo_last_tag_write();
                                 ui.close();
                             }
                         }
-                    });
-                });
-                let menu = menu.response;
-                menu.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tr("menu.main")));
-                menu.on_hover_text(tr("menu.main"));
-                ui.separator();
-                if !app.message.is_empty() {
-                    if ui.available_width() > 180.0 {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&app.message).size(11.0).color(th::accent()),
-                            )
-                            .truncate(),
+                        if let Some(count) = app.move_undo.as_ref().map(Vec::len) {
+                            let undo = ui.add(egui::Button::new(icons::with(
+                                icons::ARROW_COUNTER_CLOCKWISE,
+                                &format!("Undo file moves ({count})"),
+                            )));
+                            if undo.clicked() {
+                                app.undo_file_moves();
+                                ui.close();
+                            }
+                        }
+                        ui.separator();
+                        let plain = ui.add(
+                            egui::Button::new(icons::with(
+                                icons::MONITOR_PLAY,
+                                if app.plain_view {
+                                    tr("ui.back_to_the_library")
+                                } else {
+                                    tr("ui.plain_now_playing_view")
+                                },
+                            ))
+                            .selected(app.plain_view),
                         );
+                        if plain.clicked() {
+                            app.plain_view = !app.plain_view;
+                            ui.close();
+                        }
+                        let mini = ui.add(
+                            egui::Button::new(icons::with(icons::MONITOR_PLAY, "Mini player"))
+                                .selected(app.settings.mini_player),
+                        );
+                        if mini.clicked() {
+                            let enabled = !app.settings.mini_player;
+                            app.set_mini_player(enabled, ui.ctx());
+                            ui.close();
+                        }
+                        #[cfg(target_os = "linux")]
+                        {
+                            let tray = ui.add(
+                                egui::Button::new(icons::with(icons::MONITOR_PLAY, "Tray icon"))
+                                    .selected(app.settings.tray_enabled),
+                            );
+                            if tray.clicked() {
+                                let enabled = !app.settings.tray_enabled;
+                                app.set_tray_enabled(enabled, ui.ctx());
+                                ui.close();
+                            }
+                        }
+                        if ui
+                            .add_enabled(
+                                !app.plain_view,
+                                egui::Button::new(icons::with(icons::QUEUE, tr("menu.play_queue")))
+                                    .selected(app.settings.queue_open),
+                            )
+                            .clicked()
+                        {
+                            app.settings.queue_open = !app.settings.queue_open;
+                            app.persist_settings();
+                            ui.close();
+                        }
+                        let columns = ui.add(
+                            egui::Button::new(icons::with(
+                                icons::COLUMNS,
+                                tr("menu.track_columns"),
+                            ))
+                            .selected(app.show_columns),
+                        );
+                        if columns.clicked() {
+                            app.show_columns = !app.show_columns;
+                            ui.close();
+                        }
+                        let grid = ui.add(
+                            egui::Button::new(icons::with(
+                                icons::GRID_FOUR,
+                                if app.album_view {
+                                    tr("ui.back_to_the_track_list")
+                                } else {
+                                    tr("menu.album_grid")
+                                },
+                            ))
+                            .selected(app.album_view),
+                        );
+                        if grid.clicked() {
+                            app.toggle_album_view();
+                            ui.close();
+                        }
+                        let eq = ui.add(
+                            egui::Button::new(icons::with(icons::SLIDERS, tr("menu.equalizer")))
+                                .selected(app.show_equalizer),
+                        );
+                        if eq.clicked() {
+                            app.show_equalizer = !app.show_equalizer;
+                            ui.close();
+                        }
+                        ui.separator();
+                        ui.menu_button(
+                            icons::with(icons::SORT_ASCENDING, tr("menu.sort_by")),
+                            |ui| {
+                                for (key, label) in [
+                                    (SortKey::Rating, tr("column.rating")),
+                                    (SortKey::PlayCount, tr("sort.play_count")),
+                                    (SortKey::LastPlayed, tr("sort.last_played")),
+                                    (SortKey::Added, tr("sort.date_added")),
+                                ] {
+                                    if ui
+                                        .add(egui::Button::new(label).selected(app.sort == key))
+                                        .clicked()
+                                    {
+                                        apply_sort(app, key);
+                                        ui.close();
+                                    }
+                                }
+                            },
+                        );
+                        ui.menu_button(icons::with(icons::FADERS, tr("menu.play_history")), |ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(tr("filter.never_played"))
+                                        .selected(app.filter_never_played),
+                                )
+                                .clicked()
+                            {
+                                app.filter_never_played = !app.filter_never_played;
+                                app.mark_tracks_dirty();
+                                ui.close();
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new(tr("filter.not_played_90"))
+                                        .selected(app.filter_not_played_90),
+                                )
+                                .clicked()
+                            {
+                                app.filter_not_played_90 = !app.filter_not_played_90;
+                                app.mark_tracks_dirty();
+                                ui.close();
+                            }
+                            if app.filter_never_played || app.filter_not_played_90 {
+                                ui.separator();
+                                if ui.button(tr("filter.clear")).clicked() {
+                                    app.filter_never_played = false;
+                                    app.filter_not_played_90 = false;
+                                    app.mark_tracks_dirty();
+                                    ui.close();
+                                }
+                            }
+                        });
+                    });
+                    let menu = menu.response;
+                    menu.widget_info(|| {
+                        WidgetInfo::labeled(WidgetType::Button, true, tr("menu.main"))
+                    });
+                    menu.on_hover_text(tr("menu.main"));
+                    ui.add_space(4.0);
+                    let (chip_text, chip_color) =
+                        if !app.message.is_empty() && ui.available_width() > 180.0 {
+                            (Some(app.message.clone()), th::accent())
+                        } else if ui.available_width() < 210.0 {
+                            // Not enough room: the table already shows what matters.
+                            (None, th::text_dim())
+                        } else if selected > 1 {
+                            (Some(format!("{selected} selected")), th::accent())
+                        } else {
+                            app.lib
+                                .stats()
+                                .ok()
+                                .map(|s| {
+                                    (
+                                        format!(
+                                            "{} tracks · {} albums · {} artists · {}",
+                                            s.tracks,
+                                            s.albums,
+                                            s.artists,
+                                            fmt_size(s.total_bytes)
+                                        ),
+                                        th::text_dim(),
+                                    )
+                                })
+                                .map_or((None, th::text_dim()), |(text, color)| (Some(text), color))
+                        };
+                    if let Some(text) = chip_text {
+                        egui::Frame::new()
+                            .fill(th::raised())
+                            .corner_radius(th::pill())
+                            .inner_margin(egui::Margin::symmetric(10, 3))
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(text).size(10.5).color(chip_color),
+                                    )
+                                    .truncate(),
+                                );
+                            });
                     }
-                } else if ui.available_width() < 210.0 {
-                    // Not enough room: the table already shows what matters.
-                } else if selected > 1 {
-                    ui.label(
-                        RichText::new(format!("{selected} selected"))
-                            .size(11.0)
-                            .color(th::accent()),
-                    );
-                } else if let Ok(s) = app.lib.stats() {
-                    ui.label(
-                        RichText::new(format!(
-                            "{} tracks · {} albums · {} artists · {}",
-                            s.tracks,
-                            s.albums,
-                            s.artists,
-                            fmt_size(s.total_bytes)
-                        ))
-                        .size(11.0)
-                        .color(th::text_dim()),
-                    );
-                }
+                });
             });
         });
-        ui.add_space(5.0);
-    });
 }
 
 pub fn browser(app: &mut App, ui: &mut egui::Ui) {
@@ -753,10 +858,14 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
 
     egui::Panel::left("browser")
         .resizable(true)
-        .default_size(210.0)
+        .default_size(218.0)
         .min_size(150.0)
+        .frame(
+            egui::Frame::new()
+                .fill(th::bg_panel())
+                .inner_margin(egui::Margin::symmetric(8, 8)),
+        )
         .show(ui, |ui| {
-            ui.add_space(4.0);
             let full_h = ui.available_height();
 
             let sections = [
@@ -831,10 +940,8 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                         .auto_shrink([false, true])
                         .max_height(height_for(*weight))
                         .show(ui, |ui| {
-                            if ui
-                                .selectable_label(selected.is_none(), tr("ui.all"))
-                                .clicked()
-                            {
+                            ui.spacing_mut().item_spacing.y = 1.0;
+                            if nav_row(ui, selected.is_none(), 0.0, tr("ui.all")).clicked() {
                                 act = Some(match i {
                                     0 => Act::Genre(None),
                                     1 => Act::Artist(None),
@@ -843,7 +950,7 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                             }
                             for item in items {
                                 let sel = selected == Some(item);
-                                if ui.selectable_label(sel, item).clicked() {
+                                if nav_row(ui, sel, 0.0, item.as_str()).clicked() {
                                     let value = if sel { None } else { Some(item.clone()) };
                                     act = Some(match i {
                                         0 => Act::Genre(value),
@@ -854,7 +961,7 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                             }
                         });
                 }
-                ui.separator();
+                divider(ui);
             }
 
             // Playlists
@@ -921,9 +1028,12 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                     .auto_shrink([false, true])
                     .max_height(height_for(0.20).max(70.0))
                     .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 1.0;
                         let in_library = matches!(app.view, crate::app::View::Library);
-                        let all = ui.selectable_label(
+                        let all = nav_row(
+                            ui,
                             in_library,
+                            0.0,
                             icons::with(icons::MUSIC_NOTES, tr("ui.all_music")),
                         );
                         os_zones.push(crate::app::OsDropZone {
@@ -931,12 +1041,7 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                             rect: all.rect,
                         });
                         if os_files_over(ui, all.rect) {
-                            ui.painter().rect_stroke(
-                                all.rect,
-                                3.0,
-                                egui::Stroke::new(1.5_f32, th::accent()),
-                                egui::StrokeKind::Inside,
-                            );
+                            drop_highlight(ui, all.rect);
                         }
                         if all.clicked() {
                             act = Some(Act::Library);
@@ -1071,152 +1176,203 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
         .filter(|d| *d > 0.0);
     let duration = known_duration.unwrap_or(snap.duration);
 
-    egui::Panel::bottom("transport").show(ui, |ui| {
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            // Album art
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(62.0, 62.0), egui::Sense::hover());
-            match &app.art {
-                Some((_, tex)) => {
-                    ui.painter().image(
-                        tex.id(),
+    egui::Panel::bottom("transport")
+        .frame(
+            egui::Frame::new()
+                .fill(th::bg_panel())
+                .inner_margin(egui::Margin::symmetric(14, 9)),
+        )
+        .show(ui, |ui| {
+            ui.visuals_mut().selection.bg_fill = th::accent();
+            ui.horizontal(|ui| {
+                // Album art with a soft shadow so the bar reads as a raised surface.
+                let art_size = 64.0;
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(art_size, art_size), egui::Sense::hover());
+                if !th::is_square() {
+                    ui.painter().rect_filled(
+                        rect.translate(egui::vec2(0.0, 3.0)).expand(1.0),
+                        th::corner(10),
+                        Color32::from_black_alpha(if th::skin().is_light() { 26 } else { 70 }),
+                    );
+                }
+                match &app.art {
+                    Some((_, tex)) => {
+                        egui::Image::new((tex.id(), egui::vec2(art_size, art_size)))
+                            .corner_radius(th::corner(8))
+                            .paint_at(ui, rect);
+                    }
+                    None => {
+                        ui.painter()
+                            .rect_filled(rect, th::corner(8), th::bg_row_alt());
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            icons::MUSIC_NOTES.as_str(),
+                            egui::FontId::proportional(28.0),
+                            th::text_dim(),
+                        );
+                    }
+                }
+                if !th::is_square() {
+                    ui.painter().rect_stroke(
                         rect,
-                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                        Color32::WHITE,
+                        th::corner(8),
+                        egui::Stroke::new(1.0, th::hairline()),
+                        egui::StrokeKind::Inside,
                     );
                 }
-                None => {
-                    ui.painter().rect_filled(rect, 3.0, th::bg_row_alt());
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        icons::MUSIC_NOTES.as_str(),
-                        egui::FontId::proportional(28.0),
-                        th::text_dim(),
+
+                ui.add_space(11.0);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    let title = current_track
+                        .as_ref()
+                        .map(|t| t.title.clone())
+                        .unwrap_or_else(|| tr("transport.nothing_playing").to_string());
+                    let sub = current_track
+                        .as_ref()
+                        .map(|t| {
+                            if t.album.is_empty() {
+                                t.artist.clone()
+                            } else {
+                                format!("{}  ·  {}", t.artist, t.album)
+                            }
+                        })
+                        .unwrap_or_else(|| tr("transport.hint").to_string());
+                    ui.add(
+                        egui::Label::new(th::semibold(title, 14.5).color(th::text())).truncate(),
                     );
-                }
-            }
+                    ui.add(
+                        egui::Label::new(RichText::new(sub).size(11.0).color(th::text_dim()))
+                            .truncate(),
+                    );
 
-            ui.add_space(8.0);
-            ui.vertical(|ui| {
-                let title = current_track
-                    .as_ref()
-                    .map(|t| t.title.clone())
-                    .unwrap_or_else(|| tr("transport.nothing_playing").to_string());
-                let sub = current_track
-                    .as_ref()
-                    .map(|t| format!("{}  ·  {}", t.artist, t.album))
-                    .unwrap_or_else(|| tr("transport.hint").to_string());
-                ui.label(RichText::new(title).size(15.0).strong().color(th::text()));
-                ui.label(RichText::new(sub).size(11.0).color(th::text_dim()));
+                    ui.add_space(5.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        if icons::transport(
+                            ui,
+                            icons::SKIP_BACK,
+                            15.0,
+                            false,
+                            tr("transport.previous"),
+                        )
+                        .clicked()
+                        {
+                            app.prev_track();
+                        }
+                        let playing = snap.status == musicwasp_core::PlayerStatus::Playing;
+                        let icon = if playing { icons::PAUSE } else { icons::PLAY };
+                        if icons::transport(ui, icon, 19.0, true, "Play / pause").clicked() {
+                            app.toggle_pause();
+                        }
+                        if icons::transport(
+                            ui,
+                            icons::SKIP_FORWARD,
+                            15.0,
+                            false,
+                            tr("transport.next"),
+                        )
+                        .clicked()
+                        {
+                            app.next_track();
+                        }
+                        if icons::transport(ui, icons::STOP, 12.0, false, tr("transport.stop"))
+                            .clicked()
+                        {
+                            app.stop();
+                        }
+                        ui.add_space(7.0);
 
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    if icons::transport(ui, icons::SKIP_BACK, 16.0, false, tr("transport.previous"))
+                        let repeat_icon = if app.repeat == crate::app::RepeatMode::One {
+                            icons::REPEAT_ONCE
+                        } else {
+                            icons::REPEAT
+                        };
+                        if icons::toggle(
+                            ui,
+                            app.repeat != crate::app::RepeatMode::Off,
+                            repeat_icon,
+                            app.repeat.label(),
+                        )
                         .clicked()
-                    {
-                        app.prev_track();
-                    }
-                    let playing = snap.status == musicwasp_core::PlayerStatus::Playing;
-                    let icon = if playing { icons::PAUSE } else { icons::PLAY };
-                    if icons::transport(ui, icon, 18.0, true, "Play / pause").clicked() {
-                        app.toggle_pause();
-                    }
-                    if icons::transport(ui, icons::SKIP_FORWARD, 16.0, false, tr("transport.next"))
-                        .clicked()
-                    {
-                        app.next_track();
-                    }
-                    if icons::transport(ui, icons::STOP, 14.0, false, tr("transport.stop"))
-                        .clicked()
-                    {
-                        app.stop();
-                    }
-                    ui.separator();
+                        {
+                            app.repeat = app.repeat.next();
+                        }
+                        if icons::toggle(ui, app.shuffle, icons::SHUFFLE, tr("transport.shuffle"))
+                            .clicked()
+                        {
+                            app.shuffle = !app.shuffle;
+                        }
+                    });
+                });
 
-                    let repeat_icon = if app.repeat == crate::app::RepeatMode::One {
-                        icons::REPEAT_ONCE
-                    } else {
-                        icons::REPEAT
-                    };
-                    if icons::toggle(
-                        ui,
-                        app.repeat != crate::app::RepeatMode::Off,
-                        repeat_icon,
-                        app.repeat.label(),
-                    )
-                    .clicked()
-                    {
-                        app.repeat = app.repeat.next();
-                    }
-                    if icons::toggle(ui, app.shuffle, icons::SHUFFLE, tr("transport.shuffle"))
-                        .clicked()
-                    {
-                        app.shuffle = !app.shuffle;
-                    }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(4.0);
+                    ui.spacing_mut().slider_width = 100.0;
+                    let volume =
+                        ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
+                    volume.widget_info(|| {
+                        WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.volume"))
+                    });
+                    ui.label(icons::text(icons::SPEAKER_HIGH, 14.0).color(th::text_dim()))
+                        .on_hover_text(tr("transport.volume"));
                 });
             });
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_space(8.0);
-                ui.spacing_mut().slider_width = 120.0;
-                let volume =
-                    ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
-                volume.widget_info(|| {
-                    WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.volume"))
+            ui.add_space(5.0);
+
+            // Seek row: elapsed | slider | total
+            ui.horizontal(|ui| {
+                ui.add_sized(
+                    [42.0, 14.0],
+                    egui::Label::new(
+                        RichText::new(fmt_time(app.seek_drag.unwrap_or(snap.position)))
+                            .monospace()
+                            .size(10.5)
+                            .color(th::text_dim()),
+                    ),
+                );
+                let mut pos = app.seek_drag.unwrap_or(snap.position);
+                let max = duration.max(1.0);
+                ui.spacing_mut().slider_width = (ui.available_width() - 100.0).max(100.0);
+                let resp = ui.add(
+                    egui::Slider::new(&mut pos, 0.0..=max)
+                        .show_value(false)
+                        .trailing_fill(true),
+                );
+                resp.widget_info(|| {
+                    WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
                 });
-                ui.label(icons::text(icons::SPEAKER_HIGH, 14.0).color(th::text_dim()))
-                    .on_hover_text(tr("transport.volume"));
-            });
-        });
-
-        ui.add_space(6.0);
-
-        // Seek row: elapsed | slider | total
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(fmt_time(app.seek_drag.unwrap_or(snap.position)))
-                    .monospace()
-                    .size(11.0)
-                    .color(th::text_dim()),
-            );
-            let mut pos = app.seek_drag.unwrap_or(snap.position);
-            let max = duration.max(1.0);
-            ui.spacing_mut().slider_width = (ui.available_width() - 60.0).max(100.0);
-            let resp = ui.add(
-                egui::Slider::new(&mut pos, 0.0..=max)
-                    .show_value(false)
-                    .trailing_fill(true),
-            );
-            resp.widget_info(|| {
-                WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
-            });
-            if resp.dragged() {
-                app.seek_drag = Some(pos);
-            }
-            if resp.drag_stopped() {
-                if let Some(p) = &app.player {
-                    p.seek(pos);
+                if resp.dragged() {
+                    app.seek_drag = Some(pos);
                 }
-                app.seek_drag = None;
-            }
-            ui.label(
-                RichText::new(fmt_time(duration))
-                    .monospace()
-                    .size(11.0)
-                    .color(th::text_dim()),
-            );
-        });
+                if resp.drag_stopped() {
+                    if let Some(p) = &app.player {
+                        p.seek(pos);
+                    }
+                    app.seek_drag = None;
+                }
+                ui.add_sized(
+                    [42.0, 14.0],
+                    egui::Label::new(
+                        RichText::new(fmt_time(duration))
+                            .monospace()
+                            .size(10.5)
+                            .color(th::text_dim()),
+                    ),
+                );
+            });
 
-        if let Some(err) = &app.audio_error {
-            ui.label(
-                RichText::new(format!("audio unavailable: {err}"))
-                    .size(10.0)
-                    .color(Color32::from_rgb(220, 110, 110)),
-            );
-        }
-        ui.add_space(4.0);
-    });
+            if let Some(err) = &app.audio_error {
+                ui.label(
+                    RichText::new(format!("audio unavailable: {err}"))
+                        .size(10.0)
+                        .color(Color32::from_rgb(220, 110, 110)),
+                );
+            }
+        });
 
     // Volume changed by the slider above is pushed to the engine next frame.
     if let Some(p) = &app.player {
@@ -1258,19 +1414,25 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
         let art = (avail.y * 0.40).clamp(140.0, 330.0).min(avail.x * 0.42);
 
         ui.vertical_centered(|ui| {
+            ui.visuals_mut().selection.bg_fill = th::accent();
             ui.add_space(10.0);
             let (rect, _) = ui.allocate_exact_size(egui::vec2(art, art), egui::Sense::hover());
+            if !th::is_square() {
+                ui.painter().rect_filled(
+                    rect.translate(egui::vec2(0.0, 6.0)).expand(2.0),
+                    th::corner(14),
+                    Color32::from_black_alpha(if th::skin().is_light() { 24 } else { 80 }),
+                );
+            }
             match &app.art {
                 Some((_, tex)) => {
-                    ui.painter().image(
-                        tex.id(),
-                        rect,
-                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                        Color32::WHITE,
-                    );
+                    egui::Image::new((tex.id(), egui::vec2(art, art)))
+                        .corner_radius(th::corner(12))
+                        .paint_at(ui, rect);
                 }
                 None => {
-                    ui.painter().rect_filled(rect, 6.0, th::bg_row_alt());
+                    ui.painter()
+                        .rect_filled(rect, th::corner(12), th::bg_row_alt());
                     ui.painter().text(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
@@ -1280,19 +1442,21 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                     );
                 }
             }
-            ui.painter().rect_stroke(
-                rect,
-                6.0,
-                egui::Stroke::new(1.0_f32, th::bg_selected()),
-                egui::StrokeKind::Inside,
-            );
+            if !th::is_square() {
+                ui.painter().rect_stroke(
+                    rect,
+                    th::corner(12),
+                    egui::Stroke::new(1.0_f32, th::hairline()),
+                    egui::StrokeKind::Inside,
+                );
+            }
 
-            ui.add_space(18.0);
+            ui.add_space(20.0);
             let title = current_track
                 .as_ref()
                 .map(|t| t.title.clone())
                 .unwrap_or_else(|| tr("transport.nothing_playing").to_string());
-            ui.label(RichText::new(title).size(26.0).strong().color(th::text()));
+            ui.label(th::semibold(title, 27.0).color(th::text()));
 
             ui.add_space(2.0);
             let subtitle = current_track
@@ -1413,17 +1577,14 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
             match &upcoming {
                 Some(track) => {
                     ui.label(
-                        RichText::new(format!(
-                            "{} {}",
-                            icons::QUEUE.as_str(),
-                            tr("queue.up_next_upper")
-                        ))
-                        .size(10.0)
-                        .strong()
+                        th::semibold(
+                            format!("{} {}", icons::QUEUE.as_str(), tr("queue.up_next_upper")),
+                            10.0,
+                        )
                         .color(th::text_dim()),
                     );
                     ui.add_space(4.0);
-                    ui.label(RichText::new(&track.title).size(15.0).color(th::text()));
+                    ui.label(th::semibold(&track.title, 15.0).color(th::text()));
                     ui.label(
                         RichText::new(format!("{}  ·  {}", track.artist, track.album))
                             .size(11.0)
@@ -1512,14 +1673,20 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
             .default_size(286.0)
             .min_size(220.0)
             .max_size(440.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(th::bg_panel())
+                    .inner_margin(egui::Margin::symmetric(10, 8)),
+            )
             .show(ui, |ui| {
-                ui.add_space(6.0);
+                ui.add_space(2.0);
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(format!("{} {}", icons::QUEUE.as_str(), tr("queue.title")))
-                            .size(10.0)
-                            .strong()
-                            .color(th::text_dim()),
+                        th::semibold(
+                            format!("{} {}", icons::QUEUE.as_str(), tr("queue.title")),
+                            10.0,
+                        )
+                        .color(th::text_dim()),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if icons::compact(ui, icons::X, tr("ui.hide_the_play_queue")).clicked() {
@@ -1537,25 +1704,15 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                         }
                     });
                 });
-                ui.separator();
+                divider(ui);
 
                 if let Some(track) = &current_track {
                     ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("NOW PLAYING")
-                            .size(9.5)
-                            .strong()
-                            .color(th::accent()),
-                    );
+                    ui.label(th::semibold("NOW PLAYING", 9.5).color(th::accent()));
                     ui.add_space(2.0);
                     ui.add(
-                        egui::Label::new(
-                            RichText::new(&track.title)
-                                .size(13.0)
-                                .strong()
-                                .color(th::text()),
-                        )
-                        .truncate(),
+                        egui::Label::new(th::semibold(&track.title, 13.0).color(th::text()))
+                            .truncate(),
                     );
                     ui.add(
                         egui::Label::new(
@@ -1565,18 +1722,12 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                         )
                         .truncate(),
                     );
-                    ui.add_space(6.0);
-                    ui.separator();
+                    ui.add_space(4.0);
                 }
 
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(tr("queue.up_next_upper"))
-                            .size(9.5)
-                            .strong()
-                            .color(th::text_dim()),
-                    );
+                    ui.label(th::semibold(tr("queue.up_next_upper"), 9.5).color(th::text_dim()));
                     if !upcoming.is_empty() {
                         ui.label(
                             RichText::new(format!("{} track(s)", upcoming.len()))
@@ -1648,12 +1799,13 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                             ui.horizontal(|ui| {
                                 let width = ui.available_width().max(40.0);
                                 let (rect, resp) = ui.allocate_exact_size(
-                                    egui::vec2(width, 23.0),
+                                    egui::vec2(width, 24.0),
                                     egui::Sense::click_and_drag(),
                                 );
 
                                 if resp.hovered() {
-                                    ui.painter().rect_filled(rect, 3.0, th::bg_row_alt());
+                                    ui.painter()
+                                        .rect_filled(rect, th::corner(6), th::hover_fill());
                                 }
 
                                 // Fixed grid columns keep every title and artist at the
@@ -1869,6 +2021,15 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
 
 /// Album grid with cover tiles. Right-click a tile for the cover tools.
 pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
+    // No CentralPanel wraps this view, so paint the surface explicitly. The
+    // fill stays translucent for wallpaper/gradient skins.
+    let background = ui.available_rect_before_wrap();
+    ui.painter().rect_filled(
+        background,
+        egui::CornerRadius::ZERO,
+        ui.visuals().panel_fill,
+    );
+
     let groups = app.album_groups.clone();
     if groups.is_empty() {
         ui.centered_and_justified(|ui| {
@@ -1904,9 +2065,9 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
         );
     });
 
-    let gap = 8.0;
-    let tile_width = 170.0;
-    let tile_height = 212.0;
+    let gap = 10.0;
+    let tile_width = 184.0;
+    let tile_height = 238.0;
     let columns = (((ui.available_width() + gap) / (tile_width + gap)).floor() as usize).max(1);
     let rows = groups.len().div_ceil(columns);
 
@@ -1934,55 +2095,82 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                                 ),
                             )
                         });
-                        if response.hovered() {
-                            ui.painter().rect_filled(rect, 4.0, th::bg_row_alt());
+                        let hover =
+                            ui.ctx()
+                                .animate_bool_with_time(response.id, response.hovered(), 0.12);
+                        let tile = rect.translate(egui::vec2(0.0, -2.0 * hover));
+                        if hover > 0.0 && !th::is_square() {
+                            ui.painter().rect_filled(
+                                tile,
+                                th::corner(10),
+                                th::alpha(th::hover_fill(), (hover * 255.0) as u8),
+                            );
                         }
 
                         let cover = egui::Rect::from_min_size(
-                            rect.min + egui::vec2(10.0, 8.0),
-                            egui::vec2(tile_width - 20.0, tile_width - 20.0),
+                            tile.min + egui::vec2(8.0, 8.0),
+                            egui::vec2(tile_width - 16.0, tile_width - 16.0),
                         );
-                        if let Some(texture) = app.album_cover_texture(&ctx, group) {
-                            ui.painter().image(
-                                texture.id(),
-                                cover,
-                                egui::Rect::from_min_max(
-                                    egui::pos2(0.0, 0.0),
-                                    egui::pos2(1.0, 1.0),
-                                ),
-                                Color32::WHITE,
+                        if !th::is_square() {
+                            ui.painter().rect_filled(
+                                cover.translate(egui::vec2(0.0, 3.0)),
+                                th::corner(10),
+                                Color32::from_black_alpha(if th::skin().is_light() {
+                                    24
+                                } else {
+                                    60
+                                }),
                             );
+                        }
+                        if let Some(texture) = app.album_cover_texture(&ctx, group) {
+                            egui::Image::new((texture.id(), cover.size()))
+                                .corner_radius(th::corner(9))
+                                .paint_at(ui, cover);
                         } else {
-                            ui.painter().rect_filled(cover, 3.0, th::bg_row_alt());
+                            ui.painter()
+                                .rect_filled(cover, th::corner(9), th::bg_row_alt());
                             ui.painter().text(
                                 cover.center(),
                                 egui::Align2::CENTER_CENTER,
                                 "NO COVER",
-                                egui::FontId::proportional(11.0),
+                                egui::FontId::proportional(10.5),
                                 th::text_dim(),
+                            );
+                        }
+                        if !th::is_square() {
+                            ui.painter().rect_stroke(
+                                cover,
+                                th::corner(9),
+                                egui::Stroke::new(
+                                    1.0,
+                                    if hover > 0.0 {
+                                        th::alpha(th::accent(), (hover * 150.0) as u8)
+                                    } else {
+                                        th::hairline()
+                                    },
+                                ),
+                                egui::StrokeKind::Inside,
                             );
                         }
 
                         let mut labels = ui.new_child(
                             egui::UiBuilder::new()
-                                .max_rect(rect.shrink2(egui::vec2(10.0, 0.0)))
+                                .max_rect(egui::Rect::from_min_max(
+                                    egui::pos2(cover.left(), cover.bottom() + 9.0),
+                                    egui::pos2(cover.right(), tile.bottom()),
+                                ))
                                 .layout(egui::Layout::top_down(egui::Align::Min)),
                         );
-                        labels.add_space(tile_width - 10.0);
+                        labels.spacing_mut().item_spacing.y = 1.0;
                         labels.add(
-                            egui::Label::new(
-                                RichText::new(&group.album)
-                                    .size(12.0)
-                                    .strong()
-                                    .color(th::text()),
-                            )
-                            .truncate()
-                            .selectable(false),
+                            egui::Label::new(th::semibold(&group.album, 12.5).color(th::text()))
+                                .truncate()
+                                .selectable(false),
                         );
                         labels.add(
                             egui::Label::new(
                                 RichText::new(&group.artist)
-                                    .size(10.5)
+                                    .size(11.0)
                                     .color(th::text_dim()),
                             )
                             .truncate()
@@ -2171,14 +2359,12 @@ fn track_art(
     let texture =
         crate::app::load_cover_texture(ctx, covers, &key, std::path::Path::new(&track.path));
     if let Some(texture) = texture {
-        ui.painter().image(
-            texture.id(),
-            rect,
-            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            Color32::WHITE,
-        );
+        egui::Image::new((texture.id(), rect.size()))
+            .corner_radius(th::corner(5))
+            .paint_at(ui, rect);
     } else {
-        ui.painter().rect_filled(rect, 3.0, th::bg_row_alt());
+        ui.painter()
+            .rect_filled(rect, th::corner(5), th::bg_row_alt());
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -2207,7 +2393,11 @@ fn rating_stars(ui: &mut egui::Ui, rating: u8, interactive: bool, size: f32) -> 
         ui.spacing_mut().item_spacing.x = 1.0;
         for value in 1..=5u8 {
             let filled = rating >= value;
-            let color = if filled { th::accent() } else { th::text_dim() };
+            let color = if filled {
+                th::accent()
+            } else {
+                th::blend(th::text_dim(), th::bg_dark(), 0.55)
+            };
             let mut button = egui::Button::new(icons::text(icons::STAR, size).color(color))
                 .frame(false)
                 .min_size(egui::vec2(size + 1.0, size + 1.0));
@@ -2372,12 +2562,12 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
         let art_column = layout == TrackLayout::AlbumArt;
         let compact = layout == TrackLayout::Compact;
         let row_height = match layout {
-            TrackLayout::Standard => 22.0,
-            TrackLayout::Compact => 18.0,
-            TrackLayout::AlbumArt => 48.0,
+            TrackLayout::Standard => 26.0,
+            TrackLayout::Compact => 19.0,
+            TrackLayout::AlbumArt => 52.0,
         };
-        let header_height = if compact { 20.0 } else { 24.0 };
-        let title_size = if compact { 11.5 } else { 12.5 };
+        let header_height = if compact { 22.0 } else { 26.0 };
+        let title_size = if compact { 11.5 } else { 13.0 };
         let text_size = if compact { 11.0 } else { 12.0 };
         let small_size = if compact { 10.5 } else { 11.5 };
 
@@ -2428,6 +2618,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                 .map(|column| format!("{column:?}"))
                 .unwrap_or_else(|| "none".to_string())
         );
+        let row_painter = ui.painter().clone();
         let mut table = TableBuilder::new(ui)
             .id_salt(table_id)
             .striped(true)
@@ -2468,10 +2659,11 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
             } else {
                 String::new()
             };
-            let text = RichText::new(format!("{label}{arrow}"))
-                .size(11.0)
-                .strong()
-                .color(if active { th::accent() } else { th::text_dim() });
+            let text = th::semibold(format!("{label}{arrow}"), 10.5).color(if active {
+                th::accent()
+            } else {
+                th::text_dim()
+            });
             let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
             if resp.clicked() {
                 if let Some(k) = key {
@@ -2506,6 +2698,12 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                     });
                 }
                 h.col(|_ui| {});
+                let header_rect = h.response().rect;
+                row_painter.hline(
+                    header_rect.x_range(),
+                    header_rect.bottom() - 0.5,
+                    egui::Stroke::new(1.0, th::hairline()),
+                );
             })
             .body(|body| {
                 captured_widths = body.widths().to_vec();
@@ -2546,15 +2744,9 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                             }
                             TrackColumn::Title => {
                                 let (_, cell) = row.col(|ui| {
-                                    let text = RichText::new(&track.title).size(title_size);
-                                    ui.add(
-                                        egui::Label::new(if is_playing {
-                                            text.color(th::accent()).strong()
-                                        } else {
-                                            text
-                                        })
-                                        .truncate(),
-                                    );
+                                    let text = th::semibold(&track.title, title_size)
+                                        .color(if is_playing { th::accent() } else { th::text() });
+                                    ui.add(egui::Label::new(text).truncate());
                                 });
                                 if cell.clicked() {
                                     cell_focus = Some(TrackField::Title);
@@ -2669,6 +2861,14 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                     row.col(|_ui| {});
 
                     let resp = row.response();
+                    if is_sel && !art_column {
+                        let rect = resp.rect;
+                        let bar = egui::Rect::from_min_size(
+                            egui::pos2(rect.left() + 2.0, rect.top() + 5.0),
+                            egui::vec2(3.0, (rect.height() - 10.0).max(4.0)),
+                        );
+                        row_painter.rect_filled(bar, th::pill(), th::accent());
+                    }
                     if resp.secondary_clicked() && !is_sel {
                         act = Some(RowAct::Click {
                             index: idx,

@@ -7,21 +7,62 @@
 use crate::theme as th;
 use egui::{RichText, WidgetInfo, WidgetType};
 use egui_phosphor_icons::Icon;
+use std::sync::Arc;
 
 pub use egui_phosphor_icons::icons::*;
 
-/// Register the Phosphor fonts. Call once during startup.
+/// The bundled UI typeface. Inter ships under the SIL Open Font License; see
+/// `assets/fonts/OFL.txt`.
+const INTER_REGULAR: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
+const INTER_SEMIBOLD: &[u8] = include_bytes!("../../assets/fonts/Inter-SemiBold.ttf");
+
+/// Register the UI and Phosphor fonts. Call once during startup.
 pub fn install(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     egui_phosphor_icons::add_fonts(&mut fonts);
 
-    // `add_fonts` only creates named families; add the regular glyphs as a
-    // fallback so icons work inside normal text.
-    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-        if let Some(list) = fonts.families.get_mut(&family) {
-            list.push("phosphor-icons".to_owned());
-        }
+    fonts.font_data.insert(
+        "inter".to_owned(),
+        Arc::new(egui::FontData::from_static(INTER_REGULAR)),
+    );
+    fonts.font_data.insert(
+        "inter-semibold".to_owned(),
+        Arc::new(egui::FontData::from_static(INTER_SEMIBOLD)),
+    );
+
+    // Inter is the primary face, with the egui defaults kept as fallbacks for
+    // scripts and symbols Inter does not cover. Phosphor icons come last so
+    // icon glyphs embedded in labels still resolve.
+    let proportional = fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default();
+    proportional.insert(0, "inter".to_owned());
+    if !proportional.iter().any(|name| name == "phosphor-icons") {
+        proportional.push("phosphor-icons".to_owned());
     }
+
+    let monospace = fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default();
+    monospace.push("inter".to_owned());
+    if !monospace.iter().any(|name| name == "phosphor-icons") {
+        monospace.push("phosphor-icons".to_owned());
+    }
+
+    // A real semibold face for headings and emphasis. `.strong()` alone can
+    // only change the colour, so the display weight gets its own family.
+    let proportional = fonts
+        .families
+        .get(&egui::FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    let mut semibold = vec!["inter-semibold".to_owned()];
+    semibold.extend(proportional);
+    fonts
+        .families
+        .insert(egui::FontFamily::Name(th::SEMIBOLD_FAMILY.into()), semibold);
 
     ctx.set_fonts(fonts);
 }
@@ -117,7 +158,8 @@ pub fn toggle(ui: &mut egui::Ui, selected: bool, icon: Icon, tooltip: &str) -> e
     response.on_hover_text(tooltip)
 }
 
-/// A transport control. `primary` fills the button with the accent colour.
+/// A transport control. `primary` fills a circular button with the accent
+/// colour; the others stay frameless until hovered.
 pub fn transport(
     ui: &mut egui::Ui,
     icon: Icon,
@@ -125,11 +167,19 @@ pub fn transport(
     primary: bool,
     tooltip: &str,
 ) -> egui::Response {
-    let mut glyph = text(icon, size);
+    let diameter = if primary {
+        (size + 20.0).max(36.0)
+    } else {
+        (size + 12.0).max(28.0)
+    };
+    let mut glyph = text(icon, size + if primary { 2.0 } else { 0.0 });
     if primary {
         glyph = glyph.color(th::current().bg_dark);
     }
-    let mut button = egui::Button::new(glyph).min_size(egui::vec2(size + 18.0, 30.0));
+    let mut button = egui::Button::new(glyph)
+        .min_size(egui::vec2(diameter, diameter))
+        .corner_radius(th::pill())
+        .frame_when_inactive(primary);
     if primary {
         button = button.fill(th::accent());
     }
