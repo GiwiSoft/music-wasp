@@ -17,6 +17,7 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - Native playback with gapless preloading, crossfade, ReplayGain, EQ and output selection
 - Properties editing with per-track ReplayGain, batch actions and undo
 - MusicBrainz auto-tagging with a reviewable file-to-track mapping
+- AcoustID fingerprint identification (pure-Rust Chromaprint, build-time key)
 - Album grid with cover fetch, replacement and `cover.jpg` sidecars
 - Manual and smart playlists, nested folders and M3U import/export
 - Library hygiene with missing-file detection and rename reconciliation
@@ -81,6 +82,22 @@ The app renders MilkDrop presets with `wgpu` and feeds them the post-EQ audio st
 
 ![Visualizer](docs/visualizer.png)
 
+## AcoustID identification
+
+Auto-tag can identify an album from one track's audio fingerprint instead of its tags:
+
+1. Select the album's tracks and open **Auto-tag**.
+2. Press **Identify with AcoustID**.
+3. Pick the release AcoustID returns and apply as usual.
+
+Fingerprinting is built in: MusicWasp decodes the file with its own decoder and runs the pure-Rust
+Chromaprint port. No `fpcalc`, FFmpeg or other external program is needed on Linux or Windows.
+
+Release builds embed the free AcoustID application key from the GitHub `production` environment
+secret `ACCOUSTID_APIKEY`. Local builds read it from an uncommitted `.env` file at the repository
+root (see `.env.example`). Fingerprints are sent to AcoustID only when **Identify with AcoustID**
+is pressed.
+
 ## CLI
 
 ```bash
@@ -135,3 +152,6 @@ The bundled MilkDrop presets come from [lactea](https://github.com/M0Rf30/lactea
 Apache-2.0) and the original Ryan Geiss preset pack collected by
 [projectM](https://github.com/projectM-visualizer/presets-milkdrop-original); see
 [`assets/presets/README.md`](assets/presets/README.md) for attribution.
+
+AcoustID fingerprinting runs the MIT-licensed
+[rusty-chromaprint](https://github.com/darksv/rusty-chromaprint) port in-process.

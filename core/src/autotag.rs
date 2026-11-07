@@ -3,8 +3,9 @@
 //!
 //! MusicBrainz asks for one request per second and a real User-Agent; both are
 //! enforced here. Cover art comes from the Cover Art Archive, which needs no
-//! key. AcoustID fingerprinting needs an API key *and* the `fpcalc` binary, so
-//! it is deliberately not part of this path.
+//! key. AcoustID identification additionally needs an application API key and
+//! runs the pure-Rust Chromaprint port; it is optional and only runs when
+//! requested.
 
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
@@ -21,6 +22,7 @@ pub const USER_AGENT: &str = concat!(
 
 const MB_API: &str = "https://musicbrainz.org/ws/2";
 const CAA_API: &str = "https://coverartarchive.org";
+const ACOUSTID_API: &str = "https://api.acoustid.org/v2/lookup";
 
 fn mb_api() -> String {
     std::env::var("MUSICWASP_MUSICBRAINZ_API").unwrap_or_else(|_| MB_API.to_string())
@@ -28,6 +30,30 @@ fn mb_api() -> String {
 
 fn caa_api() -> String {
     std::env::var("MUSICWASP_COVERART_API").unwrap_or_else(|_| CAA_API.to_string())
+}
+
+fn acoustid_api() -> String {
+    std::env::var("MUSICWASP_ACOUSTID_API").unwrap_or_else(|_| ACOUSTID_API.to_string())
+}
+
+/// Application key compiled in from the build environment or the local `.env`.
+/// Empty when the build had neither.
+pub fn builtin_acoustid_key() -> &'static str {
+    option_env!("MUSICWASP_ACOUSTID_KEY").unwrap_or("")
+}
+
+/// Key used at runtime: the key baked in at build time. Debug builds accept a
+/// `MUSICWASP_ACOUSTID_KEY` override for development and tests; release builds
+/// have no runtime override.
+pub fn acoustid_key() -> String {
+    #[cfg(debug_assertions)]
+    {
+        let runtime = std::env::var("MUSICWASP_ACOUSTID_KEY").unwrap_or_default();
+        if !runtime.trim().is_empty() {
+            return runtime.trim().to_string();
+        }
+    }
+    builtin_acoustid_key().to_string()
 }
 
 // ---------------------------------------------------------------- public types
@@ -87,6 +113,13 @@ pub struct Match {
 pub struct Cover {
     pub data: Vec<u8>,
     pub mime: String,
+}
+
+/// Chromaprint output for one file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fingerprint {
+    pub duration: u64,
+    pub fingerprint: String,
 }
 
 // ---------------------------------------------------------------- HTTP plumbing
@@ -230,6 +263,285 @@ pub fn search(artist: &str, album: &str) -> Result<Vec<Candidate>> {
 
 fn escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+// ---------------------------------------------------------------- AcoustID
+
+/// Compute a Chromaprint fingerprint with the pure-Rust decoder and
+/// fingerprinter. No external `fpcalc` or codec library is required.
+#[cfg(feature = "audio")]
+pub fn fingerprint(path: &Path) -> Result<Fingerprint> {
+    use base64::prelude::{Engine, BASE64_URL_SAFE_NO_PAD};
+    use rodio::Source;
+
+    let file =
+        std::fs::File::open(path).with_context(|| format!("cannot open {}", path.display()))?;
+    let decoder = rodio::Decoder::new(std::io::BufReader::new(file))
+        .with_context(|| format!("cannot decode {}", path.display()))?;
+    let sample_rate = decoder.sample_rate();
+    let channels = decoder.channels();
+    if sample_rate == 0 || channels == 0 {
+        anyhow::bail!("{} has no audio stream", path.display());
+    }
+
+    let configuration = rusty_chromaprint::Configuration::default();
+    let mut printer = rusty_chromaprint::Fingerprinter::new(&configuration);
+    printer
+        .start(sample_rate, u32::from(channels))
+        .map_err(|error| anyhow::anyhow!("cannot resample {}: {error}", path.display()))?;
+
+    let mut samples = 0u64;
+    let mut buffer = Vec::with_capacity(8192);
+    for sample in decoder {
+        buffer.push(sample);
+        samples += 1;
+        if buffer.len() >= 8192 {
+            printer.consume(&buffer);
+            buffer.clear();
+        }
+    }
+    if !buffer.is_empty() {
+        printer.consume(&buffer);
+    }
+    printer.finish();
+
+    let raw = printer.fingerprint();
+    if raw.is_empty() {
+        anyhow::bail!("could not compute a fingerprint for {}", path.display());
+    }
+    let compressed = rusty_chromaprint::FingerprintCompressor::from(&configuration).compress(raw);
+    let fingerprint = BASE64_URL_SAFE_NO_PAD.encode(compressed);
+    let duration = (samples as f64 / (f64::from(sample_rate) * f64::from(channels)))
+        .round()
+        .max(1.0) as u64;
+
+    Ok(Fingerprint {
+        duration,
+        fingerprint,
+    })
+}
+
+/// Fingerprinting needs the audio decoder, which is part of the default build.
+#[cfg(not(feature = "audio"))]
+pub fn fingerprint(_path: &Path) -> Result<Fingerprint> {
+    anyhow::bail!("this build has no audio decoder for fingerprinting")
+}
+
+#[derive(Deserialize)]
+struct AcoustIdResponse {
+    status: Option<String>,
+    error: Option<AcoustIdError>,
+    #[serde(default)]
+    results: Vec<AcoustIdResult>,
+}
+
+#[derive(Deserialize)]
+struct AcoustIdError {
+    #[serde(default)]
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct AcoustIdResult {
+    #[serde(default)]
+    score: f32,
+    #[serde(default)]
+    recordings: Vec<AcoustIdRecording>,
+}
+
+#[derive(Deserialize)]
+struct AcoustIdRecording {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    artists: Vec<AcoustIdArtist>,
+    #[serde(default)]
+    releases: Vec<AcoustIdRelease>,
+}
+
+#[derive(Deserialize)]
+struct AcoustIdArtist {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    joinphrase: String,
+}
+
+#[derive(Deserialize)]
+struct AcoustIdRelease {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    date: Option<AcoustIdDate>,
+    #[serde(default)]
+    country: Option<String>,
+    #[serde(default)]
+    track_count: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AcoustIdDate {
+    Object {
+        #[serde(default)]
+        year: Option<i32>,
+    },
+    Text(String),
+}
+
+impl AcoustIdDate {
+    fn year(&self) -> Option<i32> {
+        match self {
+            Self::Object { year } => *year,
+            Self::Text(text) => text.get(0..4)?.parse().ok(),
+        }
+    }
+}
+
+/// Look up a Chromaprint fingerprint. Requires an application API key from
+/// acoustid.org. Returns release candidates ready for [`fetch`].
+pub fn acoustid_lookup(api_key: &str, fingerprint: &str, duration: u64) -> Result<Vec<Candidate>> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        anyhow::bail!("an AcoustID API key is required (Settings → General)");
+    }
+    if fingerprint.trim().is_empty() {
+        anyhow::bail!("empty audio fingerprint");
+    }
+    let api = acoustid_api();
+    let form = [
+        ("client", api_key.to_string()),
+        ("duration", duration.to_string()),
+        ("fingerprint", fingerprint.to_string()),
+        ("meta", "recordings+releases".to_string()),
+        ("format", "json".to_string()),
+    ];
+    let parsed: AcoustIdResponse = post_form_json(&api, &form, "AcoustID lookup")?;
+    if parsed.status.as_deref() == Some("error") {
+        let message = parsed
+            .error
+            .map(|error| error.message)
+            .filter(|message| !message.trim().is_empty())
+            .unwrap_or_else(|| "AcoustID returned an error".to_string());
+        anyhow::bail!("{message}");
+    }
+    Ok(acoustid_candidates(parsed))
+}
+
+fn acoustid_candidates(parsed: AcoustIdResponse) -> Vec<Candidate> {
+    let mut by_release: std::collections::HashMap<String, Candidate> =
+        std::collections::HashMap::new();
+    for result in parsed.results {
+        let score = (result.score.clamp(0.0, 1.0) * 100.0).round() as u32;
+        for recording in result.recordings {
+            let artist = recording
+                .artists
+                .iter()
+                .map(|artist| format!("{}{}", artist.name, artist.joinphrase))
+                .collect::<String>()
+                .trim()
+                .to_string();
+            for release in recording.releases {
+                if release.id.is_empty() {
+                    continue;
+                }
+                let candidate = Candidate {
+                    release_id: release.id.clone(),
+                    title: if release.title.is_empty() {
+                        recording.title.clone()
+                    } else {
+                        release.title
+                    },
+                    artist: artist.clone(),
+                    date: release
+                        .date
+                        .as_ref()
+                        .and_then(AcoustIdDate::year)
+                        .map(|year| year.to_string()),
+                    country: release.country,
+                    track_count: release.track_count.unwrap_or(0),
+                    score,
+                };
+                match by_release.get(&release.id) {
+                    Some(existing) if existing.score >= candidate.score => {}
+                    _ => {
+                        by_release.insert(release.id, candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut candidates: Vec<Candidate> = by_release.into_values().collect();
+    candidates.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.title.cmp(&right.title))
+    });
+    candidates
+}
+
+static ACOUSTID_LAST: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn throttle_acoustid(url: &str) {
+    if !url.starts_with("https://api.acoustid.org") {
+        return;
+    }
+    let mut last = ACOUSTID_LAST
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if let Some(previous) = *last {
+        let elapsed = previous.elapsed();
+        if elapsed < Duration::from_millis(350) {
+            std::thread::sleep(Duration::from_millis(350) - elapsed);
+        }
+    }
+    *last = Some(Instant::now());
+}
+
+/// POST a form and decode JSON, retrying rate limits and server errors.
+fn post_form_json<T: DeserializeOwned>(
+    url: &str,
+    form: &[(&str, String)],
+    what: &str,
+) -> Result<T> {
+    const ATTEMPTS: u32 = 4;
+    let mut last_error = None;
+
+    for attempt in 1..=ATTEMPTS {
+        throttle_acoustid(url);
+        let response = match client()?.post(url).form(form).send() {
+            Ok(response) => response,
+            Err(error) => {
+                last_error = Some(anyhow::anyhow!("{what}: {error}"));
+                std::thread::sleep(Duration::from_secs(attempt as u64));
+                continue;
+            }
+        };
+        let status = response.status();
+        if status.is_success() {
+            return response
+                .json::<T>()
+                .with_context(|| format!("cannot parse {what} reply"));
+        }
+        let retryable = status.as_u16() == 429 || status.is_server_error();
+        let wait = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(attempt as u64 * 2);
+        last_error = Some(anyhow::anyhow!("{what} returned {status}"));
+        if !retryable || attempt == ATTEMPTS {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(wait.min(10)));
+    }
+
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("{what} failed")))
 }
 
 // ---------------------------------------------------------------- release detail
@@ -720,6 +1032,73 @@ mod tests {
       "cover-art-archive": {"front": true}
     }"#;
 
+    #[cfg(feature = "audio")]
+    #[test]
+    fn fingerprints_a_tone_wav() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tone.wav");
+        write_tone_wav(&path, 3);
+        let fingerprint = fingerprint(&path).unwrap();
+        assert!(
+            fingerprint.duration >= 2,
+            "duration {}",
+            fingerprint.duration
+        );
+        assert!(!fingerprint.fingerprint.is_empty());
+        assert!(
+            !fingerprint.fingerprint.contains(['+', '/', '=']),
+            "fingerprint is not URL-safe base64: {}",
+            fingerprint.fingerprint
+        );
+    }
+
+    const ACOUSTID_JSON: &str = r#"{
+      "status": "ok",
+      "results": [
+        {
+          "score": 0.97,
+          "recordings": [
+            {
+              "title": "Airbag",
+              "artists": [{"name": "Radiohead", "joinphrase": ""}],
+              "releases": [
+                {"id": "release-a", "title": "OK Computer", "date": {"year": 1997}, "country": "GB", "track_count": 12},
+                {"id": "release-b", "title": "OK Computer (Collector's Edition)", "date": "2009-06-01", "track_count": 24}
+              ]
+            }
+          ]
+        },
+        {
+          "score": 0.60,
+          "recordings": [
+            {
+              "title": "Airbag",
+              "artists": [{"name": "Radiohead", "joinphrase": ""}],
+              "releases": [
+                {"id": "release-a", "title": "OK Computer", "date": {"year": 1997}, "track_count": 12}
+              ]
+            }
+          ]
+        }
+      ]
+    }"#;
+
+    #[test]
+    fn parses_acoustid_candidates_and_deduplicates_releases() {
+        let parsed: AcoustIdResponse = serde_json::from_str(ACOUSTID_JSON).unwrap();
+        let candidates = acoustid_candidates(parsed);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].release_id, "release-a");
+        assert_eq!(candidates[0].title, "OK Computer");
+        assert_eq!(candidates[0].score, 97);
+        assert_eq!(candidates[0].track_count, 12);
+        assert_eq!(candidates[0].artist, "Radiohead");
+        assert_eq!(candidates[0].date.as_deref(), Some("1997"));
+        assert_eq!(candidates[1].release_id, "release-b");
+        assert_eq!(candidates[1].title, "OK Computer (Collector's Edition)");
+        assert_eq!(candidates[1].date.as_deref(), Some("2009"));
+    }
+
     #[test]
     fn parses_search_results() {
         let parsed: SearchResponse = serde_json::from_str(SEARCH_JSON).unwrap();
@@ -745,6 +1124,56 @@ mod tests {
         assert_eq!(candidates[1].artist, "Radiohead feat. Someone");
         // A missing track-count must not fail parsing.
         assert_eq!(candidates[1].track_count, 0);
+    }
+
+    #[test]
+    fn acoustid_lookup_posts_and_returns_candidates() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 4096];
+            // Read the headers and enough of the form body to know the request
+            // arrived; the response itself does not depend on it.
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let read = stream.read(&mut buffer).unwrap_or(0);
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+            }
+            let body = ACOUSTID_JSON;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+            String::from_utf8_lossy(&request).to_string()
+        });
+
+        let previous = std::env::var_os("MUSICWASP_ACOUSTID_API");
+        std::env::set_var(
+            "MUSICWASP_ACOUSTID_API",
+            format!("http://127.0.0.1:{port}/v2/lookup"),
+        );
+        let candidates = acoustid_lookup("test-key", "AQADfingerprint", 123).unwrap();
+        match previous {
+            Some(value) => std::env::set_var("MUSICWASP_ACOUSTID_API", value),
+            None => std::env::remove_var("MUSICWASP_ACOUSTID_API"),
+        }
+
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /v2/lookup"));
+        assert!(request.contains("client=test-key"));
+        assert!(request.contains("duration=123"));
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].release_id, "release-a");
+        assert_eq!(candidates[0].score, 97);
     }
 
     #[test]
@@ -954,6 +1383,31 @@ mod tests {
             std::fs::metadata(cover_path).unwrap().len(),
             cover.data.len() as u64
         );
+    }
+
+    #[cfg(feature = "audio")]
+    fn write_tone_wav(path: &Path, seconds: u32) {
+        use std::io::Write;
+        let sample_rate = 44_100u32;
+        let frames = sample_rate * seconds;
+        let mut f = std::fs::File::create(path).unwrap();
+        f.write_all(b"RIFF").unwrap();
+        f.write_all(&(36 + frames * 2).to_le_bytes()).unwrap();
+        f.write_all(b"WAVEfmt ").unwrap();
+        f.write_all(&16u32.to_le_bytes()).unwrap();
+        f.write_all(&1u16.to_le_bytes()).unwrap();
+        f.write_all(&1u16.to_le_bytes()).unwrap();
+        f.write_all(&sample_rate.to_le_bytes()).unwrap();
+        f.write_all(&(sample_rate * 2).to_le_bytes()).unwrap();
+        f.write_all(&2u16.to_le_bytes()).unwrap();
+        f.write_all(&16u16.to_le_bytes()).unwrap();
+        f.write_all(b"data").unwrap();
+        f.write_all(&(frames * 2).to_le_bytes()).unwrap();
+        for frame in 0..frames {
+            let value = ((frame as f32 * 440.0 * std::f32::consts::TAU / sample_rate as f32).sin()
+                * 8000.0) as i16;
+            f.write_all(&value.to_le_bytes()).unwrap();
+        }
     }
 
     fn write_wav(path: &Path) {

@@ -365,6 +365,7 @@ pub struct OsDropZone {
 #[derive(Debug)]
 pub enum AutoTagMsg {
     SearchDone(Result<Vec<Candidate>, String>),
+    Fingerprinted(Result<Vec<Candidate>, String>),
     ReleaseLoaded {
         release_id: String,
         result: Result<Release, String>,
@@ -382,6 +383,7 @@ pub enum AutoTagMsg {
 pub enum AutoTagStage {
     Editing,
     Searching,
+    Fingerprinting,
     Results(Vec<Candidate>),
     Applying,
     Done(String),
@@ -5254,6 +5256,41 @@ impl App {
         ));
     }
 
+    /// User-entered key, or the key baked in at build time.
+    pub fn effective_acoustid_key(&self) -> String {
+        musicwasp_core::autotag::acoustid_key()
+    }
+
+    /// Identify the selected album from one audio fingerprint, then load the
+    /// first matching release exactly like a text search would.
+    pub fn start_autotag_fingerprint(&mut self) {
+        let key = self.effective_acoustid_key();
+        let Some(state) = &mut self.autotag else {
+            return;
+        };
+        if key.is_empty() {
+            state.stage = AutoTagStage::Done(
+                "this build has no AcoustID key; set ACCOUSTID_APIKEY and rebuild".to_string(),
+            );
+            return;
+        }
+        let Some(target) = state.targets.iter().max_by_key(|track| track.duration_secs) else {
+            state.stage = AutoTagStage::Done("no tracks selected".to_string());
+            return;
+        };
+        let path = PathBuf::from(&target.path);
+        state.stage = AutoTagStage::Fingerprinting;
+        let tx = state.tx.clone();
+        std::thread::spawn(move || {
+            let result = autotag::fingerprint(&path)
+                .and_then(|fingerprint| {
+                    autotag::acoustid_lookup(&key, &fingerprint.fingerprint, fingerprint.duration)
+                })
+                .map_err(|error| format!("{error:#}"));
+            let _ = tx.send(AutoTagMsg::Fingerprinted(result));
+        });
+    }
+
     pub fn start_autotag_search(&mut self) {
         let Some(state) = &mut self.autotag else {
             return;
@@ -5405,6 +5442,34 @@ impl App {
                 AutoTagMsg::SearchDone(Err(e)) => {
                     if let Some(state) = &mut self.autotag {
                         state.stage = AutoTagStage::Done(format!("search failed: {e}"));
+                    }
+                }
+                AutoTagMsg::Fingerprinted(Ok(candidates)) => {
+                    if candidates.is_empty() {
+                        if let Some(state) = &mut self.autotag {
+                            state.stage = AutoTagStage::Done(
+                                "AcoustID found no release for this fingerprint".to_string(),
+                            );
+                        }
+                        continue;
+                    }
+                    let local_count = self.autotag_targets().len();
+                    if let Some(state) = &mut self.autotag {
+                        let mut ranked = candidates;
+                        ranked.sort_by_key(|candidate| -autotag::relevance(candidate, local_count));
+                        state.selected = 0;
+                        state.stage = AutoTagStage::Results(ranked);
+                        state.release = None;
+                        state.release_id = None;
+                        state.release_error = None;
+                        state.loading_release = false;
+                        state.mappings.clear();
+                    }
+                    self.load_autotag_release();
+                }
+                AutoTagMsg::Fingerprinted(Err(e)) => {
+                    if let Some(state) = &mut self.autotag {
+                        state.stage = AutoTagStage::Done(format!("AcoustID: {e}"));
                     }
                 }
                 AutoTagMsg::ReleaseLoaded { release_id, result } => {

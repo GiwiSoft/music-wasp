@@ -4993,6 +4993,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
     use crate::app::AutoTagStage;
 
     let undo_available = app.tag_undo.is_some();
+    let has_acoustid = !app.effective_acoustid_key().is_empty();
     let Some(state) = &mut app.autotag else {
         return;
     };
@@ -5000,6 +5001,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
 
     let mut open = true;
     let mut search = false;
+    let mut fingerprint = false;
     let mut apply = false;
     let mut undo = false;
     let mut reload_release = false;
@@ -5018,12 +5020,36 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_sized([170.0, 22.0], egui::TextEdit::singleline(&mut state.album));
                 if ui
                     .add_enabled(
-                        !matches!(state.stage, AutoTagStage::Searching | AutoTagStage::Applying),
+                        !matches!(
+                            state.stage,
+                            AutoTagStage::Searching
+                                | AutoTagStage::Fingerprinting
+                                | AutoTagStage::Applying
+                        ),
                         egui::Button::new(tr("ui.search")),
                     )
                     .clicked()
                 {
                     search = true;
+                }
+                let identify = ui.add_enabled(
+                    !matches!(
+                        state.stage,
+                        AutoTagStage::Searching
+                            | AutoTagStage::Fingerprinting
+                            | AutoTagStage::Applying
+                    ) && has_acoustid,
+                    egui::Button::new(icons::with(icons::FINGERPRINT, "Identify with AcoustID")),
+                );
+                if identify
+                    .on_hover_text(if has_acoustid {
+                        "Fingerprint one track with Chromaprint and look up the release on AcoustID"
+                    } else {
+                        "This build has no AcoustID key; set ACCOUSTID_APIKEY and rebuild"
+                    })
+                    .clicked()
+                {
+                    fingerprint = true;
                 }
             });
 
@@ -5033,7 +5059,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                 AutoTagStage::Editing => {
                     ui.label(
                         RichText::new(format!(
-                            "{targets} track(s) will be tagged. MusicBrainz + Cover Art Archive, no API key needed."
+                            "{targets} track(s) will be tagged. Search MusicBrainz by name, or identify by audio fingerprint with AcoustID."
                         ))
                         .size(11.0)
                         .color(th::text_dim()),
@@ -5043,6 +5069,15 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                     ui.horizontal(|ui| {
                         ui.spinner();
                         ui.label(RichText::new("Searching MusicBrainz…").size(12.0));
+                    });
+                }
+                AutoTagStage::Fingerprinting => {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(
+                            RichText::new("Fingerprinting with Chromaprint and asking AcoustID…")
+                                .size(12.0),
+                        );
                     });
                 }
                 AutoTagStage::Applying => {
@@ -5391,6 +5426,9 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
 
     if search {
         app.start_autotag_search();
+    }
+    if fingerprint {
+        app.start_autotag_fingerprint();
     }
     if reload_release {
         app.load_autotag_release();

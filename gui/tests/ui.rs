@@ -37,6 +37,8 @@ impl TestEnv {
             "MUSICWASP_DATA_DIR",
             "MUSICWASP_MUSICBRAINZ_API",
             "MUSICWASP_COVERART_API",
+            "MUSICWASP_ACOUSTID_API",
+            "MUSICWASP_ACOUSTID_KEY",
             "MUSICWASP_SCREENSHOT",
             "MUSICWASP_SCREENSHOT_FRAME",
             "MUSICWASP_PLAIN",
@@ -56,6 +58,8 @@ impl TestEnv {
         for name in [
             "MUSICWASP_MUSICBRAINZ_API",
             "MUSICWASP_COVERART_API",
+            "MUSICWASP_ACOUSTID_API",
+            "MUSICWASP_ACOUSTID_KEY",
             "MUSICWASP_SCREENSHOT",
             "MUSICWASP_SCREENSHOT_FRAME",
             "MUSICWASP_PLAIN",
@@ -107,6 +111,29 @@ fn write_wav(path: &Path, frames: u32) {
     file.write_all(b"data").unwrap();
     file.write_all(&data_len.to_le_bytes()).unwrap();
     file.write_all(&vec![0u8; data_len as usize]).unwrap();
+}
+
+fn write_tone_wav(path: &Path, seconds: u32) {
+    let sample_rate = 44_100u32;
+    let frames = sample_rate * seconds;
+    let mut file = std::fs::File::create(path).unwrap();
+    file.write_all(b"RIFF").unwrap();
+    file.write_all(&(36 + frames * 2).to_le_bytes()).unwrap();
+    file.write_all(b"WAVEfmt ").unwrap();
+    file.write_all(&16u32.to_le_bytes()).unwrap();
+    file.write_all(&1u16.to_le_bytes()).unwrap();
+    file.write_all(&1u16.to_le_bytes()).unwrap();
+    file.write_all(&sample_rate.to_le_bytes()).unwrap();
+    file.write_all(&(sample_rate * 2).to_le_bytes()).unwrap();
+    file.write_all(&2u16.to_le_bytes()).unwrap();
+    file.write_all(&16u16.to_le_bytes()).unwrap();
+    file.write_all(b"data").unwrap();
+    file.write_all(&(frames * 2).to_le_bytes()).unwrap();
+    for frame in 0..frames {
+        let value = ((frame as f32 * 440.0 * std::f32::consts::TAU / sample_rate as f32).sin()
+            * 8000.0) as i16;
+        file.write_all(&value.to_le_bytes()).unwrap();
+    }
 }
 
 struct SeedTrack {
@@ -254,6 +281,12 @@ fn serve(mut stream: TcpStream) -> Option<String> {
             "200 OK",
             "application/json",
             r#"{"id":"fake-release","title":"Fake Album","date":"1997-05-21","artist-credit":[{"name":"Radiohead"}],"release-group":{"first-release-date":"1997","tags":[{"name":"alternative rock","count":5}]},"media":[{"position":1,"tracks":[{"number":"1","title":"Airbag","length":284000,"artist-credit":[{"name":"Radiohead"}]},{"number":"2","title":"Paranoid Android","length":383000,"artist-credit":[{"name":"Radiohead"}]}]}],"cover-art-archive":{"front":false}}"#,
+        )
+    } else if route == "/v2/lookup" {
+        (
+            "200 OK",
+            "application/json",
+            r#"{"status":"ok","results":[{"score":0.98,"recordings":[{"title":"Airbag","artists":[{"name":"Radiohead","joinphrase":""}],"releases":[{"id":"fake-release","title":"Fake Album","date":{"year":1997},"country":"GB","track_count":2}]}]}]}"#,
         )
     } else {
         ("404 Not Found", "text/plain", "not found")
@@ -681,6 +714,58 @@ fn autotag_dialog_uses_results_from_the_fake_musicbrainz_server() {
     harness.run_steps(2);
     assert!(harness.query_all_by_label_contains("Fake Album").count() >= 1);
     assert!(harness.query_all_by_label_contains("Airbag").count() >= 1);
+}
+
+#[test]
+fn acoustid_fingerprint_identifies_the_release() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut env = TestEnv::new(dir.path());
+    let fake = FakeMusicBrainz::start();
+    let caa_api = fake.caa_api();
+    let acoustid_api = fake.api.replace("/ws/2", "/v2/lookup");
+    env.set("MUSICWASP_MUSICBRAINZ_API", Some(fake.api.as_str()));
+    env.set("MUSICWASP_COVERART_API", Some(caa_api.as_str()));
+    env.set("MUSICWASP_ACOUSTID_API", Some(acoustid_api.as_str()));
+    env.set("MUSICWASP_ACOUSTID_KEY", Some("test-key"));
+
+    seed_library(
+        dir.path(),
+        &[SeedTrack {
+            file: "one.wav",
+            title: "Track 1",
+            artist: "Radiohead",
+            album: "Fake Album",
+            year: 1997,
+            track_no: 1,
+        }],
+    );
+    // The library seed is a short silent WAV; replace it with a tone so the
+    // pure-Rust fingerprinter has enough audio to work with.
+    write_tone_wav(&dir.path().join("music/one.wav"), 3);
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.state_mut().select_all_in_view();
+    harness.state_mut().open_autotag();
+    harness.state_mut().start_autotag_fingerprint();
+    let finished = wait_until(&mut harness, Duration::from_secs(5), |app| {
+        let Some(state) = &app.autotag else {
+            return false;
+        };
+        matches!(state.stage, AutoTagStage::Results(_)) && state.release.is_some()
+    });
+    assert!(finished, "AcoustID fingerprint lookup timed out");
+
+    let state = harness.state().autotag.as_ref().unwrap();
+    let release = state.release.as_ref().unwrap();
+    assert_eq!(release.title, "Fake Album");
+    assert_eq!(release.tracks.len(), 2);
+    assert!(
+        fake.requests()
+            .iter()
+            .any(|path| path.contains("/v2/lookup")),
+        "AcoustID lookup was not sent"
+    );
 }
 
 #[test]
