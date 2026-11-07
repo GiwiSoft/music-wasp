@@ -10,6 +10,8 @@ pub mod m3u;
 pub mod organize;
 pub mod player;
 pub mod playlist;
+pub mod podcast;
+pub mod radio;
 pub mod reconcile;
 pub mod scrobble;
 pub mod search;

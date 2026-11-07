@@ -4,6 +4,8 @@ use crate::settings::{
 };
 use musicwasp_core::autotag::{self, Candidate, Cover, LocalTrack, Release};
 use musicwasp_core::dsp::Equalizer;
+use musicwasp_core::podcast::{ParsedFeed, PodcastEpisode, PodcastFeed};
+use musicwasp_core::radio::RadioStation;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
 use musicwasp_core::tags::TagSnapshot;
 use musicwasp_core::{
@@ -22,6 +24,32 @@ pub enum View {
     Library,
     Playlist(i64),
     Smart(i64),
+    Podcasts,
+    Radio,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamKind {
+    Radio,
+    Podcast,
+}
+
+/// One internet radio station or podcast episode currently playing.
+#[derive(Debug, Clone)]
+pub struct StreamInfo {
+    pub title: String,
+    pub subtitle: String,
+    pub url: String,
+    pub kind: StreamKind,
+    pub episode_id: Option<i64>,
+    pub duration_secs: u64,
+}
+
+pub enum PodcastMsg {
+    Feed {
+        feed_id: i64,
+        result: Result<ParsedFeed, String>,
+    },
 }
 
 impl From<View> for SessionView {
@@ -30,6 +58,8 @@ impl From<View> for SessionView {
             View::Library => SessionView::Library,
             View::Playlist(id) => SessionView::Playlist(id),
             View::Smart(id) => SessionView::Smart(id),
+            View::Podcasts => SessionView::Podcasts,
+            View::Radio => SessionView::Radio,
         }
     }
 }
@@ -40,6 +70,8 @@ impl From<SessionView> for View {
             SessionView::Library => View::Library,
             SessionView::Playlist(id) => View::Playlist(id),
             SessionView::Smart(id) => View::Smart(id),
+            SessionView::Podcasts => View::Podcasts,
+            SessionView::Radio => View::Radio,
         }
     }
 }
@@ -1382,6 +1414,24 @@ pub struct App {
     pub viz_fullscreen: bool,
     pub viz_pcm: Vec<f32>,
     pub viz_channels: u16,
+    /// Internet radio and podcast playback.
+    pub stream: Option<StreamInfo>,
+    stream_started: std::time::Instant,
+    stream_saved: std::time::Instant,
+    pub podcast_feeds: Vec<PodcastFeed>,
+    pub podcast_episodes: Vec<PodcastEpisode>,
+    pub selected_feed: Option<i64>,
+    pub podcast_status: Option<String>,
+    pub podcast_loading: bool,
+    pub podcast_rx: Option<Receiver<PodcastMsg>>,
+    pub show_podcast_dialog: bool,
+    pub podcast_url: String,
+    pub radio_stations: Vec<RadioStation>,
+    pub radio_status: Option<String>,
+    pub show_radio_dialog: bool,
+    pub radio_name: String,
+    pub radio_url: String,
+    pub radio_genre: String,
     /// Track-list column settings window.
     pub show_columns: bool,
     /// Ask the table to discard its cached widths on the next frame.
@@ -1583,6 +1633,23 @@ impl App {
             viz_fullscreen: std::env::var("MUSICWASP_VIS_FULLSCREEN").is_ok(),
             viz_pcm: Vec::new(),
             viz_channels: 2,
+            stream: None,
+            stream_started: std::time::Instant::now(),
+            stream_saved: std::time::Instant::now(),
+            podcast_feeds: Vec::new(),
+            podcast_episodes: Vec::new(),
+            selected_feed: None,
+            podcast_status: None,
+            podcast_loading: false,
+            podcast_rx: None,
+            show_podcast_dialog: false,
+            podcast_url: String::new(),
+            radio_stations: Vec::new(),
+            radio_status: None,
+            show_radio_dialog: false,
+            radio_name: String::new(),
+            radio_url: String::new(),
+            radio_genre: String::new(),
             show_columns: false,
             columns_reset: false,
             cover_rx: None,
@@ -1627,6 +1694,25 @@ impl App {
         };
         app.refresh_browser();
         app.refresh_tracks();
+        app.refresh_podcast_feeds();
+        app.refresh_radio_stations();
+        if let Ok(view) = std::env::var("MUSICWASP_VIEW") {
+            app.view = match view.as_str() {
+                "podcasts" => View::Podcasts,
+                "radio" => View::Radio,
+                _ => app.view,
+            };
+        }
+        if app.view == View::Podcasts && std::env::var("MUSICWASP_PODCAST_FIRST").is_ok() {
+            if let Some(feed) = app
+                .podcast_feeds
+                .iter()
+                .find(|feed| feed.episode_count > 0)
+                .or_else(|| app.podcast_feeds.first())
+            {
+                app.select_podcast_feed(feed.id);
+            }
+        }
         if app.session_enabled {
             app.restore_session(&session);
         }
@@ -1754,10 +1840,15 @@ impl App {
     }
 
     pub fn refresh_tracks(&mut self) {
+        if matches!(self.view, View::Podcasts | View::Radio) {
+            self.dirty_tracks = false;
+            return;
+        }
         let result = match self.view {
             View::Library => self.lib.query(&self.filter(), self.sort, self.sort_asc),
             View::Playlist(id) => self.lib.playlist_tracks(id),
             View::Smart(id) => self.lib.smart_playlist_tracks(id),
+            View::Podcasts | View::Radio => Ok(Vec::new()),
         };
         match result {
             Ok(t) => self.tracks = t,
@@ -1879,6 +1970,293 @@ impl App {
                 .find(|p| p.id == id)
                 .map(|p| format!("Smart · {}", p.name))
                 .unwrap_or_else(|| tr("library.title").to_string()),
+            View::Podcasts => "Podcasts".to_string(),
+            View::Radio => "Radio".to_string(),
+        }
+    }
+
+    // ---- podcasts and radio ----
+
+    pub fn refresh_podcast_feeds(&mut self) {
+        match self.lib.podcast_feeds() {
+            Ok(feeds) => {
+                self.podcast_feeds = feeds;
+                if let Some(id) = self.selected_feed {
+                    if self.podcast_feeds.iter().any(|feed| feed.id == id) {
+                        self.load_podcast_episodes();
+                    } else {
+                        self.selected_feed = None;
+                        self.podcast_episodes.clear();
+                    }
+                }
+            }
+            Err(error) => self.podcast_status = Some(format!("could not load feeds: {error}")),
+        }
+    }
+
+    pub fn load_podcast_episodes(&mut self) {
+        let Some(feed_id) = self.selected_feed else {
+            self.podcast_episodes.clear();
+            return;
+        };
+        match self.lib.podcast_episodes(feed_id) {
+            Ok(episodes) => self.podcast_episodes = episodes,
+            Err(error) => self.podcast_status = Some(format!("could not load episodes: {error}")),
+        }
+    }
+
+    pub fn select_podcast_feed(&mut self, feed_id: i64) {
+        self.selected_feed = Some(feed_id);
+        self.load_podcast_episodes();
+    }
+
+    pub fn add_podcast_feed(&mut self, url: &str) {
+        let url = url.trim().to_string();
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            self.podcast_status = Some("enter an http(s) feed URL".to_string());
+            return;
+        }
+        if self.podcast_loading {
+            self.podcast_status = Some("a feed refresh is already running".to_string());
+            return;
+        }
+        match self.lib.add_podcast_feed(&url) {
+            Ok(feed_id) => {
+                self.selected_feed = Some(feed_id);
+                self.show_podcast_dialog = false;
+                self.podcast_url.clear();
+                self.start_podcast_fetch(feed_id, url);
+            }
+            Err(error) => self.podcast_status = Some(format!("could not save feed: {error}")),
+        }
+    }
+
+    pub fn refresh_selected_podcast(&mut self) {
+        let Some(feed_id) = self.selected_feed else {
+            return;
+        };
+        if self.podcast_loading {
+            return;
+        }
+        let Some(feed) = self.podcast_feeds.iter().find(|feed| feed.id == feed_id) else {
+            return;
+        };
+        let url = feed.url.clone();
+        self.start_podcast_fetch(feed_id, url);
+    }
+
+    fn start_podcast_fetch(&mut self, feed_id: i64, url: String) {
+        let (tx, rx) = mpsc::channel();
+        self.podcast_rx = Some(rx);
+        self.podcast_loading = true;
+        self.podcast_status = Some("fetching feed…".to_string());
+        std::thread::spawn(move || {
+            let result = musicwasp_core::podcast::fetch(&url).map_err(|error| format!("{error:#}"));
+            let _ = tx.send(PodcastMsg::Feed { feed_id, result });
+        });
+    }
+
+    pub fn poll_podcasts(&mut self) {
+        let Some(rx) = self.podcast_rx.take() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(PodcastMsg::Feed { feed_id, result }) => {
+                self.podcast_loading = false;
+                match result {
+                    Ok(feed) => match self.lib.update_podcast_feed(feed_id, &feed) {
+                        Ok(()) => {
+                            self.podcast_status =
+                                Some(format!("{} episode(s)", feed.episodes.len()));
+                            self.refresh_podcast_feeds();
+                            if self.selected_feed == Some(feed_id) {
+                                self.load_podcast_episodes();
+                            }
+                        }
+                        Err(error) => {
+                            self.podcast_status = Some(format!("could not save feed: {error}"))
+                        }
+                    },
+                    Err(error) => self.podcast_status = Some(format!("feed failed: {error}")),
+                }
+            }
+            Err(mpsc::TryRecvError::Empty) => self.podcast_rx = Some(rx),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.podcast_loading = false;
+                self.podcast_status = Some("feed worker stopped".to_string());
+            }
+        }
+    }
+
+    pub fn delete_podcast_feed(&mut self, feed_id: i64) {
+        if let Err(error) = self.lib.delete_podcast_feed(feed_id) {
+            self.podcast_status = Some(format!("could not delete feed: {error}"));
+            return;
+        }
+        if self.selected_feed == Some(feed_id) {
+            self.selected_feed = None;
+            self.podcast_episodes.clear();
+        }
+        self.refresh_podcast_feeds();
+    }
+
+    pub fn refresh_radio_stations(&mut self) {
+        match self.lib.radio_stations() {
+            Ok(stations) => self.radio_stations = stations,
+            Err(error) => self.radio_status = Some(format!("could not load stations: {error}")),
+        }
+    }
+
+    pub fn add_radio_station(&mut self, name: &str, url: &str, genre: &str) {
+        let url = url.trim();
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            self.radio_status = Some("enter an http(s) stream URL".to_string());
+            return;
+        }
+        if name.trim().is_empty() {
+            self.radio_status = Some("enter a station name".to_string());
+            return;
+        }
+        match self.lib.add_radio_station(name, url, genre) {
+            Ok(_) => {
+                self.show_radio_dialog = false;
+                self.radio_name.clear();
+                self.radio_url.clear();
+                self.radio_genre.clear();
+                self.radio_status = Some("station saved".to_string());
+                self.refresh_radio_stations();
+            }
+            Err(error) => self.radio_status = Some(format!("could not save station: {error}")),
+        }
+    }
+
+    pub fn delete_radio_station(&mut self, id: i64) {
+        match self.lib.delete_radio_station(id) {
+            Ok(()) => self.refresh_radio_stations(),
+            Err(error) => self.radio_status = Some(format!("could not delete station: {error}")),
+        }
+    }
+
+    pub fn play_radio_station(&mut self, station: &RadioStation) {
+        self.play_stream(StreamInfo {
+            title: station.name.clone(),
+            subtitle: if station.genre.trim().is_empty() {
+                "Internet radio".to_string()
+            } else {
+                station.genre.clone()
+            },
+            url: station.url.clone(),
+            kind: StreamKind::Radio,
+            episode_id: None,
+            duration_secs: 0,
+        });
+    }
+
+    pub fn play_podcast_episode(&mut self, episode: &PodcastEpisode) {
+        let feed_title = self
+            .podcast_feeds
+            .iter()
+            .find(|feed| feed.id == episode.feed_id)
+            .map(|feed| feed.title.clone())
+            .unwrap_or_else(|| "Podcast".to_string());
+        self.play_stream(StreamInfo {
+            title: episode.title.clone(),
+            subtitle: feed_title,
+            url: episode.audio_url.clone(),
+            kind: StreamKind::Podcast,
+            episode_id: Some(episode.id),
+            duration_secs: episode.duration_secs,
+        });
+    }
+
+    fn play_stream(&mut self, stream: StreamInfo) {
+        self.finalize_stream();
+        self.queue.clear();
+        self.queue_pos = None;
+        self.playing_id = None;
+        self.art = None;
+        self.art_key = None;
+        self.gapless_for = None;
+        self.selected.clear();
+        self.finish_scrobble();
+        if let Some(player) = &self.player {
+            player.load_url(&stream.url);
+        }
+        self.message = match stream.kind {
+            StreamKind::Radio => format!("Radio: {}", stream.title),
+            StreamKind::Podcast => format!("Podcast: {}", stream.title),
+        };
+        self.stream = Some(stream);
+        self.stream_started = std::time::Instant::now();
+        self.stream_saved = std::time::Instant::now();
+    }
+
+    /// Save podcast listening position without clearing the stream.
+    fn save_stream_progress(&mut self, finished: bool) {
+        let Some(stream) = &self.stream else {
+            return;
+        };
+        let Some(episode_id) = stream.episode_id else {
+            return;
+        };
+        let position = self
+            .player
+            .as_ref()
+            .map(|player| player.snapshot().position.max(0.0) as u64)
+            .unwrap_or(0);
+        let played = finished
+            || (stream.duration_secs > 0 && position.saturating_add(15) >= stream.duration_secs);
+        if let Err(error) = self.lib.set_podcast_progress(episode_id, position, played) {
+            eprintln!("MusicWasp: could not save podcast progress: {error}");
+        }
+        if let Some(episode) = self
+            .podcast_episodes
+            .iter_mut()
+            .find(|episode| episode.id == episode_id)
+        {
+            episode.position_secs = position;
+            episode.played |= played;
+        }
+    }
+
+    fn finalize_stream(&mut self) {
+        if self.stream.is_some() {
+            self.save_stream_progress(false);
+            self.stream = None;
+        }
+    }
+
+    /// Persist podcast position every few seconds and when playback stops.
+    pub fn update_stream_progress(&mut self) {
+        let Some(stream) = &self.stream else {
+            return;
+        };
+        if stream.episode_id.is_none() {
+            return;
+        }
+        let Some(player) = &self.player else {
+            return;
+        };
+        let snapshot = player.snapshot();
+        let loaded = snapshot
+            .current
+            .as_ref()
+            .is_some_and(|path| path.to_string_lossy() == stream.url);
+        if !loaded && self.stream_started.elapsed() < std::time::Duration::from_secs(10) {
+            // The audio thread may still be opening the HTTP stream.
+            return;
+        }
+        if snapshot.status == musicwasp_core::PlayerStatus::Stopped {
+            // The natural end of an episode goes through `on_track_finished`;
+            // stopping here means a failed or dropped stream.
+            self.save_stream_progress(false);
+            self.stream = None;
+            self.message = "stream stopped".to_string();
+            return;
+        }
+        if self.stream_saved.elapsed() >= std::time::Duration::from_secs(5) {
+            self.save_stream_progress(false);
+            self.stream_saved = std::time::Instant::now();
         }
     }
 
@@ -2326,7 +2704,7 @@ impl App {
         let result = match self.view {
             View::Playlist(id) => self.lib.delete_playlist(id),
             View::Smart(id) => self.lib.delete_smart_playlist(id),
-            View::Library => return,
+            View::Library | View::Podcasts | View::Radio => return,
         };
         match result {
             Ok(()) => {
@@ -3706,6 +4084,7 @@ impl App {
         let Ok(Some(path)) = self.lib.path_for_id(id) else {
             return;
         };
+        self.finalize_stream();
         self.finish_scrobble();
         if let Err(error) = self.lib.record_play(id) {
             eprintln!("MusicWasp: could not record play for track {id}: {error}");
@@ -3858,6 +4237,7 @@ impl App {
     }
 
     pub fn stop(&mut self) {
+        self.finalize_stream();
         self.finish_scrobble();
         if let Some(p) = &self.player {
             p.stop();
@@ -4121,6 +4501,11 @@ impl App {
     }
 
     pub fn on_track_finished(&mut self) {
+        if self.stream.is_some() {
+            self.save_stream_progress(true);
+            self.stream = None;
+            return;
+        }
         match self.repeat {
             RepeatMode::One => self.play_loaded(),
             _ => self.next_track_inner(false),
@@ -4413,26 +4798,32 @@ impl App {
         let playing = snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.status == musicwasp_core::PlayerStatus::Playing);
-        let duration = track
+        let stream = self.stream.clone();
+        let duration = stream
             .as_ref()
-            .map(|track| track.duration_secs as f64)
+            .map(|stream| stream.duration_secs as f64)
+            .filter(|duration| *duration > 0.0)
+            .or_else(|| track.as_ref().map(|track| track.duration_secs as f64))
             .or_else(|| snapshot.as_ref().map(|snapshot| snapshot.duration))
             .unwrap_or(0.0);
         let bridge = self
             .mini
             .get_or_insert_with(crate::mini_player::MiniBridge::new);
         bridge.update(crate::mini_player::MiniSnapshot {
-            title: track
+            title: stream
                 .as_ref()
-                .map(|track| track.title.clone())
+                .map(|stream| stream.title.clone())
+                .or_else(|| track.as_ref().map(|track| track.title.clone()))
                 .unwrap_or_default(),
-            artist: track
+            artist: stream
                 .as_ref()
-                .map(|track| track.artist.clone())
+                .map(|stream| stream.subtitle.clone())
+                .or_else(|| track.as_ref().map(|track| track.artist.clone()))
                 .unwrap_or_default(),
-            album: track
+            album: stream
                 .as_ref()
-                .map(|track| track.album.clone())
+                .map(|_| String::new())
+                .or_else(|| track.as_ref().map(|track| track.album.clone()))
                 .unwrap_or_default(),
             playing,
             position: snapshot.as_ref().map_or(0.0, |snapshot| snapshot.position),
@@ -4507,13 +4898,16 @@ impl App {
         let playing = self.player.as_ref().is_some_and(|player| {
             player.snapshot().status == musicwasp_core::PlayerStatus::Playing
         });
-        if let Some(tray) = &self.tray {
-            tray.update(
+        let (title, artist) = if let Some(stream) = &self.stream {
+            (stream.title.as_str(), stream.subtitle.as_str())
+        } else {
+            (
                 track.as_ref().map_or("", |track| track.title.as_str()),
                 track.as_ref().map_or("", |track| track.artist.as_str()),
-                playing,
-                self.settings.mini_player,
-            );
+            )
+        };
+        if let Some(tray) = &self.tray {
+            tray.update(title, artist, playing, self.settings.mini_player);
         }
         let commands = self
             .tray
@@ -5097,7 +5491,7 @@ impl App {
             Focus::Browser => match self.view {
                 View::Playlist(id) => RenameTarget::Playlist(id),
                 View::Smart(id) => RenameTarget::Smart(id),
-                View::Library => {
+                View::Library | View::Podcasts | View::Radio => {
                     self.message = "open a playlist to rename it".to_string();
                     return;
                 }
@@ -5738,6 +6132,8 @@ impl eframe::App for App {
         self.handle_screenshot_capture(&ctx);
 
         self.poll_player_events();
+        self.poll_podcasts();
+        self.update_stream_progress();
         self.update_scrobbling();
         self.maybe_prime_gapless();
         self.sync_volume();
@@ -5773,6 +6169,12 @@ impl eframe::App for App {
             if self.plain_view {
                 self.os_drop_zones.clear();
                 crate::ui::now_playing(self, root);
+            } else if self.view == View::Podcasts {
+                crate::ui::transport(self, root);
+                crate::ui::podcasts_view(self, root);
+            } else if self.view == View::Radio {
+                crate::ui::transport(self, root);
+                crate::ui::radio_view(self, root);
             } else {
                 crate::ui::browser(self, root);
                 crate::ui::transport(self, root);
@@ -5840,6 +6242,7 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        self.save_stream_progress(false);
         if let Some(state) = &self.scan {
             state.cancel.store(true, Ordering::Relaxed);
         }
@@ -5865,6 +6268,27 @@ impl App {
         {
             self.volume = 0.0;
             self.play_from_list(0);
+        }
+
+        if self.frames == 15
+            && std::env::var("MUSICWASP_PLAY_RADIO").is_ok()
+            && !self.radio_stations.is_empty()
+        {
+            let station = self.radio_stations[0].clone();
+            self.play_radio_station(&station);
+        }
+        if self.frames == 15 && std::env::var("MUSICWASP_PLAY_PODCAST").is_ok() {
+            if let Some(feed) = self
+                .podcast_feeds
+                .iter()
+                .find(|feed| feed.episode_count > 0)
+            {
+                let feed_id = feed.id;
+                self.select_podcast_feed(feed_id);
+                if let Some(episode) = self.podcast_episodes.first().cloned() {
+                    self.play_podcast_episode(&episode);
+                }
+            }
         }
 
         // Debug hook: MUSICWASP_SETTINGS=1 opens the settings panel;

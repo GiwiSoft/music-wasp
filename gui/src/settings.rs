@@ -522,6 +522,8 @@ pub enum SessionView {
     Library,
     Playlist(i64),
     Smart(i64),
+    Podcasts,
+    Radio,
 }
 
 /// Window size and, where the platform reports it, screen position.

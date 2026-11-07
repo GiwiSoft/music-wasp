@@ -1,6 +1,6 @@
 use crate::app::{
     fmt_size, fmt_time, App, BatchAction, BatchCase, BatchField, DragPlaylist, DragTracks, Focus,
-    M3uMode, RenameTarget, SettingsTab, TrackField, View,
+    M3uMode, RenameTarget, SettingsTab, StreamKind, TrackField, View,
 };
 use crate::i18n::{tr, Language};
 use crate::icons;
@@ -196,6 +196,8 @@ enum Act {
     MovePlaylist(i64, Option<i64>),
     ExportPlaylist(i64),
     ImportM3u,
+    Podcasts,
+    Radio,
 }
 
 /// `Parent / Child` label for folder menus.
@@ -754,6 +756,24 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                             app.viz_fullscreen = true;
                             ui.close();
                         }
+                        let podcasts = ui.add(
+                            egui::Button::new(icons::with(icons::MICROPHONE, "Podcasts"))
+                                .selected(matches!(app.view, View::Podcasts)),
+                        );
+                        if podcasts.clicked() {
+                            app.view = View::Podcasts;
+                            app.refresh_podcast_feeds();
+                            ui.close();
+                        }
+                        let radio = ui.add(
+                            egui::Button::new(icons::with(icons::BROADCAST, "Radio"))
+                                .selected(matches!(app.view, View::Radio)),
+                        );
+                        if radio.clicked() {
+                            app.view = View::Radio;
+                            app.refresh_radio_stations();
+                            ui.close();
+                        }
                         let eq = ui.add(
                             egui::Button::new(icons::with(icons::SLIDERS, tr("menu.equalizer")))
                                 .selected(app.show_equalizer),
@@ -1094,6 +1114,27 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                         }
                     });
             }
+            divider(ui);
+            if nav_row(
+                ui,
+                matches!(app.view, View::Podcasts),
+                0.0,
+                icons::with(icons::MICROPHONE, "Podcasts"),
+            )
+            .clicked()
+            {
+                act = Some(Act::Podcasts);
+            }
+            if nav_row(
+                ui,
+                matches!(app.view, View::Radio),
+                0.0,
+                icons::with(icons::BROADCAST, "Radio"),
+            )
+            .clicked()
+            {
+                act = Some(Act::Radio);
+            }
         });
 
     if folded_changed {
@@ -1163,6 +1204,14 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
         Some(Act::MovePlaylist(id, folder)) => app.move_playlist_to_folder(id, folder),
         Some(Act::ExportPlaylist(id)) => app.open_m3u_export(id),
         Some(Act::ImportM3u) => app.open_m3u_import(),
+        Some(Act::Podcasts) => {
+            app.view = View::Podcasts;
+            app.refresh_podcast_feeds();
+        }
+        Some(Act::Radio) => {
+            app.view = View::Radio;
+            app.refresh_radio_stations();
+        }
         None => {}
     }
 }
@@ -1191,7 +1240,12 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
         .as_ref()
         .map(|t| t.duration_secs as f64)
         .filter(|d| *d > 0.0);
-    let duration = known_duration.unwrap_or(snap.duration);
+    let stream = app.stream.clone();
+    let duration = stream
+        .as_ref()
+        .map(|stream| stream.duration_secs as f64)
+        .filter(|duration| *duration > 0.0)
+        .unwrap_or_else(|| known_duration.unwrap_or(snap.duration));
 
     egui::Panel::bottom("transport")
         .frame(
@@ -1213,22 +1267,38 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                         Color32::from_black_alpha(if th::skin().is_light() { 26 } else { 70 }),
                     );
                 }
-                match &app.art {
-                    Some((_, tex)) => {
-                        egui::Image::new((tex.id(), egui::vec2(art_size, art_size)))
-                            .corner_radius(th::corner(8))
-                            .paint_at(ui, rect);
-                    }
-                    None => {
-                        ui.painter()
-                            .rect_filled(rect, th::corner(8), th::bg_row_alt());
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            icons::MUSIC_NOTES.as_str(),
-                            egui::FontId::proportional(28.0),
-                            th::text_dim(),
-                        );
+                if let Some(stream) = &stream {
+                    ui.painter()
+                        .rect_filled(rect, th::corner(8), th::bg_row_alt());
+                    let icon = match stream.kind {
+                        StreamKind::Radio => icons::BROADCAST,
+                        StreamKind::Podcast => icons::MICROPHONE,
+                    };
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        icon.as_str(),
+                        egui::FontId::proportional(30.0),
+                        th::accent(),
+                    );
+                } else {
+                    match &app.art {
+                        Some((_, tex)) => {
+                            egui::Image::new((tex.id(), egui::vec2(art_size, art_size)))
+                                .corner_radius(th::corner(8))
+                                .paint_at(ui, rect);
+                        }
+                        None => {
+                            ui.painter()
+                                .rect_filled(rect, th::corner(8), th::bg_row_alt());
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                icons::MUSIC_NOTES.as_str(),
+                                egui::FontId::proportional(28.0),
+                                th::text_dim(),
+                            );
+                        }
                     }
                 }
                 if !th::is_square() {
@@ -1243,18 +1313,22 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(11.0);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
-                    let title = current_track
+                    let title = stream
                         .as_ref()
-                        .map(|t| t.title.clone())
+                        .map(|stream| stream.title.clone())
+                        .or_else(|| current_track.as_ref().map(|track| track.title.clone()))
                         .unwrap_or_else(|| tr("transport.nothing_playing").to_string());
-                    let sub = current_track
+                    let sub = stream
                         .as_ref()
-                        .map(|t| {
-                            if t.album.is_empty() {
-                                t.artist.clone()
-                            } else {
-                                format!("{}  ·  {}", t.artist, t.album)
-                            }
+                        .map(|stream| stream.subtitle.clone())
+                        .or_else(|| {
+                            current_track.as_ref().map(|track| {
+                                if track.album.is_empty() {
+                                    track.artist.clone()
+                                } else {
+                                    format!("{}  ·  {}", track.artist, track.album)
+                                }
+                            })
                         })
                         .unwrap_or_else(|| tr("transport.hint").to_string());
                     ui.add(
@@ -1340,47 +1414,80 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
 
             ui.add_space(5.0);
 
-            // Seek row: elapsed | slider | total
-            ui.horizontal(|ui| {
-                ui.add_sized(
-                    [42.0, 14.0],
-                    egui::Label::new(
-                        RichText::new(fmt_time(app.seek_drag.unwrap_or(snap.position)))
-                            .monospace()
-                            .size(10.5)
-                            .color(th::text_dim()),
-                    ),
-                );
-                let mut pos = app.seek_drag.unwrap_or(snap.position);
-                let max = duration.max(1.0);
-                ui.spacing_mut().slider_width = (ui.available_width() - 100.0).max(100.0);
-                let resp = ui.add(
-                    egui::Slider::new(&mut pos, 0.0..=max)
-                        .show_value(false)
-                        .trailing_fill(true),
-                );
-                resp.widget_info(|| {
-                    WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
-                });
-                if resp.dragged() {
-                    app.seek_drag = Some(pos);
-                }
-                if resp.drag_stopped() {
-                    if let Some(p) = &app.player {
-                        p.seek(pos);
+            // Seek row: live streams have no seek bar.
+            if let Some(stream) = &stream {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [42.0, 14.0],
+                        egui::Label::new(
+                            RichText::new(fmt_time(snap.position))
+                                .monospace()
+                                .size(10.5)
+                                .color(th::text_dim()),
+                        ),
+                    );
+                    match stream.kind {
+                        StreamKind::Radio => {
+                            ui.label(RichText::new("● LIVE").size(10.5).color(th::accent()));
+                        }
+                        StreamKind::Podcast => {
+                            ui.label(
+                                RichText::new(format!(
+                                    "STREAMING  ·  {}",
+                                    if duration > 0.0 {
+                                        fmt_time(duration)
+                                    } else {
+                                        "unknown length".to_string()
+                                    }
+                                ))
+                                .size(10.5)
+                                .color(th::text_dim()),
+                            );
+                        }
                     }
-                    app.seek_drag = None;
-                }
-                ui.add_sized(
-                    [42.0, 14.0],
-                    egui::Label::new(
-                        RichText::new(fmt_time(duration))
-                            .monospace()
-                            .size(10.5)
-                            .color(th::text_dim()),
-                    ),
-                );
-            });
+                });
+            } else {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [42.0, 14.0],
+                        egui::Label::new(
+                            RichText::new(fmt_time(app.seek_drag.unwrap_or(snap.position)))
+                                .monospace()
+                                .size(10.5)
+                                .color(th::text_dim()),
+                        ),
+                    );
+                    let mut pos = app.seek_drag.unwrap_or(snap.position);
+                    let max = duration.max(1.0);
+                    ui.spacing_mut().slider_width = (ui.available_width() - 100.0).max(100.0);
+                    let resp = ui.add(
+                        egui::Slider::new(&mut pos, 0.0..=max)
+                            .show_value(false)
+                            .trailing_fill(true),
+                    );
+                    resp.widget_info(|| {
+                        WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
+                    });
+                    if resp.dragged() {
+                        app.seek_drag = Some(pos);
+                    }
+                    if resp.drag_stopped() {
+                        if let Some(p) = &app.player {
+                            p.seek(pos);
+                        }
+                        app.seek_drag = None;
+                    }
+                    ui.add_sized(
+                        [42.0, 14.0],
+                        egui::Label::new(
+                            RichText::new(fmt_time(duration))
+                                .monospace()
+                                .size(10.5)
+                                .color(th::text_dim()),
+                        ),
+                    );
+                });
+            }
 
             if let Some(err) = &app.audio_error {
                 ui.label(
@@ -1443,6 +1550,104 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                     Color32::from_black_alpha(if th::skin().is_light() { 90 } else { 150 }),
                 );
             }
+        }
+        if let Some(stream) = app.stream.clone() {
+            ui.vertical_centered(|ui| {
+                ui.add_space(30.0);
+                let art = (avail.y * 0.34).clamp(150.0, 280.0);
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(art, art), egui::Sense::hover());
+                let icon = match stream.kind {
+                    StreamKind::Radio => icons::BROADCAST,
+                    StreamKind::Podcast => icons::MICROPHONE,
+                };
+                ui.painter()
+                    .rect_filled(rect, th::corner(14), th::bg_row_alt());
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    icon.as_str(),
+                    egui::FontId::proportional(art * 0.34),
+                    th::accent(),
+                );
+                ui.add_space(20.0);
+                ui.add(
+                    egui::Label::new(th::semibold(&stream.title, 25.0).color(th::text()))
+                        .truncate(),
+                );
+                ui.label(
+                    RichText::new(&stream.subtitle)
+                        .size(14.0)
+                        .color(th::text_dim()),
+                );
+                ui.label(
+                    RichText::new(match stream.kind {
+                        StreamKind::Radio => "Internet radio",
+                        StreamKind::Podcast => "Podcast",
+                    })
+                    .size(10.5)
+                    .color(th::text_dim()),
+                );
+                ui.add_space(22.0);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(230.0, 46.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        if icons::transport(
+                            ui,
+                            icons::SKIP_BACK,
+                            18.0,
+                            false,
+                            tr("transport.previous"),
+                        )
+                        .clicked()
+                        {
+                            app.prev_track();
+                        }
+                        let playing = snap.status == musicwasp_core::PlayerStatus::Playing;
+                        let icon = if playing { icons::PAUSE } else { icons::PLAY };
+                        if icons::transport(ui, icon, 28.0, true, "Play / pause").clicked() {
+                            app.toggle_pause();
+                        }
+                        if icons::transport(
+                            ui,
+                            icons::SKIP_FORWARD,
+                            18.0,
+                            false,
+                            tr("transport.next"),
+                        )
+                        .clicked()
+                        {
+                            app.next_track();
+                        }
+                        if icons::transport(ui, icons::STOP, 16.0, false, tr("transport.stop"))
+                            .clicked()
+                        {
+                            app.stop();
+                        }
+                    },
+                );
+                ui.add_space(14.0);
+                let position = fmt_time(snap.position);
+                if stream.kind == StreamKind::Radio {
+                    ui.label(
+                        RichText::new(format!("{position}  ·  ● LIVE"))
+                            .size(11.5)
+                            .color(th::accent()),
+                    );
+                } else if stream.duration_secs > 0 {
+                    ui.label(
+                        RichText::new(format!(
+                            "{position} / {}",
+                            fmt_time(stream.duration_secs as f64)
+                        ))
+                        .size(11.5)
+                        .color(th::text_dim()),
+                    );
+                } else {
+                    ui.label(RichText::new(position).size(11.5).color(th::text_dim()));
+                }
+            });
+            return;
         }
         let art = (avail.y * 0.40).clamp(140.0, 330.0).min(avail.x * 0.42);
 
@@ -2061,7 +2266,387 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
 }
 
 /// Album grid with cover tiles. Right-click a tile for the cover tools.
-/// MilkDrop visualizer strip above the transport bar.
+/// Podcast subscriptions and episodes.
+pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
+    let ctx = ui.ctx().clone();
+    egui::CentralPanel::default().show(ui, |ui| {
+        ui.horizontal(|ui| {
+            if ui
+                .button(icons::with(icons::ARROW_LEFT, "Library"))
+                .clicked()
+            {
+                app.view = View::Library;
+                app.mark_browser_dirty();
+            }
+            ui.label(th::semibold("Podcasts", 18.0).color(th::text()));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(icons::with(icons::PLUS, "Add feed")).clicked() {
+                    app.show_podcast_dialog = true;
+                }
+                if app.selected_feed.is_some() {
+                    if ui
+                        .add_enabled(!app.podcast_loading, egui::Button::new("Refresh"))
+                        .clicked()
+                    {
+                        app.refresh_selected_podcast();
+                    }
+                }
+            });
+        });
+        if let Some(status) = &app.podcast_status {
+            ui.label(
+                RichText::new(status.as_str())
+                    .size(10.5)
+                    .color(th::text_dim()),
+            );
+        }
+        if app.podcast_loading {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(RichText::new("Fetching feed…").size(11.0));
+            });
+        }
+        ui.separator();
+
+        if app.selected_feed.is_none() {
+            if app.podcast_feeds.is_empty() {
+                ui.centered_and_justified(|ui| {
+                    ui.label(
+                        RichText::new("No podcast subscriptions yet. Add a feed URL.")
+                            .size(12.0)
+                            .color(th::text_dim()),
+                    );
+                });
+                return;
+            }
+            egui::ScrollArea::vertical()
+                .id_salt("podcast_feeds")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for feed in app.podcast_feeds.clone() {
+                        ui.horizontal(|ui| {
+                            let label = format!(
+                                "{}   ·   {} episode(s), {} unplayed",
+                                feed.title, feed.episode_count, feed.unplayed_count
+                            );
+                            let width = (ui.available_width() - 36.0).max(80.0);
+                            let response = ui.add_sized(
+                                [width, 28.0],
+                                egui::Label::new(RichText::new(label).size(12.5).color(th::text()))
+                                    .sense(egui::Sense::click())
+                                    .truncate(),
+                            );
+                            if response
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                app.select_podcast_feed(feed.id);
+                            }
+                            if icons::compact(ui, icons::TRASH, "Delete subscription").clicked() {
+                                app.delete_podcast_feed(feed.id);
+                            }
+                        });
+                        ui.label(
+                            RichText::new(feed.url.as_str())
+                                .size(9.5)
+                                .color(th::text_dim()),
+                        );
+                        ui.add_space(3.0);
+                    }
+                });
+        } else {
+            let feed_id = app.selected_feed.unwrap_or_default();
+            let title = app
+                .podcast_feeds
+                .iter()
+                .find(|feed| feed.id == feed_id)
+                .map(|feed| feed.title.clone())
+                .unwrap_or_else(|| "Feed".to_string());
+            ui.horizontal(|ui| {
+                if ui.button("All feeds").clicked() {
+                    app.selected_feed = None;
+                    app.podcast_episodes.clear();
+                }
+                ui.label(th::semibold(title, 15.0).color(th::text()));
+                ui.label(
+                    RichText::new(format!("{} episode(s)", app.podcast_episodes.len()))
+                        .size(10.5)
+                        .color(th::text_dim()),
+                );
+            });
+            ui.add_space(4.0);
+            if app.podcast_episodes.is_empty() {
+                ui.label(
+                    RichText::new("No episodes yet. Refresh the feed.")
+                        .size(11.0)
+                        .color(th::text_dim()),
+                );
+                return;
+            }
+            egui::ScrollArea::vertical()
+                .id_salt("podcast_episodes")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for episode in app.podcast_episodes.clone() {
+                        ui.horizontal(|ui| {
+                            let playing = app
+                                .stream
+                                .as_ref()
+                                .is_some_and(|stream| stream.episode_id == Some(episode.id));
+                            if icons::compact(
+                                ui,
+                                if playing { icons::PAUSE } else { icons::PLAY },
+                                "Play episode",
+                            )
+                            .clicked()
+                            {
+                                app.play_podcast_episode(&episode);
+                            }
+                            ui.vertical(|ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        th::semibold(&episode.title, 12.5).color(th::text()),
+                                    )
+                                    .truncate(),
+                                );
+                                let date = if episode.published.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("{}  ·  ", episode.published)
+                                };
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{}{}",
+                                        date,
+                                        if episode.description.is_empty() {
+                                            String::new()
+                                        } else {
+                                            episode.description.chars().take(110).collect()
+                                        }
+                                    ))
+                                    .size(10.0)
+                                    .color(th::text_dim()),
+                                );
+                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if episode.played {
+                                        ui.label(
+                                            icons::text(icons::CHECK, 12.0).color(th::accent()),
+                                        );
+                                    } else if episode.position_secs > 0 {
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "{} / {}",
+                                                fmt_time(episode.position_secs as f64),
+                                                fmt_time(episode.duration_secs as f64)
+                                            ))
+                                            .size(10.0)
+                                            .color(th::text_dim()),
+                                        );
+                                    } else if episode.duration_secs > 0 {
+                                        ui.label(
+                                            RichText::new(fmt_time(episode.duration_secs as f64))
+                                                .size(10.0)
+                                                .color(th::text_dim()),
+                                        );
+                                    }
+                                },
+                            );
+                        });
+                        ui.separator();
+                    }
+                });
+        }
+    });
+    podcast_dialog(app, &ctx);
+}
+
+fn podcast_dialog(app: &mut App, ctx: &egui::Context) {
+    if !app.show_podcast_dialog {
+        return;
+    }
+    let mut open = true;
+    let mut url = app.podcast_url.clone();
+    let mut add = false;
+    egui::Window::new("Add podcast feed")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(480.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.label(RichText::new("RSS or Atom feed URL").size(10.5));
+            ui.add_sized(
+                [460.0, 22.0],
+                egui::TextEdit::singleline(&mut url).hint_text("https://example.com/feed.xml"),
+            );
+            ui.label(
+                RichText::new("The feed's episodes are stored in the library database.")
+                    .size(9.5)
+                    .color(th::text_dim()),
+            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Add feed").clicked() {
+                    add = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    app.show_podcast_dialog = false;
+                }
+            });
+        });
+    app.podcast_url = url;
+    if add {
+        app.add_podcast_feed(&app.podcast_url.clone());
+    }
+    if !open {
+        app.show_podcast_dialog = false;
+    }
+}
+
+/// Internet radio station list.
+pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
+    let ctx = ui.ctx().clone();
+    egui::CentralPanel::default().show(ui, |ui| {
+        ui.horizontal(|ui| {
+            if ui
+                .button(icons::with(icons::ARROW_LEFT, "Library"))
+                .clicked()
+            {
+                app.view = View::Library;
+                app.mark_browser_dirty();
+            }
+            ui.label(th::semibold("Radio", 18.0).color(th::text()));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(icons::with(icons::PLUS, "Add station")).clicked() {
+                    app.show_radio_dialog = true;
+                }
+            });
+        });
+        if let Some(status) = &app.radio_status {
+            ui.label(
+                RichText::new(status.as_str())
+                    .size(10.5)
+                    .color(th::text_dim()),
+            );
+        }
+        ui.separator();
+        if app.radio_stations.is_empty() {
+            ui.centered_and_justified(|ui| {
+                ui.label(
+                    RichText::new("No radio stations yet. Add an MP3 or AAC stream URL.")
+                        .size(12.0)
+                        .color(th::text_dim()),
+                );
+            });
+            return;
+        }
+        egui::ScrollArea::vertical()
+            .id_salt("radio_stations")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for station in app.radio_stations.clone() {
+                    ui.horizontal(|ui| {
+                        let playing = app.stream.as_ref().is_some_and(|stream| {
+                            stream.kind == StreamKind::Radio && stream.url == station.url
+                        });
+                        if icons::compact(
+                            ui,
+                            if playing { icons::PAUSE } else { icons::PLAY },
+                            "Play station",
+                        )
+                        .clicked()
+                        {
+                            app.play_radio_station(&station);
+                        }
+                        ui.vertical(|ui| {
+                            ui.label(th::semibold(&station.name, 13.0).color(th::text()));
+                            ui.label(
+                                RichText::new(station.genre.as_str())
+                                    .size(10.0)
+                                    .color(th::text_dim()),
+                            );
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if icons::compact(ui, icons::TRASH, "Delete station").clicked() {
+                                app.delete_radio_station(station.id);
+                            }
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(station.url.as_str())
+                                        .size(9.5)
+                                        .color(th::text_dim()),
+                                )
+                                .truncate(),
+                            );
+                        });
+                    });
+                    ui.separator();
+                }
+            });
+    });
+    radio_dialog(app, &ctx);
+}
+
+fn radio_dialog(app: &mut App, ctx: &egui::Context) {
+    if !app.show_radio_dialog {
+        return;
+    }
+    let mut open = true;
+    let mut name = app.radio_name.clone();
+    let mut url = app.radio_url.clone();
+    let mut genre = app.radio_genre.clone();
+    let mut add = false;
+    egui::Window::new("Add radio station")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(480.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.label(RichText::new("Name").size(10.5));
+            ui.add_sized(
+                [460.0, 22.0],
+                egui::TextEdit::singleline(&mut name).hint_text("Station name"),
+            );
+            ui.label(RichText::new("Stream URL").size(10.5));
+            ui.add_sized(
+                [460.0, 22.0],
+                egui::TextEdit::singleline(&mut url).hint_text("https://example.com/stream.mp3"),
+            );
+            ui.label(RichText::new("Genre (optional)").size(10.5));
+            ui.add_sized(
+                [460.0, 22.0],
+                egui::TextEdit::singleline(&mut genre).hint_text("Jazz"),
+            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Add station").clicked() {
+                    add = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    app.show_radio_dialog = false;
+                }
+            });
+        });
+    app.radio_name = name;
+    app.radio_url = url;
+    app.radio_genre = genre;
+    if add {
+        let (name, url, genre) = (
+            app.radio_name.clone(),
+            app.radio_url.clone(),
+            app.radio_genre.clone(),
+        );
+        app.add_radio_station(&name, &url, &genre);
+    }
+    if !open {
+        app.show_radio_dialog = false;
+    }
+}
+
 pub fn visualizer_panel(app: &mut App, ui: &mut egui::Ui) {
     if !app.settings.visualizer.enabled {
         return;

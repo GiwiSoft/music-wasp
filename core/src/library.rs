@@ -104,6 +104,50 @@ impl Library {
         duplicate_groups(&self.conn)
     }
 
+    // ---- podcasts ----
+
+    pub fn podcast_feeds(&self) -> Result<Vec<crate::podcast::PodcastFeed>> {
+        crate::podcast::feeds(&self.conn)
+    }
+
+    pub fn add_podcast_feed(&self, url: &str) -> Result<i64> {
+        crate::podcast::add_feed(&self.conn, url)
+    }
+
+    pub fn update_podcast_feed(&self, id: i64, feed: &crate::podcast::ParsedFeed) -> Result<()> {
+        crate::podcast::update_feed(&self.conn, id, feed)
+    }
+
+    pub fn podcast_episodes(&self, feed_id: i64) -> Result<Vec<crate::podcast::PodcastEpisode>> {
+        crate::podcast::episodes(&self.conn, feed_id)
+    }
+
+    pub fn delete_podcast_feed(&self, id: i64) -> Result<()> {
+        crate::podcast::delete_feed(&self.conn, id)
+    }
+
+    pub fn set_podcast_progress(&self, id: i64, position: u64, played: bool) -> Result<()> {
+        crate::podcast::set_progress(&self.conn, id, position, played)
+    }
+
+    // ---- internet radio ----
+
+    pub fn radio_stations(&self) -> Result<Vec<crate::radio::RadioStation>> {
+        crate::radio::stations(&self.conn)
+    }
+
+    pub fn add_radio_station(&self, name: &str, url: &str, genre: &str) -> Result<i64> {
+        crate::radio::add(&self.conn, name, url, genre)
+    }
+
+    pub fn update_radio_station(&self, id: i64, name: &str, url: &str, genre: &str) -> Result<()> {
+        crate::radio::update(&self.conn, id, name, url, genre)
+    }
+
+    pub fn delete_radio_station(&self, id: i64) -> Result<()> {
+        crate::radio::delete(&self.conn, id)
+    }
+
     /// Delete library rows only. Audio files stay on disk, and playlist entries
     /// disappear through the `ON DELETE CASCADE` foreign keys.
     pub fn remove_tracks(&self, ids: &[i64]) -> Result<usize> {

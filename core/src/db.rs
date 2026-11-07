@@ -105,6 +105,44 @@ fn migrate(conn: &Connection) -> Result<()> {
             name  TEXT NOT NULL,
             query TEXT NOT NULL
         );
+
+        -- Internet radio stations; playback streams straight from the URL.
+        CREATE TABLE IF NOT EXISTS radio_stations (
+            id       INTEGER PRIMARY KEY,
+            name     TEXT NOT NULL,
+            url      TEXT NOT NULL UNIQUE,
+            genre    TEXT NOT NULL DEFAULT '',
+            added_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        -- Podcast subscriptions and their episodes. Progress is kept per
+        -- episode so the UI can show listened state.
+        CREATE TABLE IF NOT EXISTS podcast_feeds (
+            id           INTEGER PRIMARY KEY,
+            url          TEXT NOT NULL UNIQUE,
+            title        TEXT NOT NULL DEFAULT '',
+            description  TEXT NOT NULL DEFAULT '',
+            image_url    TEXT NOT NULL DEFAULT '',
+            last_checked INTEGER,
+            added_at     INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+        CREATE TABLE IF NOT EXISTS podcast_episodes (
+            id            INTEGER PRIMARY KEY,
+            feed_id       INTEGER NOT NULL REFERENCES podcast_feeds(id) ON DELETE CASCADE,
+            guid          TEXT NOT NULL,
+            title         TEXT NOT NULL DEFAULT '',
+            description   TEXT NOT NULL DEFAULT '',
+            audio_url     TEXT NOT NULL,
+            image_url     TEXT NOT NULL DEFAULT '',
+            published     TEXT NOT NULL DEFAULT '',
+            published_at  INTEGER NOT NULL DEFAULT 0,
+            duration_secs INTEGER NOT NULL DEFAULT 0,
+            played        INTEGER NOT NULL DEFAULT 0,
+            position_secs INTEGER NOT NULL DEFAULT 0,
+            UNIQUE (feed_id, guid)
+        );
+        CREATE INDEX IF NOT EXISTS idx_podcast_episodes_feed
+            ON podcast_episodes(feed_id, published_at DESC);
         "#,
     )?;
 

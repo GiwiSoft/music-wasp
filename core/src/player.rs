@@ -106,6 +106,8 @@ mod audio_impl {
 
     enum Cmd {
         Load(PathBuf),
+        /// Stream a radio station or podcast episode over HTTP.
+        LoadUrl(String),
         /// Queue a source after the current one for gapless transitions.
         Enqueue(PathBuf),
         Resume,
@@ -166,6 +168,11 @@ mod audio_impl {
 
         pub fn load_and_play(&self, path: &Path) {
             let _ = self.tx.send(Cmd::Load(path.to_path_buf()));
+        }
+
+        /// Play an internet radio or podcast stream.
+        pub fn load_url(&self, url: &str) {
+            let _ = self.tx.send(Cmd::LoadUrl(url.to_string()));
         }
 
         /// Append the next track to the sink so it starts without a gap.
@@ -377,6 +384,53 @@ mod audio_impl {
                     }
                     last_len = sinks[active].len();
                 }
+                Ok(Cmd::LoadUrl(url)) => {
+                    for sink in &sinks {
+                        sink.stop();
+                    }
+                    sinks[1].pause();
+                    sinks[1].set_volume(0.0);
+                    queued.clear();
+                    pending = None;
+                    fade = None;
+                    current = None;
+                    current_rate = None;
+                    active = 0;
+                    *shared.current.lock().unwrap() = None;
+                    shared.duration_ms.store(0, Ordering::Relaxed);
+                    shared.position_ms.store(0, Ordering::Relaxed);
+                    let volume = f32::from_bits(shared.volume.load(Ordering::Relaxed) as u32);
+                    sinks[0].set_volume(volume);
+                    match open_url(&url) {
+                        Ok((source, rate)) => {
+                            *shared.current.lock().unwrap() = Some(PathBuf::from(url.clone()));
+                            shared.duration_ms.store(0, Ordering::Relaxed);
+                            shared.position_ms.store(0, Ordering::Relaxed);
+                            tap.set_format(rate, source.channels());
+                            tap.clear();
+                            sinks[0].append(DspSource::new(
+                                source,
+                                Arc::clone(&shared.eq),
+                                Some(Arc::clone(&tap)),
+                            ));
+                            sinks[0].play();
+                            was_playing = true;
+                            current_rate = Some(rate);
+                            current = Some((PathBuf::from(url), Duration::ZERO));
+                            shared
+                                .status
+                                .store(PlayerStatus::Playing.to_u8(), Ordering::Relaxed);
+                            shared.finished.store(false, Ordering::Relaxed);
+                        }
+                        Err(e) => {
+                            tracing::warn!("cannot stream {url}: {e}");
+                            shared
+                                .status
+                                .store(PlayerStatus::Stopped.to_u8(), Ordering::Relaxed);
+                        }
+                    }
+                    last_len = sinks[active].len();
+                }
                 Ok(Cmd::Enqueue(path)) => {
                     let duplicate = current
                         .as_ref()
@@ -567,6 +621,76 @@ mod audio_impl {
     }
 
     type BoxedSource = Box<dyn Source<Item = i16> + Send + 'static>;
+
+    /// HTTP stream with a small rewind cache. Rodio probes the first bytes of
+    /// a stream by seeking back to the start; live streams cannot seek, so the
+    /// cache makes the probe work while keeping the stream sequential.
+    struct HttpStream {
+        response: reqwest::blocking::Response,
+        cache: Vec<u8>,
+        position: u64,
+    }
+
+    const STREAM_CACHE_LIMIT: usize = 1 << 20;
+
+    impl std::io::Read for HttpStream {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let position = self.position as usize;
+            if position < self.cache.len() {
+                let available = &self.cache[position..];
+                let count = available.len().min(buffer.len());
+                buffer[..count].copy_from_slice(&available[..count]);
+                self.position += count as u64;
+                return Ok(count);
+            }
+            let count = self.response.read(buffer)?;
+            if self.cache.len() < STREAM_CACHE_LIMIT {
+                let room = STREAM_CACHE_LIMIT - self.cache.len();
+                self.cache.extend_from_slice(&buffer[..count.min(room)]);
+            }
+            self.position += count as u64;
+            Ok(count)
+        }
+    }
+
+    impl std::io::Seek for HttpStream {
+        fn seek(&mut self, position: std::io::SeekFrom) -> std::io::Result<u64> {
+            let target = match position {
+                std::io::SeekFrom::Start(value) => value,
+                std::io::SeekFrom::Current(delta) => self.position.saturating_add_signed(delta),
+                std::io::SeekFrom::End(_) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "live streams have no known end",
+                    ));
+                }
+            };
+            if target <= self.cache.len() as u64 {
+                self.position = target;
+                Ok(target)
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    "cannot seek past the buffered part of a live stream",
+                ))
+            }
+        }
+    }
+
+    fn open_url(url: &str) -> Result<(BoxedSource, u32)> {
+        let client = reqwest::blocking::Client::builder()
+            .user_agent(crate::autotag::USER_AGENT)
+            .connect_timeout(Duration::from_secs(15))
+            .build()?;
+        let response = client.get(url).send()?.error_for_status()?;
+        let decoder = Decoder::new(HttpStream {
+            response,
+            cache: Vec::new(),
+            position: 0,
+        })?;
+        let sample_rate = decoder.sample_rate();
+        Ok((Box::new(decoder), sample_rate))
+    }
 
     fn open_source(path: &Path, shared: &Shared) -> Result<(BoxedSource, Duration, u32)> {
         let file = BufReader::new(File::open(path)?);

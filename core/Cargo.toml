@@ -19,10 +19,11 @@ walkdir.workspace = true
 rusqlite.workspace = true
 dirs.workspace = true
 tracing.workspace = true
-rodio = { version = "0.19", optional = true }
+rodio = { version = "0.19", optional = true, features = ["symphonia-aac", "symphonia-isomp4"] }
 rusty-chromaprint = "0.3"
 base64 = "0.22"
 crossbeam-queue = "0.3"
+quick-xml = "0.41"
 reqwest = { version = "0.12", default-features = false, features = [
     "blocking",
     "json",

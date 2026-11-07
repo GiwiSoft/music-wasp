@@ -28,6 +28,7 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - Disc folders, saved searches, session restore and ListenBrainz scrobbling
 - Compact always-on-top mini player and optional Linux tray controls
 - Linux MPRIS2 desktop controls and native Wayland drag-and-drop
+- Podcast subscriptions with RSS feeds, episode progress, and internet radio streams
 - MilkDrop visualizer on wgpu: bundled presets, shuffle, library panel, Now Playing background and fullscreen
 
 ## Install
@@ -81,6 +82,22 @@ The app renders MilkDrop presets with `wgpu` and feeds them the post-EQ audio st
 - `Esc` leaves fullscreen
 
 ![Visualizer](docs/visualizer.png)
+
+## Podcasts and radio
+
+The left sidebar and the main menu have **Podcasts** and **Radio** views.
+
+- **Radio**: add a station name, direct stream URL and optional genre, then press play.
+  MP3, OGG and AAC streams supported by the built-in decoder play without external helpers.
+- **Podcasts**: add an RSS/Atom feed URL, press Refresh, then play episodes. Episode
+  listening position and played state are stored in the library database.
+- **Playback controls**, volume, tray and mini-player metadata follow the active stream.
+- Live radio has no seek bar; podcast progress is saved but HTTP streams restart from the
+  beginning when replayed.
+- Feed and station lists are stored alongside the music library in SQLite.
+
+Direct audio stream URLs are required. HLS/`.m3u8` playlists, YouTube links and feed pages are
+not audio streams and will not play.
 
 ## AcoustID identification
 
