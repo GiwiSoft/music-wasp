@@ -458,6 +458,9 @@ pub struct Settings {
     /// Show the play-queue panel on the right.
     #[serde(default = "default_queue_open")]
     pub queue_open: bool,
+    /// Show the lyrics panel on the right.
+    #[serde(default)]
+    pub lyrics_open: bool,
     /// Watch scanned folders and import new or changed audio automatically.
     #[serde(default = "default_watch_enabled")]
     pub watch_enabled: bool,
@@ -571,6 +574,7 @@ impl Default for Settings {
             folded: FoldedSections::default(),
             columns: ColumnConfig::default(),
             queue_open: default_queue_open(),
+            lyrics_open: false,
             watch_enabled: default_watch_enabled(),
             replaygain: default_replaygain_enabled(),
             replaygain_album: false,

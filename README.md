@@ -29,6 +29,7 @@ Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 - Compact always-on-top mini player and optional Linux tray controls
 - Linux MPRIS2 desktop controls and native Wayland drag-and-drop
 - Podcast subscriptions with RSS feeds, episode progress, and internet radio streams
+- Synchronized `.lrc` lyrics with auto-scroll, click-to-seek and embedded tag fallback
 - MilkDrop visualizer on wgpu: bundled presets, shuffle, library panel, Now Playing background and fullscreen
 
 ## Install
@@ -98,6 +99,22 @@ The left sidebar and the main menu have **Podcasts** and **Radio** views.
 
 Direct audio stream URLs are required. HLS/`.m3u8` playlists, YouTube links and feed pages are
 not audio streams and will not play.
+
+## Lyrics
+
+The **Lyrics** panel follows the current local track.
+
+- Put an `.lrc` file beside the audio file with the same base name, for example
+  `Song.flac` and `Song.lrc`. Uppercase `.LRC` files are found too.
+- `[mm:ss.xx]`, `[mm:ss.xxx]` and `[mm:ss:xx]` timestamps are parsed, together with `[ti:]`,
+  `[ar:]`, `[al:]` and `[offset:]` metadata. Multiple timestamps per line and enhanced word
+  timestamps are supported.
+- UTF-8 and UTF-16 files are read. If no sidecar exists, lyrics stored in the file tag are used.
+  Plain unsynchronized text is displayed without highlighting.
+- Toggle the panel with the quotes button in the transport bar, the main menu, or the Now Playing
+  screen. Synchronized lines highlight and auto-scroll; click a line to seek. The reload button
+  rereads the file after edits.
+- Lyrics lookup is local only. No online lyric services are queried.
 
 ## AcoustID identification
 

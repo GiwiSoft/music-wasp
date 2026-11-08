@@ -6,6 +6,7 @@ pub mod backup;
 pub mod db;
 pub mod dsp;
 pub mod library;
+pub mod lyrics;
 pub mod m3u;
 pub mod organize;
 pub mod player;

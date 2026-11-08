@@ -4,6 +4,7 @@ use crate::settings::{
 };
 use musicwasp_core::autotag::{self, Candidate, Cover, LocalTrack, Release};
 use musicwasp_core::dsp::Equalizer;
+use musicwasp_core::lyrics::Lyrics;
 use musicwasp_core::podcast::{ParsedFeed, PodcastEpisode, PodcastFeed};
 use musicwasp_core::radio::RadioStation;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
@@ -1414,6 +1415,12 @@ pub struct App {
     pub viz_fullscreen: bool,
     pub viz_pcm: Vec<f32>,
     pub viz_channels: u16,
+    /// Lyrics for the current local track and their sidecar path key.
+    pub lyrics: Option<Lyrics>,
+    lyrics_track: Option<PathBuf>,
+    /// Line highlighted last frame, used to auto-scroll only on changes.
+    pub lyrics_active: Option<usize>,
+    pub lyrics_autoscroll: bool,
     /// Internet radio and podcast playback.
     pub stream: Option<StreamInfo>,
     stream_started: std::time::Instant,
@@ -1633,6 +1640,10 @@ impl App {
             viz_fullscreen: std::env::var("MUSICWASP_VIS_FULLSCREEN").is_ok(),
             viz_pcm: Vec::new(),
             viz_channels: 2,
+            lyrics: None,
+            lyrics_track: None,
+            lyrics_active: None,
+            lyrics_autoscroll: true,
             stream: None,
             stream_started: std::time::Instant::now(),
             stream_saved: std::time::Instant::now(),
@@ -1712,6 +1723,9 @@ impl App {
             {
                 app.select_podcast_feed(feed.id);
             }
+        }
+        if std::env::var("MUSICWASP_LYRICS").is_ok() {
+            app.settings.lyrics_open = true;
         }
         if app.session_enabled {
             app.restore_session(&session);
@@ -3333,6 +3347,40 @@ impl App {
         if self.album_view {
             self.albums_dirty = true;
         }
+    }
+
+    // ---- lyrics ----
+
+    pub fn toggle_lyrics(&mut self) {
+        self.settings.lyrics_open = !self.settings.lyrics_open;
+        if self.settings.lyrics_open {
+            self.lyrics_active = None;
+        }
+        self.persist_settings();
+    }
+
+    /// Load the sidecar file or embedded tag lyrics when the track changes.
+    pub fn sync_lyrics(&mut self) {
+        let current = self
+            .player
+            .as_ref()
+            .and_then(|player| player.snapshot().current);
+        if current == self.lyrics_track {
+            return;
+        }
+        self.lyrics_track = current.clone();
+        self.lyrics_active = None;
+        self.lyrics = current
+            .as_deref()
+            .filter(|path| path.is_file())
+            .and_then(musicwasp_core::lyrics::load);
+    }
+
+    /// Re-read lyrics without waiting for a track change.
+    pub fn reload_lyrics(&mut self) {
+        self.lyrics_track = None;
+        self.lyrics_active = None;
+        self.sync_lyrics();
     }
 
     // ---- visualizer ----
@@ -6132,6 +6180,7 @@ impl eframe::App for App {
         self.handle_screenshot_capture(&ctx);
 
         self.poll_player_events();
+        self.sync_lyrics();
         self.poll_podcasts();
         self.update_stream_progress();
         self.update_scrobbling();
@@ -6168,6 +6217,7 @@ impl eframe::App for App {
             crate::ui::toolbar(self, root);
             if self.plain_view {
                 self.os_drop_zones.clear();
+                crate::ui::lyrics_panel(self, root);
                 crate::ui::now_playing(self, root);
             } else if self.view == View::Podcasts {
                 crate::ui::transport(self, root);
@@ -6180,6 +6230,7 @@ impl eframe::App for App {
                 crate::ui::transport(self, root);
                 crate::ui::visualizer_panel(self, root);
                 crate::ui::queue_panel(self, root);
+                crate::ui::lyrics_panel(self, root);
                 if self.album_view {
                     crate::ui::album_grid(self, root);
                 } else {
@@ -6268,6 +6319,14 @@ impl App {
         {
             self.volume = 0.0;
             self.play_from_list(0);
+        }
+
+        if self.frames == 20 {
+            if let Ok(seconds) = std::env::var("MUSICWASP_SEEK") {
+                if let (Ok(seconds), Some(player)) = (seconds.parse::<f64>(), &self.player) {
+                    player.seek(seconds);
+                }
+            }
         }
 
         if self.frames == 15

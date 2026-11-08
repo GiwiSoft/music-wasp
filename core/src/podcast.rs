@@ -179,13 +179,11 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedFeed> {
                             }
                         }
                     }
-                    b"enclosure" => {
-                        if in_item {
-                            if let Some(url) = attribute(&event, b"url") {
-                                let mime = attribute(&event, b"type").unwrap_or_default();
-                                if mime.is_empty() || mime.starts_with("audio/") {
-                                    item.audio_url = url;
-                                }
+                    b"enclosure" if in_item => {
+                        if let Some(url) = attribute(&event, b"url") {
+                            let mime = attribute(&event, b"type").unwrap_or_default();
+                            if mime.is_empty() || mime.starts_with("audio/") {
+                                item.audio_url = url;
                             }
                         }
                     }
