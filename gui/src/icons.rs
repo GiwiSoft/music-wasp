@@ -31,25 +31,30 @@ pub fn install(ctx: &egui::Context) {
     );
 
     // Inter is the primary face, with the egui defaults kept as fallbacks for
-    // scripts and symbols Inter does not cover. Phosphor icons come last so
-    // icon glyphs embedded in labels still resolve.
+    // scripts and symbols Inter does not cover. Phosphor sits directly after
+    // Inter, before those defaults: the bundled Inter fonts are stripped of
+    // their private-use icon glyphs (see `scripts/strip-inter-pua.py`), so
+    // icon codepoints fall through to Phosphor while ordinary text stays in
+    // Inter. Placing Phosphor before the defaults also keeps their handful of
+    // private-use glyphs from shadowing icons.
     let proportional = fonts
         .families
         .entry(egui::FontFamily::Proportional)
         .or_default();
+    proportional.retain(|name| name != "inter" && name != "phosphor-icons");
     proportional.insert(0, "inter".to_owned());
-    if !proportional.iter().any(|name| name == "phosphor-icons") {
-        proportional.push("phosphor-icons".to_owned());
-    }
+    proportional.insert(1, "phosphor-icons".to_owned());
 
     let monospace = fonts
         .families
         .entry(egui::FontFamily::Monospace)
         .or_default();
+    monospace.retain(|name| name != "inter" && name != "phosphor-icons");
+    // Keep the first monospace face (Hack) ahead of the icons for text, then
+    // icons, then the remaining fallbacks and Inter.
+    let icon_at = usize::from(!monospace.is_empty());
+    monospace.insert(icon_at, "phosphor-icons".to_owned());
     monospace.push("inter".to_owned());
-    if !monospace.iter().any(|name| name == "phosphor-icons") {
-        monospace.push("phosphor-icons".to_owned());
-    }
 
     // A real semibold face for headings and emphasis. `.strong()` alone can
     // only change the colour, so the display weight gets its own family.
