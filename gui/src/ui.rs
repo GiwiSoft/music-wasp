@@ -2565,82 +2565,107 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                 return;
             }
             let mut play_episode = None;
+            // Two single-line labels plus the separator. `show_rows` needs an
+            // exact height, so descriptions are truncated instead of wrapping.
+            let row_height = 46.0;
             egui::ScrollArea::vertical()
                 .id_salt("podcast_episodes")
                 .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for index in 0..app.podcast_episodes.len() {
-                        let episode = &app.podcast_episodes[index];
-                        ui.horizontal(|ui| {
-                            let playing = app
-                                .stream
-                                .as_ref()
-                                .is_some_and(|stream| stream.episode_id == Some(episode.id));
-                            if icons::compact(
-                                ui,
-                                if playing { icons::PAUSE } else { icons::PLAY },
-                                "Play episode",
-                            )
-                            .clicked()
-                            {
-                                play_episode = Some(index);
-                            }
-                            ui.vertical(|ui| {
-                                ui.add(
-                                    egui::Label::new(
-                                        th::semibold(&episode.title, 12.5).color(th::text()),
-                                    )
-                                    .truncate(),
-                                );
-                                let date = if episode.published.is_empty() {
-                                    String::new()
-                                } else {
-                                    format!("{}  ·  ", episode.published)
-                                };
-                                ui.label(
-                                    RichText::new(format!(
-                                        "{}{}",
-                                        date,
-                                        if episode.description.is_empty() {
-                                            String::new()
-                                        } else {
-                                            episode.description.chars().take(110).collect()
-                                        }
-                                    ))
-                                    .size(10.0)
-                                    .color(th::text_dim()),
-                                );
-                            });
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
+                .show_rows(
+                    ui,
+                    row_height,
+                    app.podcast_episodes.len(),
+                    |ui, row_range| {
+                        for index in row_range {
+                            let episode = &app.podcast_episodes[index];
+                            let width = ui.available_width();
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(width, row_height),
+                                egui::Layout::top_down(egui::Align::Min),
                                 |ui| {
-                                    if episode.played {
-                                        ui.label(
-                                            icons::text(icons::CHECK, 12.0).color(th::accent()),
+                                    ui.horizontal(|ui| {
+                                        let playing = app.stream.as_ref().is_some_and(|stream| {
+                                            stream.episode_id == Some(episode.id)
+                                        });
+                                        if icons::compact(
+                                            ui,
+                                            if playing { icons::PAUSE } else { icons::PLAY },
+                                            "Play episode",
+                                        )
+                                        .clicked()
+                                        {
+                                            play_episode = Some(index);
+                                        }
+                                        ui.vertical(|ui| {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    th::semibold(&episode.title, 12.5)
+                                                        .color(th::text()),
+                                                )
+                                                .truncate(),
+                                            );
+                                            let date = if episode.published.is_empty() {
+                                                String::new()
+                                            } else {
+                                                format!("{}  ·  ", episode.published)
+                                            };
+                                            ui.add(
+                                                egui::Label::new(
+                                                    RichText::new(format!(
+                                                        "{}{}",
+                                                        date,
+                                                        if episode.description.is_empty() {
+                                                            String::new()
+                                                        } else {
+                                                            episode
+                                                                .description
+                                                                .chars()
+                                                                .take(110)
+                                                                .collect()
+                                                        }
+                                                    ))
+                                                    .size(10.0)
+                                                    .color(th::text_dim()),
+                                                )
+                                                .truncate(),
+                                            );
+                                        });
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                if episode.played {
+                                                    ui.label(
+                                                        icons::text(icons::CHECK, 12.0)
+                                                            .color(th::accent()),
+                                                    );
+                                                } else if episode.position_secs > 0 {
+                                                    ui.label(
+                                                        RichText::new(format!(
+                                                            "{} / {}",
+                                                            fmt_time(episode.position_secs as f64),
+                                                            fmt_time(episode.duration_secs as f64)
+                                                        ))
+                                                        .size(10.0)
+                                                        .color(th::text_dim()),
+                                                    );
+                                                } else if episode.duration_secs > 0 {
+                                                    ui.label(
+                                                        RichText::new(fmt_time(
+                                                            episode.duration_secs as f64,
+                                                        ))
+                                                        .size(10.0)
+                                                        .color(th::text_dim()),
+                                                    );
+                                                }
+                                            },
                                         );
-                                    } else if episode.position_secs > 0 {
-                                        ui.label(
-                                            RichText::new(format!(
-                                                "{} / {}",
-                                                fmt_time(episode.position_secs as f64),
-                                                fmt_time(episode.duration_secs as f64)
-                                            ))
-                                            .size(10.0)
-                                            .color(th::text_dim()),
-                                        );
-                                    } else if episode.duration_secs > 0 {
-                                        ui.label(
-                                            RichText::new(fmt_time(episode.duration_secs as f64))
-                                                .size(10.0)
-                                                .color(th::text_dim()),
-                                        );
-                                    }
+                                    });
+                                    ui.separator();
                                 },
                             );
-                        });
-                        ui.separator();
-                    }
-                });
+                        }
+                    },
+                );
             if let Some(index) = play_episode {
                 if let Some(episode) = app.podcast_episodes.get(index).cloned() {
                     app.play_podcast_episode(&episode);
