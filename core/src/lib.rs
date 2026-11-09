@@ -10,6 +10,7 @@ pub mod dsp;
 pub mod library;
 pub mod lyrics;
 pub mod m3u;
+pub mod netguard;
 pub mod organize;
 pub mod player;
 pub mod playlist;

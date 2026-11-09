@@ -2068,13 +2068,24 @@ impl App {
         self.start_podcast_fetch(feed_id, url);
     }
 
+    /// Network reach for podcast feeds and episodes, from the user's setting.
+    pub fn podcast_access(&self) -> musicwasp_core::netguard::Access {
+        if self.settings.allow_local_feeds {
+            musicwasp_core::netguard::Access::AnyHost
+        } else {
+            musicwasp_core::netguard::Access::PublicOnly
+        }
+    }
+
     fn start_podcast_fetch(&mut self, feed_id: i64, url: String) {
         let (tx, rx) = mpsc::channel();
         self.podcast_rx = Some(rx);
         self.podcast_loading = true;
         self.podcast_status = Some("fetching feed…".to_string());
+        let access = self.podcast_access();
         std::thread::spawn(move || {
-            let result = musicwasp_core::podcast::fetch(&url).map_err(|error| format!("{error:#}"));
+            let result =
+                musicwasp_core::podcast::fetch(&url, access).map_err(|error| format!("{error:#}"));
             let _ = tx.send(PodcastMsg::Feed { feed_id, result });
         });
     }
@@ -2203,7 +2214,13 @@ impl App {
         self.selected.clear();
         self.finish_scrobble();
         if let Some(player) = &self.player {
-            player.load_url(&stream.url);
+            // Radio streams are URLs the user typed. Podcast episodes come from
+            // the feed, so they follow the local-feeds setting.
+            let access = match stream.kind {
+                StreamKind::Radio => musicwasp_core::netguard::Access::AnyHost,
+                StreamKind::Podcast => self.podcast_access(),
+            };
+            player.load_url(&stream.url, access);
         }
         self.message = match stream.kind {
             StreamKind::Radio => format!("Radio: {}", stream.title),

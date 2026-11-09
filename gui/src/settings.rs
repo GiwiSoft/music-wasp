@@ -493,6 +493,10 @@ pub struct Settings {
     /// Show the Linux tray icon.
     #[serde(default)]
     pub tray_enabled: bool,
+    /// Let podcast feeds and episodes use local or private network addresses.
+    /// Off by default: a subscribed feed could otherwise reach the local network.
+    #[serde(default)]
+    pub allow_local_feeds: bool,
     /// MilkDrop visualizer preferences.
     #[serde(default)]
     pub visualizer: VisualizerSettings,
@@ -587,6 +591,7 @@ impl Default for Settings {
             watch_folders: Vec::new(),
             mini_player: false,
             tray_enabled: false,
+            allow_local_feeds: false,
             visualizer: VisualizerSettings::default(),
             organize_pattern: default_organize_pattern(),
             organize_root: String::new(),

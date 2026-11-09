@@ -4903,6 +4903,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     let mut chosen_language: Option<Language> = None;
     let mut chosen_device: Option<Option<String>> = None;
     let mut scrobble_enabled = app.settings.scrobble_listenbrainz;
+    let mut local_feeds = app.settings.allow_local_feeds;
     let mut scrobble_token = app.settings.listenbrainz_token.clone();
     let mut crossfade_value: Option<f32> = None;
     let mut viz_enabled = app.settings.visualizer.enabled;
@@ -5243,6 +5244,21 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         .color(th::text_dim()),
                     );
                 }
+
+                ui.add_space(8.0);
+                ui.checkbox(
+                    &mut local_feeds,
+                    RichText::new("Allow podcasts from local network addresses").size(11.5),
+                );
+                ui.label(
+                    RichText::new(
+                        "Off: feeds and episodes may only use public addresses. Turn on only for a \
+                         podcast server on your own network; a feed you subscribe to can otherwise \
+                         reach local services.",
+                    )
+                    .size(9.5)
+                    .color(th::text_dim()),
+                );
                         }
 
             if tab == SettingsTab::Visualizer {
@@ -5545,6 +5561,10 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     }
     if let Some(secs) = crossfade_value {
         app.set_crossfade(secs);
+    }
+    if local_feeds != app.settings.allow_local_feeds {
+        app.settings.allow_local_feeds = local_feeds;
+        app.persist_settings();
     }
     if scrobble_enabled != app.settings.scrobble_listenbrainz
         || scrobble_token != app.settings.listenbrainz_token

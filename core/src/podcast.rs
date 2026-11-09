@@ -3,6 +3,7 @@
 //! Feed refreshes happen on background threads in the GUI; this module only
 //! performs one blocking fetch/parse and the SQLite updates.
 
+use crate::netguard::{self, Access};
 use anyhow::{Context, Result};
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -69,13 +70,21 @@ pub struct PodcastEpisode {
 const MAX_FEED_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Download and parse one feed. The caller runs this off the UI thread.
-pub fn fetch(url: &str) -> Result<ParsedFeed> {
-    let client = reqwest::blocking::Client::builder()
-        .user_agent(USER_AGENT)
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(45))
-        .build()
-        .context("cannot build HTTP client")?;
+///
+/// `access` decides whether the feed may point at local or private addresses.
+/// See [`crate::netguard`].
+pub fn fetch(url: &str, access: Access) -> Result<ParsedFeed> {
+    let parsed = reqwest::Url::parse(url).with_context(|| format!("invalid feed URL {url}"))?;
+    netguard::check_url(&parsed, access).map_err(anyhow::Error::msg)?;
+    let client = netguard::configure(
+        reqwest::blocking::Client::builder()
+            .user_agent(USER_AGENT)
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(45)),
+        access,
+    )
+    .build()
+    .context("cannot build HTTP client")?;
     let response = client
         .get(url)
         .send()

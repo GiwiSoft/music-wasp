@@ -114,7 +114,7 @@ mod audio_impl {
     enum Cmd {
         Load(PathBuf),
         /// Stream a radio station or podcast episode over HTTP.
-        LoadUrl(String),
+        LoadUrl(String, crate::netguard::Access),
         /// Queue a source after the current one for gapless transitions.
         Enqueue(PathBuf),
         Resume,
@@ -178,8 +178,8 @@ mod audio_impl {
         }
 
         /// Play an internet radio or podcast stream.
-        pub fn load_url(&self, url: &str) {
-            let _ = self.tx.send(Cmd::LoadUrl(url.to_string()));
+        pub fn load_url(&self, url: &str, access: crate::netguard::Access) {
+            let _ = self.tx.send(Cmd::LoadUrl(url.to_string(), access));
         }
 
         /// Append the next track to the sink so it starts without a gap.
@@ -387,7 +387,7 @@ mod audio_impl {
                     }
                     last_len = sinks[active].len();
                 }
-                Ok(Cmd::LoadUrl(url)) => {
+                Ok(Cmd::LoadUrl(url, access)) => {
                     for sink in &sinks {
                         sink.stop();
                     }
@@ -404,7 +404,7 @@ mod audio_impl {
                     shared.position_ms.store(0, Ordering::Relaxed);
                     let volume = f32::from_bits(shared.volume.load(Ordering::Relaxed) as u32);
                     sinks[0].set_volume(volume);
-                    match open_url(&url) {
+                    match open_url(&url, access) {
                         Ok((source, rate)) => {
                             *lock(&shared.current) = Some(PathBuf::from(url.clone()));
                             shared.duration_ms.store(0, Ordering::Relaxed);
@@ -682,11 +682,16 @@ mod audio_impl {
         }
     }
 
-    fn open_url(url: &str) -> Result<(BoxedSource, u32)> {
-        let client = reqwest::blocking::Client::builder()
-            .user_agent(crate::autotag::USER_AGENT)
-            .connect_timeout(Duration::from_secs(15))
-            .build()?;
+    fn open_url(url: &str, access: crate::netguard::Access) -> Result<(BoxedSource, u32)> {
+        let parsed = reqwest::Url::parse(url)?;
+        crate::netguard::check_url(&parsed, access).map_err(anyhow::Error::msg)?;
+        let client = crate::netguard::configure(
+            reqwest::blocking::Client::builder()
+                .user_agent(crate::autotag::USER_AGENT)
+                .connect_timeout(Duration::from_secs(15)),
+            access,
+        )
+        .build()?;
         let response = client.get(url).send()?.error_for_status()?;
         let decoder = Decoder::new(HttpStream {
             response,

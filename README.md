@@ -96,6 +96,9 @@ The left sidebar and the main menu have **Podcasts** and **Radio** views.
 - Live radio has no seek bar; podcast progress is saved but HTTP streams restart from the
   beginning when replayed.
 - Feed and station lists are stored alongside the music library in SQLite.
+- Podcast feeds and episodes may only reach public addresses. For a podcast server on
+  your own network, enable **Allow podcasts from local network addresses** in
+  Settings → Track options. Radio URLs you type are not restricted.
 
 Direct audio stream URLs are required. HLS/`.m3u8` playlists, YouTube links and feed pages are
 not audio streams and will not play.
