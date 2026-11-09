@@ -66,8 +66,8 @@ Optional Linux desktop launcher:
 2. Browse with the left columns or type in **Search**. Try
    `artist:"radiohead" year:1997`.
 3. Double-click a track to play. `Space` pauses, `Ctrl+Right` skips.
-4. Use the main menu (`☰`) for the queue, columns, album grid, equalizer, hygiene tools and
-   library filters.
+4. Use the main menu (`☰`) for the queue, lyrics, columns, album grid, equalizer, hygiene tools
+   and library filters.
 5. Save selections as playlists or build smart playlists from rules.
 6. Use **Organize files from tags** to preview and apply folder/file renames, with undo.
 
