@@ -62,6 +62,12 @@ jobs:
             name: linux
           - os: windows-latest
             name: windows
+          - os: macos-latest
+            name: macos-arm64
+            arch: arm64
+          - os: macos-26-intel
+            name: macos-x86_64
+            arch: x86_64
 
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
@@ -111,6 +117,19 @@ jobs:
             -Path target/release/musicwasp.exe,target/release/musicwasp-cli.exe,LICENSE,README.md,assets/musicwasp.ico,assets/skins.json,assets/i18n `
             -DestinationPath "dist/musicwasp-$env:GITHUB_REF_NAME-windows-x86_64.zip"
 
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          stage="$RUNNER_TEMP/musicwasp-${GITHUB_REF_NAME}"
+          mkdir -p "$stage/assets/i18n"
+          cp target/release/musicwasp target/release/musicwasp-cli "$stage/"
+          cp LICENSE README.md "$stage/"
+          cp assets/ic_launcher-web.png assets/skins.json "$stage/assets/"
+          cp assets/i18n/*.json "$stage/assets/i18n/"
+          tar -czf "dist/musicwasp-${GITHUB_REF_NAME}-macos-${{ matrix.arch }}.tar.gz" \
+            -C "$RUNNER_TEMP" "musicwasp-${GITHUB_REF_NAME}"
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -138,12 +157,20 @@ jobs:
           ls -l dist
           test -n "$(find dist -maxdepth 1 -name '*-linux-x86_64.tar.gz' -print -quit)"
           test -n "$(find dist -maxdepth 1 -name '*-windows-x86_64.zip' -print -quit)"
+          test -n "$(find dist -maxdepth 1 -name '*-macos-arm64.tar.gz' -print -quit)"
+          test -n "$(find dist -maxdepth 1 -name '*-macos-x86_64.tar.gz' -print -quit)"
           tar -tzf dist/*-linux-x86_64.tar.gz | grep -q 'assets/ic_launcher-web.png'
           tar -tzf dist/*-linux-x86_64.tar.gz | grep -q 'assets/skins.json'
           tar -tzf dist/*-linux-x86_64.tar.gz | grep -q 'assets/i18n/fr.json'
           unzip -l dist/*-windows-x86_64.zip | grep -q 'musicwasp.ico'
           unzip -l dist/*-windows-x86_64.zip | grep -q 'skins.json'
           unzip -l dist/*-windows-x86_64.zip | grep -q 'fr.json'
+          tar -tzf dist/*-macos-arm64.tar.gz | grep -q '/musicwasp$'
+          tar -tzf dist/*-macos-arm64.tar.gz | grep -q '/musicwasp-cli$'
+          tar -tzf dist/*-macos-arm64.tar.gz | grep -q 'assets/skins.json'
+          tar -tzf dist/*-macos-x86_64.tar.gz | grep -q '/musicwasp$'
+          tar -tzf dist/*-macos-x86_64.tar.gz | grep -q '/musicwasp-cli$'
+          tar -tzf dist/*-macos-x86_64.tar.gz | grep -q 'assets/i18n/fr.json'
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -173,5 +200,13 @@ jobs:
           }
           test -n "$(printf '%s\n' "$assets" | grep 'windows-x86_64.zip')" || {
             echo "Windows archive is not attached to the release" >&2
+            exit 1
+          }
+          test -n "$(printf '%s\n' "$assets" | grep 'macos-arm64.tar.gz')" || {
+            echo "macOS arm64 archive is not attached to the release" >&2
+            exit 1
+          }
+          test -n "$(printf '%s\n' "$assets" | grep 'macos-x86_64.tar.gz')" || {
+            echo "macOS x86_64 archive is not attached to the release" >&2
             exit 1
           }

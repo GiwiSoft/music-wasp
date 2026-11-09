@@ -1,7 +1,7 @@
 # MusicWasp
 
-A native music manager and player for **Linux and Windows**. One binary, no Electron and no web
-view.
+A native music manager and player for **Linux, Windows and macOS**. One binary, no Electron and no
+web view.
 
 Website: <https://giwisoft.github.io/music-wasp/>  
 Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
@@ -46,6 +46,11 @@ sudo pacman -S alsa-lib
 ```
 
 Windows needs the MSVC Rust toolchain. SQLite is bundled.
+
+macOS releases are unsigned tarballs for Apple Silicon (`macos-arm64`) and Intel
+(`macos-x86_64`). Extract the archive and run `./musicwasp`. The first launch may be blocked by
+Gatekeeper; use Finder's **Open** context menu, or allow it in
+**System Settings → Privacy & Security**.
 
 ```bash
 cargo build --release
@@ -128,7 +133,8 @@ Auto-tag can identify an album from one track's audio fingerprint instead of its
 3. Pick the release AcoustID returns and apply as usual.
 
 Fingerprinting is built in: MusicWasp decodes the file with its own decoder and runs the pure-Rust
-Chromaprint port. No `fpcalc`, FFmpeg or other external program is needed on Linux or Windows.
+Chromaprint port. No `fpcalc`, FFmpeg or other external program is needed on Linux, Windows or
+macOS.
 
 Release builds embed the free AcoustID application key from the GitHub `production` environment
 secret `ACCOUSTID_APIKEY`. Local builds read it from an uncommitted `.env` file at the repository
