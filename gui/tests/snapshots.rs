@@ -87,6 +87,7 @@ fn main_skins_and_accessibility_states() {
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("MUSICWASP_DATA_DIR", dir.path());
     std::env::set_var("MUSICWASP_TEST", "1");
+    std::env::set_var("MUSICWASP_DEBUG", "1");
     seed(dir.path());
 
     let mut harness: Harness<'static, App> = Harness::builder()

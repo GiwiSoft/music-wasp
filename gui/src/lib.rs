@@ -5,6 +5,7 @@
 
 pub mod app;
 mod backup_dialog;
+pub mod debug_hooks;
 mod dialog;
 mod equalizer;
 mod hygiene;

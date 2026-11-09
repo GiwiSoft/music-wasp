@@ -3,9 +3,10 @@ use musicwasp_gui::{icons, settings::Settings, theme};
 
 fn main() -> eframe::Result<()> {
     maybe_force_x11();
+    musicwasp_gui::debug_hooks::announce();
     theme::load_user_skins();
     // Screenshot runs need a predictable canvas and must not inherit a session.
-    let screenshot = std::env::var_os("MUSICWASP_SCREENSHOT").is_some();
+    let screenshot = musicwasp_gui::debug_hooks::is_set("MUSICWASP_SCREENSHOT");
     let settings = if screenshot {
         None
     } else {

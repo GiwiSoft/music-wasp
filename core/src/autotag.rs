@@ -25,15 +25,16 @@ const CAA_API: &str = "https://coverartarchive.org";
 const ACOUSTID_API: &str = "https://api.acoustid.org/v2/lookup";
 
 fn mb_api() -> String {
-    std::env::var("MUSICWASP_MUSICBRAINZ_API").unwrap_or_else(|_| MB_API.to_string())
+    crate::dev::endpoint_override("MUSICWASP_MUSICBRAINZ_API").unwrap_or_else(|| MB_API.to_string())
 }
 
 fn caa_api() -> String {
-    std::env::var("MUSICWASP_COVERART_API").unwrap_or_else(|_| CAA_API.to_string())
+    crate::dev::endpoint_override("MUSICWASP_COVERART_API").unwrap_or_else(|| CAA_API.to_string())
 }
 
 fn acoustid_api() -> String {
-    std::env::var("MUSICWASP_ACOUSTID_API").unwrap_or_else(|_| ACOUSTID_API.to_string())
+    crate::dev::endpoint_override("MUSICWASP_ACOUSTID_API")
+        .unwrap_or_else(|| ACOUSTID_API.to_string())
 }
 
 /// Application key compiled in from the build environment or the local `.env`.

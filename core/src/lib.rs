@@ -5,6 +5,7 @@ pub mod autotag;
 pub mod backup;
 pub mod bounded;
 pub mod db;
+pub mod dev;
 pub mod dsp;
 pub mod library;
 pub mod lyrics;

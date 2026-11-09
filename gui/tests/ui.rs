@@ -34,6 +34,7 @@ impl TestEnv {
         let lock = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let names = [
             "MUSICWASP_TEST",
+            "MUSICWASP_DEBUG",
             "MUSICWASP_DATA_DIR",
             "MUSICWASP_MUSICBRAINZ_API",
             "MUSICWASP_COVERART_API",
@@ -51,6 +52,7 @@ impl TestEnv {
             .collect::<Vec<_>>();
         let mut env = Self { _lock: lock, saved };
         env.set("MUSICWASP_TEST", Some("1"));
+        env.set("MUSICWASP_DEBUG", Some("1"));
         env.set(
             "MUSICWASP_DATA_DIR",
             Some(data_dir.to_string_lossy().as_ref()),
