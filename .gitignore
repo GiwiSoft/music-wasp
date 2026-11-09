@@ -11,3 +11,4 @@
 **/tests/snapshots/**/*.diff.png
 **/tests/snapshots/**/*.new.png
 .env
+opencode.json
