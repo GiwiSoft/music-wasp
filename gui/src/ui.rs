@@ -2488,11 +2488,17 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                 });
                 return;
             }
+            enum FeedAction {
+                Select(i64),
+                Delete(i64),
+            }
+            let mut feed_action = None;
             egui::ScrollArea::vertical()
                 .id_salt("podcast_feeds")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    for feed in app.podcast_feeds.clone() {
+                    for index in 0..app.podcast_feeds.len() {
+                        let feed = &app.podcast_feeds[index];
                         ui.horizontal(|ui| {
                             let label = format!(
                                 "{}   ·   {} episode(s), {} unplayed",
@@ -2509,10 +2515,10 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                                 .clicked()
                             {
-                                app.select_podcast_feed(feed.id);
+                                feed_action = Some(FeedAction::Select(feed.id));
                             }
                             if icons::compact(ui, icons::TRASH, "Delete subscription").clicked() {
-                                app.delete_podcast_feed(feed.id);
+                                feed_action = Some(FeedAction::Delete(feed.id));
                             }
                         });
                         ui.label(
@@ -2523,6 +2529,12 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                         ui.add_space(3.0);
                     }
                 });
+            if let Some(action) = feed_action {
+                match action {
+                    FeedAction::Select(id) => app.select_podcast_feed(id),
+                    FeedAction::Delete(id) => app.delete_podcast_feed(id),
+                }
+            }
         } else {
             let feed_id = app.selected_feed.unwrap_or_default();
             let title = app
@@ -2552,11 +2564,13 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                 );
                 return;
             }
+            let mut play_episode = None;
             egui::ScrollArea::vertical()
                 .id_salt("podcast_episodes")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    for episode in app.podcast_episodes.clone() {
+                    for index in 0..app.podcast_episodes.len() {
+                        let episode = &app.podcast_episodes[index];
                         ui.horizontal(|ui| {
                             let playing = app
                                 .stream
@@ -2569,7 +2583,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                             )
                             .clicked()
                             {
-                                app.play_podcast_episode(&episode);
+                                play_episode = Some(index);
                             }
                             ui.vertical(|ui| {
                                 ui.add(
@@ -2627,6 +2641,11 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                         ui.separator();
                     }
                 });
+            if let Some(index) = play_episode {
+                if let Some(episode) = app.podcast_episodes.get(index).cloned() {
+                    app.play_podcast_episode(&episode);
+                }
+            }
         }
     });
     podcast_dialog(app, &ctx);
@@ -2712,11 +2731,17 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
             });
             return;
         }
+        enum StationAction {
+            Play(usize),
+            Delete(i64),
+        }
+        let mut station_action = None;
         egui::ScrollArea::vertical()
             .id_salt("radio_stations")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                for station in app.radio_stations.clone() {
+                for index in 0..app.radio_stations.len() {
+                    let station = &app.radio_stations[index];
                     ui.horizontal(|ui| {
                         let playing = app.stream.as_ref().is_some_and(|stream| {
                             stream.kind == StreamKind::Radio && stream.url == station.url
@@ -2728,7 +2753,7 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
                         )
                         .clicked()
                         {
-                            app.play_radio_station(&station);
+                            station_action = Some(StationAction::Play(index));
                         }
                         ui.vertical(|ui| {
                             ui.label(th::semibold(&station.name, 13.0).color(th::text()));
@@ -2740,7 +2765,7 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if icons::compact(ui, icons::TRASH, "Delete station").clicked() {
-                                app.delete_radio_station(station.id);
+                                station_action = Some(StationAction::Delete(station.id));
                             }
                             ui.add(
                                 egui::Label::new(
@@ -2755,6 +2780,15 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
                     ui.separator();
                 }
             });
+        match station_action {
+            Some(StationAction::Play(index)) => {
+                if let Some(station) = app.radio_stations.get(index).cloned() {
+                    app.play_radio_station(&station);
+                }
+            }
+            Some(StationAction::Delete(id)) => app.delete_radio_station(id),
+            None => {}
+        }
     });
     radio_dialog(app, &ctx);
 }

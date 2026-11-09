@@ -8,7 +8,7 @@ use egui::accesskit::Role;
 use egui_kittest::kittest::Queryable;
 use egui_kittest::Harness;
 use musicwasp_core::{tags, Library, TagEdit};
-use musicwasp_gui::app::{App, AutoTagStage};
+use musicwasp_gui::app::{App, AutoTagStage, View};
 use musicwasp_gui::i18n::Language;
 use musicwasp_gui::settings::{TrackColumn, TrackLayout};
 use musicwasp_gui::theme::{self, Skin};
@@ -995,4 +995,48 @@ fn settings_can_back_up_and_restore_the_library() {
     assert_eq!(harness.state().tracks.len(), 1);
     assert_eq!(harness.state().tracks[0].title, "One");
     assert_eq!(harness.state().view, musicwasp_gui::app::View::Library);
+}
+
+#[test]
+fn podcast_feed_delete_runs_after_the_list_pass() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    {
+        let lib = Library::open_at(&dir.path().join("library.db")).unwrap();
+        lib.add_podcast_feed("https://example.com/feed.xml")
+            .unwrap();
+    }
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.state_mut().view = View::Podcasts;
+    harness.state_mut().refresh_podcast_feeds();
+    harness.run_steps(2);
+    assert_eq!(harness.state().podcast_feeds.len(), 1);
+
+    harness.get_by_label("Delete subscription").click();
+    harness.run_steps(2);
+    assert!(harness.state().podcast_feeds.is_empty());
+}
+
+#[test]
+fn radio_station_delete_runs_after_the_list_pass() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    {
+        let lib = Library::open_at(&dir.path().join("library.db")).unwrap();
+        lib.add_radio_station("Test FM", "https://example.com/stream.mp3", "Test")
+            .unwrap();
+    }
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.state_mut().view = View::Radio;
+    harness.state_mut().refresh_radio_stations();
+    harness.run_steps(2);
+    assert_eq!(harness.state().radio_stations.len(), 1);
+
+    harness.get_by_label("Delete station").click();
+    harness.run_steps(2);
+    assert!(harness.state().radio_stations.is_empty());
 }
