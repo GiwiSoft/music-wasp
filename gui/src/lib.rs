@@ -11,6 +11,7 @@ mod equalizer;
 mod hygiene;
 pub mod i18n;
 pub mod icons;
+pub mod images;
 mod mini_player;
 #[cfg(target_os = "linux")]
 mod mpris;

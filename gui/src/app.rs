@@ -1045,7 +1045,7 @@ pub(crate) fn load_cover_texture(
 
 fn decode_cover(path: &Path) -> Option<egui::ColorImage> {
     let bytes = musicwasp_core::library::cover_art(path)?;
-    let image = image::load_from_memory(&bytes).ok()?;
+    let image = crate::images::from_bytes(&bytes).ok()?;
     let image = image.resize(180, 180, image::imageops::FilterType::Triangle);
     let rgba = image.to_rgba8();
     let size = [rgba.width() as usize, rgba.height() as usize];
@@ -3731,7 +3731,7 @@ impl App {
             self.message = "album has no cover to save".to_string();
             return;
         };
-        let image = match image::load_from_memory(&data) {
+        let image = match crate::images::from_bytes(&data) {
             Ok(image) => image,
             Err(e) => {
                 self.message = format!("could not decode cover: {e}");
@@ -5180,7 +5180,7 @@ impl App {
         self.playing_id = self.lib.track_by_path(&path).ok().flatten().map(|t| t.id);
 
         if let Some(bytes) = musicwasp_core::library::cover_art(&path) {
-            if let Ok(img) = image::load_from_memory(&bytes) {
+            if let Ok(img) = crate::images::from_bytes(&bytes) {
                 let rgba = img.to_rgba8();
                 let size = [rgba.width() as usize, rgba.height() as usize];
                 let pixels = rgba.into_raw();

@@ -1288,7 +1288,7 @@ fn background_texture(ctx: &egui::Context, path: &Path) -> Option<egui::TextureH
             return Some(texture.clone());
         }
     }
-    let image = image::open(path).ok()?.to_rgba8();
+    let image = crate::images::open(path).ok()?.to_rgba8();
     let color = egui::ColorImage::from_rgba_unmultiplied(
         [image.width() as usize, image.height() as usize],
         image.as_raw(),

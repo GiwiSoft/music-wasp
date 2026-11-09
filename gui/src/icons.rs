@@ -72,7 +72,9 @@ pub fn install(ctx: &egui::Context) {
 fn logo_rgba(size: u32, skin: crate::theme::Skin) -> Option<(usize, Vec<u8>)> {
     const DARK: &[u8] = include_bytes!("../../assets/MusicWasp-dark.png");
     const LIGHT: &[u8] = include_bytes!("../../assets/MusicWasp.png");
-    let custom = skin.icon_path().and_then(|path| image::open(path).ok());
+    let custom = skin
+        .icon_path()
+        .and_then(|path| crate::images::open(&path).ok());
     let logo = match custom {
         Some(image) => image.into_rgba8(),
         None => {
