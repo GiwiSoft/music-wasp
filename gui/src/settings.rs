@@ -479,8 +479,10 @@ pub struct Settings {
     /// Submit listens to ListenBrainz.
     #[serde(default)]
     pub scrobble_listenbrainz: bool,
-    /// ListenBrainz user token. Empty means scrobbling is off.
-    #[serde(default)]
+    /// ListenBrainz user token. Empty means scrobbling is off. The token is kept
+    /// in the OS credential store and only written here when no store is
+    /// available, see [`Settings::save_persisted`].
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub listenbrainz_token: String,
     /// Folders handed to the OS watcher. Added by a successful scan.
     #[serde(default)]
@@ -625,15 +627,56 @@ impl Settings {
         }
     }
 
+    /// Write the settings file exactly as this value holds it, owner-only.
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let text = serde_json::to_string_pretty(self)?;
         let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, text)?;
+        musicwasp_core::secrets::write_private(&tmp, text.as_bytes())?;
         std::fs::rename(&tmp, path)?;
         Ok(())
+    }
+
+    /// Save for the running app. The ListenBrainz token goes to the OS
+    /// credential store and is left out of the file. If no store is available,
+    /// the token stays in the owner-only file so scrobbling keeps working.
+    pub fn save_persisted(&self, path: &Path) -> anyhow::Result<()> {
+        let mut on_disk = self.clone();
+        if !self.listenbrainz_token.is_empty() {
+            match musicwasp_core::secrets::set_listenbrainz_token(&self.listenbrainz_token) {
+                Ok(()) => on_disk.listenbrainz_token.clear(),
+                Err(error) => eprintln!(
+                    "MusicWasp: {error:#}; the ListenBrainz token stays in settings.json (owner-only)"
+                ),
+            }
+        }
+        on_disk.save(path)
+    }
+
+    /// Load for the running app. A token found in the settings file (written by
+    /// older versions, or kept there because no store was available) moves into
+    /// the credential store once the store accepts it.
+    pub fn load_persisted(path: &Path) -> Self {
+        let mut settings = Self::load(path);
+        match musicwasp_core::secrets::listenbrainz_token() {
+            Ok(Some(token)) if settings.listenbrainz_token.is_empty() => {
+                settings.listenbrainz_token = token;
+            }
+            Ok(_) => {}
+            Err(error) => eprintln!("MusicWasp: {error:#}"),
+        }
+        if !settings.listenbrainz_token.is_empty()
+            && musicwasp_core::secrets::set_listenbrainz_token(&settings.listenbrainz_token).is_ok()
+        {
+            if let Err(error) = settings.save_persisted(path) {
+                eprintln!(
+                    "MusicWasp: could not rewrite settings after moving the token: {error:#}"
+                );
+            }
+        }
+        settings
     }
 
     /// Current binding for `action`.

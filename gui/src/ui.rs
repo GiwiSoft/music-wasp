@@ -5549,6 +5549,13 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
     if scrobble_enabled != app.settings.scrobble_listenbrainz
         || scrobble_token != app.settings.listenbrainz_token
     {
+        if scrobble_token.trim().is_empty() {
+            // Clearing the field must also clear the credential store, or the
+            // token would come back on the next launch.
+            if let Err(error) = musicwasp_core::secrets::delete_listenbrainz_token() {
+                app.message = format!("could not remove the ListenBrainz token: {error:#}");
+            }
+        }
         app.settings.scrobble_listenbrainz = scrobble_enabled;
         app.settings.listenbrainz_token = scrobble_token;
         app.persist_settings();

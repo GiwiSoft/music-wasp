@@ -18,6 +18,7 @@ pub mod radio;
 pub mod reconcile;
 pub mod scrobble;
 pub mod search;
+pub mod secrets;
 pub mod smart;
 pub mod tags;
 
