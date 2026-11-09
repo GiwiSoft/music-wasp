@@ -82,11 +82,7 @@ fn submit(token: &str, listen_type: &str, listened_at: Option<i64>, listen: &Lis
         }],
     };
 
-    let response = reqwest::blocking::Client::builder()
-        .user_agent(USER_AGENT)
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .context("cannot build ListenBrainz client")?
+    let response = listenbrainz_client()?
         .post(SUBMIT_URL)
         .header("Authorization", format!("Token {}", token.trim()))
         .json(&body)
@@ -99,6 +95,19 @@ fn submit(token: &str, listen_type: &str, listened_at: Option<i64>, listen: &Lis
         anyhow::bail!("ListenBrainz returned {status}: {}", text.trim());
     }
     Ok(())
+}
+
+fn listenbrainz_client() -> Result<reqwest::blocking::Client> {
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let built = reqwest::blocking::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .context("cannot build ListenBrainz client")?;
+    Ok(CLIENT.get_or_init(|| built).clone())
 }
 
 /// Unix timestamp for "now".

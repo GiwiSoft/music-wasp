@@ -1360,6 +1360,8 @@ pub struct App {
     /// Full-window now-playing view instead of browser + track list.
     pub plain_view: bool,
     pub playing_id: Option<i64>,
+    /// Last track looked up for the playing file. Cleared when the library changes.
+    current_track_cache: Option<(PathBuf, Option<Track>)>,
     pub editing: Option<EditState>,
     /// Inline rename dialog; F2 opens it for the focused pane.
     pub rename: Option<RenameState>,
@@ -1602,6 +1604,7 @@ impl App {
             logo: None,
             plain_view: std::env::var("MUSICWASP_PLAIN").is_ok(),
             playing_id: None,
+            current_track_cache: None,
             editing: None,
             rename: None,
             rename_field: TrackField::default(),
@@ -2964,10 +2967,12 @@ impl App {
     pub fn mark_browser_dirty(&mut self) {
         self.dirty_browser = true;
         self.albums_dirty = true;
+        self.current_track_cache = None;
     }
 
     pub fn mark_tracks_dirty(&mut self) {
         self.dirty_tracks = true;
+        self.current_track_cache = None;
     }
 
     // ---- library hygiene ----
@@ -3347,6 +3352,20 @@ impl App {
         if self.album_view {
             self.albums_dirty = true;
         }
+    }
+
+    /// Library row for the playing file. The UI calls this every frame, so the
+    /// last answer is kept until the path changes or the library is marked dirty.
+    pub fn current_track(&mut self, path: Option<&Path>) -> Option<Track> {
+        let path = path?;
+        if let Some((cached, track)) = &self.current_track_cache {
+            if cached == path {
+                return track.clone();
+            }
+        }
+        let track = self.lib.track_by_path(path).ok().flatten();
+        self.current_track_cache = Some((path.to_path_buf(), track.clone()));
+        track
     }
 
     // ---- lyrics ----

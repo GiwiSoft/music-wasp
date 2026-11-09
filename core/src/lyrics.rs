@@ -51,10 +51,15 @@ impl Lyrics {
     }
 }
 
+/// Largest sidecar read. Lyrics files are a few KB; anything bigger is not lyrics.
+const MAX_SIDECAR_BYTES: u64 = 1024 * 1024;
+
 /// Load lyrics for an audio file: sidecar `.lrc` first, then tag lyrics.
 pub fn load(audio: &Path) -> Option<Lyrics> {
     if let Some(path) = sidecar_path(audio) {
-        if let Ok(bytes) = std::fs::read(&path) {
+        let bytes = std::fs::File::open(&path)
+            .and_then(|file| crate::bounded::read_capped(file, MAX_SIDECAR_BYTES));
+        if let Ok(bytes) = bytes {
             let text = decode(&bytes);
             let lyrics = parse(&text);
             if !lyrics.is_empty() {

@@ -146,8 +146,8 @@ pub fn ui(
             ui.label(
                 RichText::new(format!(
                     "{} / {}",
-                    fmt_time(state.position),
-                    fmt_time(state.duration)
+                    crate::app::fmt_time(state.position),
+                    crate::app::fmt_time(state.duration)
                 ))
                 .size(9.5)
                 .color(th::text_dim()),
@@ -208,9 +208,4 @@ pub fn ui(
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(200));
     }
-}
-
-fn fmt_time(seconds: f64) -> String {
-    let seconds = seconds.max(0.0) as u64;
-    format!("{}:{:02}", seconds / 60, seconds % 60)
 }

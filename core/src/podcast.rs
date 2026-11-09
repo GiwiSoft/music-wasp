@@ -64,6 +64,10 @@ pub struct PodcastEpisode {
     pub position_secs: u64,
 }
 
+/// Largest feed accepted. Real feeds are a few MB; this stops a hostile server
+/// from exhausting memory.
+const MAX_FEED_BYTES: u64 = 32 * 1024 * 1024;
+
 /// Download and parse one feed. The caller runs this off the UI thread.
 pub fn fetch(url: &str) -> Result<ParsedFeed> {
     let client = reqwest::blocking::Client::builder()
@@ -78,8 +82,7 @@ pub fn fetch(url: &str) -> Result<ParsedFeed> {
         .with_context(|| format!("cannot fetch {url}"))?
         .error_for_status()
         .with_context(|| format!("{url} returned an error"))?;
-    let bytes = response
-        .bytes()
+    let bytes = crate::bounded::read_capped(response, MAX_FEED_BYTES)
         .with_context(|| format!("cannot read {url}"))?;
     let mut feed = parse(&bytes)?;
     if feed.title.trim().is_empty() {

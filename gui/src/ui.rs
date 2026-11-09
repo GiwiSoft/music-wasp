@@ -20,6 +20,15 @@ fn os_files_over(ui: &egui::Ui, rect: egui::Rect) -> bool {
     })
 }
 
+/// "Artist  ·  Album", or just the artist when the album tag is empty.
+fn artist_album_line(track: &Track) -> String {
+    if track.album.is_empty() {
+        track.artist.clone()
+    } else {
+        format!("{}  ·  {}", track.artist, track.album)
+    }
+}
+
 /// Shorten `text` so it fits `width` pixels, ending with a hyphen when the text
 /// had to be cut. Used by the queue so long titles/artists crop instead of
 /// spilling out of the panel.
@@ -1226,6 +1235,48 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
     }
 }
 
+/// Glyph sizes for the four transport buttons, per layout.
+#[derive(Clone, Copy)]
+struct TransportSize {
+    side: f32,
+    main: f32,
+    stop: f32,
+}
+
+/// Previous, play/pause, next and stop, shared by the bottom bar and the
+/// Now Playing screens.
+fn transport_buttons(app: &mut App, ui: &mut egui::Ui, playing: bool, size: TransportSize) {
+    if icons::transport(
+        ui,
+        icons::SKIP_BACK,
+        size.side,
+        false,
+        tr("transport.previous"),
+    )
+    .clicked()
+    {
+        app.prev_track();
+    }
+    let icon = if playing { icons::PAUSE } else { icons::PLAY };
+    if icons::transport(ui, icon, size.main, true, "Play / pause").clicked() {
+        app.toggle_pause();
+    }
+    if icons::transport(
+        ui,
+        icons::SKIP_FORWARD,
+        size.side,
+        false,
+        tr("transport.next"),
+    )
+    .clicked()
+    {
+        app.next_track();
+    }
+    if icons::transport(ui, icons::STOP, size.stop, false, tr("transport.stop")).clicked() {
+        app.stop();
+    }
+}
+
 pub fn transport(app: &mut App, ui: &mut egui::Ui) {
     let snap =
         app.player
@@ -1240,10 +1291,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                 finished: false,
             });
 
-    let current_track = snap
-        .current
-        .as_ref()
-        .and_then(|p| app.lib.track_by_path(p).ok().flatten());
+    let current_track = app.current_track(snap.current.as_deref());
 
     // Trust the tag reader's duration over the decoder's estimate.
     let known_duration = current_track
@@ -1331,15 +1379,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     let sub = stream
                         .as_ref()
                         .map(|stream| stream.subtitle.clone())
-                        .or_else(|| {
-                            current_track.as_ref().map(|track| {
-                                if track.album.is_empty() {
-                                    track.artist.clone()
-                                } else {
-                                    format!("{}  ·  {}", track.artist, track.album)
-                                }
-                            })
-                        })
+                        .or_else(|| current_track.as_ref().map(artist_album_line))
                         .unwrap_or_else(|| tr("transport.hint").to_string());
                     ui.add(
                         egui::Label::new(th::semibold(title, 14.5).color(th::text())).truncate(),
@@ -1352,38 +1392,17 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     ui.add_space(5.0);
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
-                        if icons::transport(
-                            ui,
-                            icons::SKIP_BACK,
-                            15.0,
-                            false,
-                            tr("transport.previous"),
-                        )
-                        .clicked()
-                        {
-                            app.prev_track();
-                        }
                         let playing = snap.status == musicwasp_core::PlayerStatus::Playing;
-                        let icon = if playing { icons::PAUSE } else { icons::PLAY };
-                        if icons::transport(ui, icon, 19.0, true, "Play / pause").clicked() {
-                            app.toggle_pause();
-                        }
-                        if icons::transport(
+                        transport_buttons(
+                            app,
                             ui,
-                            icons::SKIP_FORWARD,
-                            15.0,
-                            false,
-                            tr("transport.next"),
-                        )
-                        .clicked()
-                        {
-                            app.next_track();
-                        }
-                        if icons::transport(ui, icons::STOP, 12.0, false, tr("transport.stop"))
-                            .clicked()
-                        {
-                            app.stop();
-                        }
+                            playing,
+                            TransportSize {
+                                side: 15.0,
+                                main: 19.0,
+                                stop: 12.0,
+                            },
+                        );
                         ui.add_space(7.0);
 
                         let repeat_icon = if app.repeat == crate::app::RepeatMode::One {
@@ -1545,10 +1564,7 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
         .lyrics
         .as_ref()
         .and_then(|lyrics| lyrics.line_index(snapshot.position));
-    let current_track = snapshot
-        .current
-        .as_ref()
-        .and_then(|path| app.lib.track_by_path(path).ok().flatten());
+    let current_track = app.current_track(snapshot.current.as_deref());
     let stream = app.stream.clone();
 
     let mut close = false;
@@ -1709,10 +1725,7 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                 current: None,
                 finished: false,
             });
-    let current_track = snap
-        .current
-        .as_ref()
-        .and_then(|p| app.lib.track_by_path(p).ok().flatten());
+    let current_track = app.current_track(snap.current.as_deref());
     let known_duration = current_track
         .as_ref()
         .map(|t| t.duration_secs as f64)
@@ -1780,38 +1793,17 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                     egui::vec2(230.0, 46.0),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
-                        if icons::transport(
-                            ui,
-                            icons::SKIP_BACK,
-                            18.0,
-                            false,
-                            tr("transport.previous"),
-                        )
-                        .clicked()
-                        {
-                            app.prev_track();
-                        }
                         let playing = snap.status == musicwasp_core::PlayerStatus::Playing;
-                        let icon = if playing { icons::PAUSE } else { icons::PLAY };
-                        if icons::transport(ui, icon, 28.0, true, "Play / pause").clicked() {
-                            app.toggle_pause();
-                        }
-                        if icons::transport(
+                        transport_buttons(
+                            app,
                             ui,
-                            icons::SKIP_FORWARD,
-                            18.0,
-                            false,
-                            tr("transport.next"),
-                        )
-                        .clicked()
-                        {
-                            app.next_track();
-                        }
-                        if icons::transport(ui, icons::STOP, 16.0, false, tr("transport.stop"))
-                            .clicked()
-                        {
-                            app.stop();
-                        }
+                            playing,
+                            TransportSize {
+                                side: 18.0,
+                                main: 28.0,
+                                stop: 16.0,
+                            },
+                        );
                     },
                 );
                 ui.add_space(14.0);
@@ -1887,13 +1879,7 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(2.0);
             let subtitle = current_track
                 .as_ref()
-                .map(|t| {
-                    if t.album.is_empty() {
-                        t.artist.clone()
-                    } else {
-                        format!("{}  ·  {}", t.artist, t.album)
-                    }
-                })
+                .map(artist_album_line)
                 .unwrap_or_else(|| "Pick a track in the library to start".to_string());
             ui.label(RichText::new(subtitle).size(14.0).color(th::text_dim()));
             if let Some(track) = &current_track {
@@ -1952,25 +1938,16 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(12.0);
             ui.allocate_ui(egui::vec2(330.0, 34.0), |ui| {
                 ui.horizontal(|ui| {
-                    if icons::transport(ui, icons::SKIP_BACK, 22.0, false, tr("transport.previous"))
-                        .clicked()
-                    {
-                        app.prev_track();
-                    }
-                    let icon = if playing { icons::PAUSE } else { icons::PLAY };
-                    if icons::transport(ui, icon, 30.0, true, "Play / pause").clicked() {
-                        app.toggle_pause();
-                    }
-                    if icons::transport(ui, icons::SKIP_FORWARD, 22.0, false, tr("transport.next"))
-                        .clicked()
-                    {
-                        app.next_track();
-                    }
-                    if icons::transport(ui, icons::STOP, 18.0, false, tr("transport.stop"))
-                        .clicked()
-                    {
-                        app.stop();
-                    }
+                    transport_buttons(
+                        app,
+                        ui,
+                        playing,
+                        TransportSize {
+                            side: 22.0,
+                            main: 30.0,
+                            stop: 18.0,
+                        },
+                    );
                     let repeat_icon = if app.repeat == crate::app::RepeatMode::One {
                         icons::REPEAT_ONCE
                     } else {

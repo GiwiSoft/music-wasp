@@ -124,13 +124,22 @@ pub struct Fingerprint {
 
 // ---------------------------------------------------------------- HTTP plumbing
 
+/// One client shares the connection pool across requests. Cloning it is cheap.
 fn client() -> Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder()
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let built = reqwest::blocking::Client::builder()
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(20))
         .build()
-        .context("cannot build HTTP client")
+        .context("cannot build HTTP client")?;
+    Ok(CLIENT.get_or_init(|| built).clone())
 }
+
+/// Largest cover image accepted from the Cover Art Archive.
+const MAX_COVER_BYTES: u64 = 16 * 1024 * 1024;
 
 /// MusicBrainz allows one request per second per client. Local fake servers in
 /// tests do not need the delay.
@@ -716,7 +725,8 @@ fn fetch_cover(url: &str) -> Result<Option<Cover>> {
         .unwrap_or("image/jpeg")
         .to_string();
 
-    let data = response.bytes().context("cannot read cover art")?.to_vec();
+    let data =
+        crate::bounded::read_capped(response, MAX_COVER_BYTES).context("cannot read cover art")?;
     if data.is_empty() {
         return Ok(None);
     }

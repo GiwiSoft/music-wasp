@@ -3,6 +3,7 @@
 pub mod analysis;
 pub mod autotag;
 pub mod backup;
+pub mod bounded;
 pub mod db;
 pub mod dsp;
 pub mod library;
