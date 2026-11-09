@@ -11,7 +11,14 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "audio")]
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+/// Lock that recovers from poisoning. The guarded values are plain state
+/// (a path or a queue), so a panic elsewhere cannot leave them half-updated in
+/// a way that matters, and a panic here would silently stop the audio thread.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerStatus {
@@ -197,11 +204,7 @@ mod audio_impl {
 
         /// Gapless playback advanced to this path. Consumed by the UI.
         pub fn take_advanced(&self) -> Option<PathBuf> {
-            self.shared
-                .advanced
-                .lock()
-                .ok()
-                .and_then(|mut advanced| advanced.pop_front())
+            lock(&self.shared.advanced).pop_front()
         }
 
         pub fn toggle_pause(&self) {
@@ -243,7 +246,7 @@ mod audio_impl {
                 position: self.shared.position_ms.load(Ordering::Relaxed) as f64 / 1000.0,
                 duration: self.shared.duration_ms.load(Ordering::Relaxed) as f64 / 1000.0,
                 volume: f32::from_bits(self.shared.volume.load(Ordering::Relaxed) as u32),
-                current: self.shared.current.lock().ok().and_then(|g| g.clone()),
+                current: lock(&self.shared.current).clone(),
                 finished: self.shared.finished.load(Ordering::Relaxed),
             }
         }
@@ -358,7 +361,7 @@ mod audio_impl {
                             shared
                                 .duration_ms
                                 .store((duration.as_secs_f64() * 1000.0) as u64, Ordering::Relaxed);
-                            *shared.current.lock().unwrap() = Some(path.clone());
+                            *lock(&shared.current) = Some(path.clone());
                             tap.set_format(rate, source.channels());
                             tap.clear();
                             sinks[0].append(DspSource::new(
@@ -396,14 +399,14 @@ mod audio_impl {
                     current = None;
                     current_rate = None;
                     active = 0;
-                    *shared.current.lock().unwrap() = None;
+                    *lock(&shared.current) = None;
                     shared.duration_ms.store(0, Ordering::Relaxed);
                     shared.position_ms.store(0, Ordering::Relaxed);
                     let volume = f32::from_bits(shared.volume.load(Ordering::Relaxed) as u32);
                     sinks[0].set_volume(volume);
                     match open_url(&url) {
                         Ok((source, rate)) => {
-                            *shared.current.lock().unwrap() = Some(PathBuf::from(url.clone()));
+                            *lock(&shared.current) = Some(PathBuf::from(url.clone()));
                             shared.duration_ms.store(0, Ordering::Relaxed);
                             shared.position_ms.store(0, Ordering::Relaxed);
                             tap.set_format(rate, source.channels());
@@ -517,7 +520,7 @@ mod audio_impl {
                         .store(PlayerStatus::Stopped.to_u8(), Ordering::Relaxed);
                     shared.position_ms.store(0, Ordering::Relaxed);
                     shared.duration_ms.store(0, Ordering::Relaxed);
-                    *shared.current.lock().unwrap() = None;
+                    *lock(&shared.current) = None;
                     last_len = 0;
                 }
                 Ok(Cmd::Seek(secs)) => {
@@ -580,9 +583,10 @@ mod audio_impl {
                 shared
                     .duration_ms
                     .store((duration.as_secs_f64() * 1000.0) as u64, Ordering::Relaxed);
-                *shared.current.lock().unwrap() = Some(path.clone());
+                *lock(&shared.current) = Some(path.clone());
                 current = Some((path.clone(), duration));
-                if let Ok(mut advanced) = shared.advanced.lock() {
+                {
+                    let mut advanced = lock(&shared.advanced);
                     advanced.push_back(path);
                 }
                 last_len = sinks[active].len();
@@ -599,9 +603,10 @@ mod audio_impl {
                     shared
                         .duration_ms
                         .store((duration.as_secs_f64() * 1000.0) as u64, Ordering::Relaxed);
-                    *shared.current.lock().unwrap() = Some(path.clone());
+                    *lock(&shared.current) = Some(path.clone());
                     current = Some((path.clone(), duration));
-                    if let Ok(mut advanced) = shared.advanced.lock() {
+                    {
+                        let mut advanced = lock(&shared.advanced);
                         advanced.push_back(path);
                     }
                 }
@@ -802,5 +807,36 @@ mod silent_impl {
                 finished: false,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::*;
+
+    #[test]
+    fn poisoned_state_lock_still_yields_its_value() {
+        let shared = Arc::new(Mutex::new(Some(PathBuf::from("song.flac"))));
+        let poisoner = Arc::clone(&shared);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("poison the lock");
+        })
+        .join();
+        assert!(shared.is_poisoned());
+        assert_eq!(*lock(&shared), Some(PathBuf::from("song.flac")));
+    }
+
+    #[test]
+    fn poisoned_queue_lock_still_accepts_writes() {
+        let queue = Arc::new(Mutex::new(VecDeque::<PathBuf>::new()));
+        let poisoner = Arc::clone(&queue);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("poison the lock");
+        })
+        .join();
+        lock(&queue).push_back(PathBuf::from("next.mp3"));
+        assert_eq!(lock(&queue).pop_front(), Some(PathBuf::from("next.mp3")));
     }
 }
