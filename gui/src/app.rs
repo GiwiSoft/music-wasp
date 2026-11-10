@@ -4881,11 +4881,11 @@ impl App {
             self.mini = None;
             return;
         }
-        let track = self
-            .playing_id
-            .and_then(|id| self.lib.tracks_by_ids(&[id]).ok())
-            .and_then(|mut tracks| tracks.pop());
         let snapshot = self.player.as_ref().map(|player| player.snapshot());
+        let current_path = snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.current.as_deref());
+        let track = self.current_track(current_path);
         let playing = snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.status == musicwasp_core::PlayerStatus::Playing);
