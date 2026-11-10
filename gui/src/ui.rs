@@ -1277,6 +1277,44 @@ fn transport_buttons(app: &mut App, ui: &mut egui::Ui, playing: bool, size: Tran
     }
 }
 
+/// Seek bar with a fixed-size pill cursor. The slider still owns input,
+/// keyboard support and accessibility; its handle is sized to match the fixed
+/// cursor and then painted over, so the cursor cannot stretch with the layout.
+pub(crate) fn seek_slider(ui: &mut egui::Ui, pos: &mut f64, max: f64) -> egui::Response {
+    let height = ui
+        .text_style_height(&egui::TextStyle::Body)
+        .max(ui.spacing().interact_size.y);
+    let radius = (height / 2.5).max(1.0);
+    let aspect_ratio = (th::SEEK_HANDLE_WIDTH / 2.0) / radius;
+    let response = ui.add(
+        egui::Slider::new(pos, 0.0..=max)
+            .show_value(false)
+            .trailing_fill(true)
+            .handle_shape(egui::style::HandleShape::Rect { aspect_ratio }),
+    );
+
+    let visuals = ui.style().interact(&response);
+    let fraction = if max > 0.0 {
+        (*pos / max).clamp(0.0, 1.0) as f32
+    } else {
+        0.0
+    };
+    let half = th::SEEK_HANDLE_WIDTH / 2.0;
+    let x = response.rect.left() + half + fraction * (response.rect.width() - 2.0 * half);
+    let center = egui::pos2(x, response.rect.center().y);
+    ui.painter().rect(
+        egui::Rect::from_center_size(
+            center,
+            egui::vec2(th::SEEK_HANDLE_WIDTH, th::SEEK_HANDLE_HEIGHT),
+        ),
+        egui::CornerRadius::same((th::SEEK_HANDLE_WIDTH / 2.0) as u8),
+        visuals.bg_fill,
+        visuals.fg_stroke,
+        egui::StrokeKind::Inside,
+    );
+    response
+}
+
 pub fn transport(app: &mut App, ui: &mut egui::Ui) {
     let snap =
         app.player
@@ -1494,11 +1532,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     let mut pos = app.seek_drag.unwrap_or(snap.position);
                     let max = duration.max(1.0);
                     ui.spacing_mut().slider_width = (ui.available_width() - 100.0).max(100.0);
-                    let resp = ui.add(
-                        egui::Slider::new(&mut pos, 0.0..=max)
-                            .show_value(false)
-                            .trailing_fill(true),
-                    );
+                    let resp = seek_slider(ui, &mut pos, max);
                     resp.widget_info(|| {
                         WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
                     });
@@ -1909,11 +1943,7 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                     let mut pos = app.seek_drag.unwrap_or(snap.position);
                     let max = duration.max(1.0);
                     ui.spacing_mut().slider_width = (seek_row - 100.0).max(160.0);
-                    let resp = ui.add(
-                        egui::Slider::new(&mut pos, 0.0..=max)
-                            .show_value(false)
-                            .trailing_fill(true),
-                    );
+                    let resp = seek_slider(ui, &mut pos, max);
                     resp.widget_info(|| {
                         WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
                     });

@@ -780,6 +780,11 @@ static BACKGROUNDS: OnceLock<RwLock<HashMap<PathBuf, (u128, egui::TextureHandle)
 /// Extra UI scale used by the larger-font accessibility mode.
 pub const LARGE_TEXT_SCALE: f32 = 1.2;
 
+/// Fixed-size pill drawn over the seek rail. Keeping this independent of the
+/// slider height stops the cursor from changing size between skins or layouts.
+pub const SEEK_HANDLE_WIDTH: f32 = 14.0;
+pub const SEEK_HANDLE_HEIGHT: f32 = 20.0;
+
 /// Named font family holding the semibold face. Register it in
 /// [`crate::icons::install`]; use [`semibold`] instead of touching it directly.
 pub const SEMIBOLD_FAMILY: &str = "semibold";

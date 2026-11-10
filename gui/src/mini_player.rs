@@ -134,11 +134,7 @@ pub fn ui(
 
         ui.add_space(4.0);
         let mut position = state.position;
-        let slider = ui.add(
-            egui::Slider::new(&mut position, 0.0..=state.duration.max(0.0))
-                .show_value(false)
-                .trailing_fill(true),
-        );
+        let slider = crate::ui::seek_slider(ui, &mut position, state.duration.max(0.0));
         if slider.changed() {
             commands.push(MiniCommand::Seek(position));
         }
