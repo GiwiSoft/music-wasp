@@ -17,25 +17,25 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
             ui.label(th::semibold("Podcasts", 18.0).color(th::text()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button(icons::with(icons::PLUS, "Add feed")).clicked() {
-                    app.show_podcast_dialog = true;
+                    app.podcast.show_dialog = true;
                 }
-                if app.selected_feed.is_some()
+                if app.podcast.selected_feed.is_some()
                     && ui
-                        .add_enabled(!app.podcast_loading, egui::Button::new("Refresh"))
+                        .add_enabled(!app.podcast.loading, egui::Button::new("Refresh"))
                         .clicked()
                 {
                     app.refresh_selected_podcast();
                 }
             });
         });
-        if let Some(status) = &app.podcast_status {
+        if let Some(status) = &app.podcast.status {
             ui.label(
                 RichText::new(status.as_str())
                     .size(10.5)
                     .color(th::text_dim()),
             );
         }
-        if app.podcast_loading {
+        if app.podcast.loading {
             ui.horizontal(|ui| {
                 ui.spinner();
                 ui.label(RichText::new("Fetching feed…").size(11.0));
@@ -43,8 +43,8 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
         }
         ui.separator();
 
-        if app.selected_feed.is_none() {
-            if app.podcast_feeds.is_empty() {
+        if app.podcast.selected_feed.is_none() {
+            if app.podcast.feeds.is_empty() {
                 ui.centered_and_justified(|ui| {
                     ui.label(
                         RichText::new("No podcast subscriptions yet. Add a feed URL.")
@@ -63,8 +63,8 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                 .id_salt("podcast_feeds")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    for index in 0..app.podcast_feeds.len() {
-                        let feed = &app.podcast_feeds[index];
+                    for index in 0..app.podcast.feeds.len() {
+                        let feed = &app.podcast.feeds[index];
                         ui.horizontal(|ui| {
                             let label = format!(
                                 "{}   ·   {} episode(s), {} unplayed",
@@ -102,27 +102,28 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                 }
             }
         } else {
-            let feed_id = app.selected_feed.unwrap_or_default();
+            let feed_id = app.podcast.selected_feed.unwrap_or_default();
             let title = app
-                .podcast_feeds
+                .podcast
+                .feeds
                 .iter()
                 .find(|feed| feed.id == feed_id)
                 .map(|feed| feed.title.clone())
                 .unwrap_or_else(|| "Feed".to_string());
             ui.horizontal(|ui| {
                 if ui.button("All feeds").clicked() {
-                    app.selected_feed = None;
-                    app.podcast_episodes.clear();
+                    app.podcast.selected_feed = None;
+                    app.podcast.episodes.clear();
                 }
                 ui.label(th::semibold(title, 15.0).color(th::text()));
                 ui.label(
-                    RichText::new(format!("{} episode(s)", app.podcast_episodes.len()))
+                    RichText::new(format!("{} episode(s)", app.podcast.episodes.len()))
                         .size(10.5)
                         .color(th::text_dim()),
                 );
             });
             ui.add_space(4.0);
-            if app.podcast_episodes.is_empty() {
+            if app.podcast.episodes.is_empty() {
                 ui.label(
                     RichText::new("No episodes yet. Refresh the feed.")
                         .size(11.0)
@@ -140,19 +141,20 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                 .show_rows(
                     ui,
                     row_height,
-                    app.podcast_episodes.len(),
+                    app.podcast.episodes.len(),
                     |ui, row_range| {
                         for index in row_range {
-                            let episode = &app.podcast_episodes[index];
+                            let episode = &app.podcast.episodes[index];
                             let width = ui.available_width();
                             ui.allocate_ui_with_layout(
                                 egui::vec2(width, row_height),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |ui| {
                                     ui.horizontal(|ui| {
-                                        let playing = app.stream.as_ref().is_some_and(|stream| {
-                                            stream.episode_id == Some(episode.id)
-                                        });
+                                        let playing =
+                                            app.stream.info.as_ref().is_some_and(|stream| {
+                                                stream.episode_id == Some(episode.id)
+                                            });
                                         if icons::compact(
                                             ui,
                                             if playing { icons::PAUSE } else { icons::PLAY },
@@ -233,7 +235,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                     },
                 );
             if let Some(index) = play_episode {
-                if let Some(episode) = app.podcast_episodes.get(index).cloned() {
+                if let Some(episode) = app.podcast.episodes.get(index).cloned() {
                     app.play_podcast_episode(&episode);
                 }
             }
@@ -243,11 +245,11 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
 }
 
 fn podcast_dialog(app: &mut App, ctx: &egui::Context) {
-    if !app.show_podcast_dialog {
+    if !app.podcast.show_dialog {
         return;
     }
     let mut open = true;
-    let mut url = app.podcast_url.clone();
+    let mut url = app.podcast.url.clone();
     let mut add = false;
     egui::Window::new("Add podcast feed")
         .open(&mut open)
@@ -272,15 +274,15 @@ fn podcast_dialog(app: &mut App, ctx: &egui::Context) {
                     add = true;
                 }
                 if ui.button("Cancel").clicked() {
-                    app.show_podcast_dialog = false;
+                    app.podcast.show_dialog = false;
                 }
             });
         });
-    app.podcast_url = url;
+    app.podcast.url = url;
     if add {
-        app.add_podcast_feed(&app.podcast_url.clone());
+        app.add_podcast_feed(&app.podcast.url.clone());
     }
     if !open {
-        app.show_podcast_dialog = false;
+        app.podcast.show_dialog = false;
     }
 }

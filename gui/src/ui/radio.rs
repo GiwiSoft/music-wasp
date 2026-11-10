@@ -17,11 +17,11 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
             ui.label(th::semibold("Radio", 18.0).color(th::text()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button(icons::with(icons::PLUS, "Add station")).clicked() {
-                    app.show_radio_dialog = true;
+                    app.radio.show_dialog = true;
                 }
             });
         });
-        if let Some(status) = &app.radio_status {
+        if let Some(status) = &app.radio.status {
             ui.label(
                 RichText::new(status.as_str())
                     .size(10.5)
@@ -29,7 +29,7 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
             );
         }
         ui.separator();
-        if app.radio_stations.is_empty() {
+        if app.radio.stations.is_empty() {
             ui.centered_and_justified(|ui| {
                 ui.label(
                     RichText::new("No radio stations yet. Add an MP3 or AAC stream URL.")
@@ -48,10 +48,10 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
             .id_salt("radio_stations")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                for index in 0..app.radio_stations.len() {
-                    let station = &app.radio_stations[index];
+                for index in 0..app.radio.stations.len() {
+                    let station = &app.radio.stations[index];
                     ui.horizontal(|ui| {
-                        let playing = app.stream.as_ref().is_some_and(|stream| {
+                        let playing = app.stream.info.as_ref().is_some_and(|stream| {
                             stream.kind == StreamKind::Radio && stream.url == station.url
                         });
                         if icons::compact(
@@ -90,7 +90,7 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
             });
         match station_action {
             Some(StationAction::Play(index)) => {
-                if let Some(station) = app.radio_stations.get(index).cloned() {
+                if let Some(station) = app.radio.stations.get(index).cloned() {
                     app.play_radio_station(&station);
                 }
             }
@@ -102,13 +102,13 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
 }
 
 fn radio_dialog(app: &mut App, ctx: &egui::Context) {
-    if !app.show_radio_dialog {
+    if !app.radio.show_dialog {
         return;
     }
     let mut open = true;
-    let mut name = app.radio_name.clone();
-    let mut url = app.radio_url.clone();
-    let mut genre = app.radio_genre.clone();
+    let mut name = app.radio.name.clone();
+    let mut url = app.radio.url.clone();
+    let mut genre = app.radio.genre.clone();
     let mut add = false;
     egui::Window::new("Add radio station")
         .open(&mut open)
@@ -138,22 +138,22 @@ fn radio_dialog(app: &mut App, ctx: &egui::Context) {
                     add = true;
                 }
                 if ui.button("Cancel").clicked() {
-                    app.show_radio_dialog = false;
+                    app.radio.show_dialog = false;
                 }
             });
         });
-    app.radio_name = name;
-    app.radio_url = url;
-    app.radio_genre = genre;
+    app.radio.name = name;
+    app.radio.url = url;
+    app.radio.genre = genre;
     if add {
         let (name, url, genre) = (
-            app.radio_name.clone(),
-            app.radio_url.clone(),
-            app.radio_genre.clone(),
+            app.radio.name.clone(),
+            app.radio.url.clone(),
+            app.radio.genre.clone(),
         );
         app.add_radio_station(&name, &url, &genre);
     }
     if !open {
-        app.show_radio_dialog = false;
+        app.radio.show_dialog = false;
     }
 }

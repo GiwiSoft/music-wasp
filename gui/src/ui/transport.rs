@@ -103,7 +103,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
         .as_ref()
         .map(|t| t.duration_secs as f64)
         .filter(|d| *d > 0.0);
-    let stream = app.stream.clone();
+    let stream = app.stream.info.clone();
     let duration = stream
         .as_ref()
         .map(|stream| stream.duration_secs as f64)
@@ -383,7 +383,7 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                 );
             }
         }
-        if let Some(stream) = app.stream.clone() {
+        if let Some(stream) = app.stream.info.clone() {
             ui.vertical_centered(|ui| {
                 ui.add_space(30.0);
                 let art = (avail.y * 0.34).clamp(150.0, 280.0);

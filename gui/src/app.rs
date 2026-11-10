@@ -6,8 +6,6 @@ use crate::settings::{
 use musicwasp_core::autotag::{self, Candidate, Cover, LocalTrack, Release};
 use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::lyrics::Lyrics;
-use musicwasp_core::podcast::{ParsedFeed, PodcastEpisode, PodcastFeed};
-use musicwasp_core::radio::RadioStation;
 use musicwasp_core::smart::{Definition, Field, Op, Rule, SmartPlaylist};
 use musicwasp_core::tags::TagSnapshot;
 use musicwasp_core::{
@@ -26,8 +24,8 @@ mod podcast;
 mod stream;
 mod visualizer;
 
-pub use podcast::PodcastMsg;
-pub use stream::{StreamInfo, StreamKind};
+pub use podcast::{PodcastMsg, PodcastState};
+pub use stream::{RadioState, StreamInfo, StreamKind, StreamState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -1408,25 +1406,10 @@ pub struct App {
     /// Line highlighted last frame, used to auto-scroll only on changes.
     pub lyrics_active: Option<usize>,
     pub lyrics_autoscroll: bool,
-    /// Internet radio and podcast playback. Kept behind an `Arc` so the UI can
-    /// cheaply snapshot it while the rest of the app stays mutable.
-    pub stream: Option<Arc<StreamInfo>>,
-    stream_started: std::time::Instant,
-    stream_saved: std::time::Instant,
-    pub podcast_feeds: Vec<PodcastFeed>,
-    pub podcast_episodes: Vec<PodcastEpisode>,
-    pub selected_feed: Option<i64>,
-    pub podcast_status: Option<String>,
-    pub podcast_loading: bool,
-    pub podcast_rx: Option<Receiver<PodcastMsg>>,
-    pub show_podcast_dialog: bool,
-    pub podcast_url: String,
-    pub radio_stations: Vec<RadioStation>,
-    pub radio_status: Option<String>,
-    pub show_radio_dialog: bool,
-    pub radio_name: String,
-    pub radio_url: String,
-    pub radio_genre: String,
+    /// Internet radio and podcast playback.
+    pub stream: StreamState,
+    pub podcast: PodcastState,
+    pub radio: RadioState,
     /// Track-list column settings window.
     pub show_columns: bool,
     /// Ask the table to discard its cached widths on the next frame.
@@ -1638,23 +1621,9 @@ impl App {
             lyrics_track: None,
             lyrics_active: None,
             lyrics_autoscroll: true,
-            stream: None,
-            stream_started: std::time::Instant::now(),
-            stream_saved: std::time::Instant::now(),
-            podcast_feeds: Vec::new(),
-            podcast_episodes: Vec::new(),
-            selected_feed: None,
-            podcast_status: None,
-            podcast_loading: false,
-            podcast_rx: None,
-            show_podcast_dialog: false,
-            podcast_url: String::new(),
-            radio_stations: Vec::new(),
-            radio_status: None,
-            show_radio_dialog: false,
-            radio_name: String::new(),
-            radio_url: String::new(),
-            radio_genre: String::new(),
+            stream: StreamState::default(),
+            podcast: PodcastState::default(),
+            radio: RadioState::default(),
             show_columns: false,
             columns_reset: false,
             cover_rx: None,
@@ -4103,9 +4072,9 @@ impl App {
     }
 
     pub fn on_track_finished(&mut self) {
-        if self.stream.is_some() {
+        if self.stream.info.is_some() {
             self.save_stream_progress(true);
-            self.stream = None;
+            self.stream.info = None;
             return;
         }
         match self.repeat {
@@ -4400,7 +4369,7 @@ impl App {
         let playing = snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.status == musicwasp_core::PlayerStatus::Playing);
-        let stream = self.stream.clone();
+        let stream = self.stream.info.clone();
         let duration = stream
             .as_ref()
             .map(|stream| stream.duration_secs as f64)
@@ -4500,7 +4469,7 @@ impl App {
         let playing = self.player.as_ref().is_some_and(|player| {
             player.snapshot().status == musicwasp_core::PlayerStatus::Playing
         });
-        let (title, artist) = if let Some(stream) = &self.stream {
+        let (title, artist) = if let Some(stream) = &self.stream.info {
             (stream.title.as_str(), stream.subtitle.as_str())
         } else {
             (

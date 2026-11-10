@@ -26,7 +26,7 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
         .as_ref()
         .and_then(|lyrics| lyrics.line_index(snapshot.position));
     let current_track = app.current_track(snapshot.current.as_deref());
-    let stream = app.stream.clone();
+    let stream = app.stream.info.clone();
 
     let mut close = false;
     let mut reload = false;

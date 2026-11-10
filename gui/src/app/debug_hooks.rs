@@ -13,10 +13,11 @@ pub(super) fn apply_initial(app: &mut App) {
     }
     if app.view == View::Podcasts && debug_env::is_set("MUSICWASP_PODCAST_FIRST") {
         if let Some(feed) = app
-            .podcast_feeds
+            .podcast
+            .feeds
             .iter()
             .find(|feed| feed.episode_count > 0)
-            .or_else(|| app.podcast_feeds.first())
+            .or_else(|| app.podcast.feeds.first())
         {
             app.select_podcast_feed(feed.id);
         }
@@ -49,20 +50,21 @@ impl App {
 
         if self.frames == 15
             && debug_env::is_set("MUSICWASP_PLAY_RADIO")
-            && !self.radio_stations.is_empty()
+            && !self.radio.stations.is_empty()
         {
-            let station = self.radio_stations[0].clone();
+            let station = self.radio.stations[0].clone();
             self.play_radio_station(&station);
         }
         if self.frames == 15 && debug_env::is_set("MUSICWASP_PLAY_PODCAST") {
             if let Some(feed) = self
-                .podcast_feeds
+                .podcast
+                .feeds
                 .iter()
                 .find(|feed| feed.episode_count > 0)
             {
                 let feed_id = feed.id;
                 self.select_podcast_feed(feed_id);
-                if let Some(episode) = self.podcast_episodes.first().cloned() {
+                if let Some(episode) = self.podcast.episodes.first().cloned() {
                     self.play_podcast_episode(&episode);
                 }
             }

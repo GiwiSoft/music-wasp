@@ -1012,11 +1012,11 @@ fn podcast_feed_delete_runs_after_the_list_pass() {
     harness.state_mut().view = View::Podcasts;
     harness.state_mut().refresh_podcast_feeds();
     harness.run_steps(2);
-    assert_eq!(harness.state().podcast_feeds.len(), 1);
+    assert_eq!(harness.state().podcast.feeds.len(), 1);
 
     harness.get_by_label("Delete subscription").click();
     harness.run_steps(2);
-    assert!(harness.state().podcast_feeds.is_empty());
+    assert!(harness.state().podcast.feeds.is_empty());
 }
 
 #[test]
@@ -1034,11 +1034,11 @@ fn radio_station_delete_runs_after_the_list_pass() {
     harness.state_mut().view = View::Radio;
     harness.state_mut().refresh_radio_stations();
     harness.run_steps(2);
-    assert_eq!(harness.state().radio_stations.len(), 1);
+    assert_eq!(harness.state().radio.stations.len(), 1);
 
     harness.get_by_label("Delete station").click();
     harness.run_steps(2);
-    assert!(harness.state().radio_stations.is_empty());
+    assert!(harness.state().radio.stations.is_empty());
 }
 
 #[test]
