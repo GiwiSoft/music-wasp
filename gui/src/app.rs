@@ -1,4 +1,4 @@
-use crate::debug_hooks;
+use crate::debug_hooks as debug_env;
 use crate::i18n::{tr, Language};
 use crate::settings::{
     Action, Session, SessionView, Settings, Shortcut, TrackColumn, WindowGeometry,
@@ -21,6 +21,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 
+mod debug_hooks;
+mod podcast;
+mod stream;
+mod visualizer;
+
+pub use podcast::PodcastMsg;
+pub use stream::{StreamInfo, StreamKind};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Library,
@@ -28,30 +36,6 @@ pub enum View {
     Smart(i64),
     Podcasts,
     Radio,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StreamKind {
-    Radio,
-    Podcast,
-}
-
-/// One internet radio station or podcast episode currently playing.
-#[derive(Debug, Clone)]
-pub struct StreamInfo {
-    pub title: String,
-    pub subtitle: String,
-    pub url: String,
-    pub kind: StreamKind,
-    pub episode_id: Option<i64>,
-    pub duration_secs: u64,
-}
-
-pub enum PodcastMsg {
-    Feed {
-        feed_id: i64,
-        result: Result<ParsedFeed, String>,
-    },
 }
 
 impl From<View> for SessionView {
@@ -1502,7 +1486,7 @@ impl App {
         crate::theme::load_user_skins();
         let settings_path = Settings::path();
         // Test runs keep the developer's real credential store out of reach.
-        let mut settings = if crate::debug_hooks::is_set("MUSICWASP_TEST") {
+        let mut settings = if debug_env::is_set("MUSICWASP_TEST") {
             Settings::load(&settings_path)
         } else {
             Settings::load_persisted(&settings_path)
@@ -1523,7 +1507,7 @@ impl App {
         let wgpu_state = cc.wgpu_render_state.clone();
 
         // Headless UI tests use a temporary data dir and no audio/watcher/MPRIS.
-        let test_mode = debug_hooks::is_set("MUSICWASP_TEST");
+        let test_mode = debug_env::is_set("MUSICWASP_TEST");
         let lib = Library::open().expect("cannot open library database");
         let (player, audio_error) = if test_mode {
             (None, None)
@@ -1556,7 +1540,7 @@ impl App {
 
         let eq_applied = settings.equalizer;
 
-        let shot_path = debug_hooks::var("MUSICWASP_SCREENSHOT");
+        let shot_path = debug_env::var("MUSICWASP_SCREENSHOT");
         let session_enabled = shot_path.is_none() && !test_mode;
         let session = if session_enabled {
             settings.session.clone()
@@ -1609,7 +1593,7 @@ impl App {
             art: None,
             art_key: None,
             logo: None,
-            plain_view: debug_hooks::is_set("MUSICWASP_PLAIN"),
+            plain_view: debug_env::is_set("MUSICWASP_PLAIN"),
             playing_id: None,
             current_track_cache: None,
             editing: None,
@@ -1647,7 +1631,7 @@ impl App {
             wgpu_state,
             visualizer: None,
             viz_error: None,
-            viz_fullscreen: debug_hooks::is_set("MUSICWASP_VIS_FULLSCREEN"),
+            viz_fullscreen: debug_env::is_set("MUSICWASP_VIS_FULLSCREEN"),
             viz_pcm: Vec::new(),
             viz_channels: 2,
             lyrics: None,
@@ -1717,26 +1701,7 @@ impl App {
         app.refresh_tracks();
         app.refresh_podcast_feeds();
         app.refresh_radio_stations();
-        if let Some(view) = debug_hooks::var("MUSICWASP_VIEW") {
-            app.view = match view.as_str() {
-                "podcasts" => View::Podcasts,
-                "radio" => View::Radio,
-                _ => app.view,
-            };
-        }
-        if app.view == View::Podcasts && debug_hooks::is_set("MUSICWASP_PODCAST_FIRST") {
-            if let Some(feed) = app
-                .podcast_feeds
-                .iter()
-                .find(|feed| feed.episode_count > 0)
-                .or_else(|| app.podcast_feeds.first())
-            {
-                app.select_podcast_feed(feed.id);
-            }
-        }
-        if debug_hooks::is_set("MUSICWASP_LYRICS") {
-            app.settings.lyrics_open = true;
-        }
+        debug_hooks::apply_initial(&mut app);
         if app.session_enabled {
             app.restore_session(&session);
         }
@@ -1996,308 +1961,6 @@ impl App {
                 .unwrap_or_else(|| tr("library.title").to_string()),
             View::Podcasts => "Podcasts".to_string(),
             View::Radio => "Radio".to_string(),
-        }
-    }
-
-    // ---- podcasts and radio ----
-
-    pub fn refresh_podcast_feeds(&mut self) {
-        match self.lib.podcast_feeds() {
-            Ok(feeds) => {
-                self.podcast_feeds = feeds;
-                if let Some(id) = self.selected_feed {
-                    if self.podcast_feeds.iter().any(|feed| feed.id == id) {
-                        self.load_podcast_episodes();
-                    } else {
-                        self.selected_feed = None;
-                        self.podcast_episodes.clear();
-                    }
-                }
-            }
-            Err(error) => self.podcast_status = Some(format!("could not load feeds: {error}")),
-        }
-    }
-
-    pub fn load_podcast_episodes(&mut self) {
-        let Some(feed_id) = self.selected_feed else {
-            self.podcast_episodes.clear();
-            return;
-        };
-        match self.lib.podcast_episodes(feed_id) {
-            Ok(episodes) => self.podcast_episodes = episodes,
-            Err(error) => self.podcast_status = Some(format!("could not load episodes: {error}")),
-        }
-    }
-
-    pub fn select_podcast_feed(&mut self, feed_id: i64) {
-        self.selected_feed = Some(feed_id);
-        self.load_podcast_episodes();
-    }
-
-    pub fn add_podcast_feed(&mut self, url: &str) {
-        let url = url.trim().to_string();
-        if !(url.starts_with("https://") || url.starts_with("http://")) {
-            self.podcast_status = Some("enter an http(s) feed URL".to_string());
-            return;
-        }
-        if self.podcast_loading {
-            self.podcast_status = Some("a feed refresh is already running".to_string());
-            return;
-        }
-        match self.lib.add_podcast_feed(&url) {
-            Ok(feed_id) => {
-                self.selected_feed = Some(feed_id);
-                self.show_podcast_dialog = false;
-                self.podcast_url.clear();
-                self.start_podcast_fetch(feed_id, url);
-            }
-            Err(error) => self.podcast_status = Some(format!("could not save feed: {error}")),
-        }
-    }
-
-    pub fn refresh_selected_podcast(&mut self) {
-        let Some(feed_id) = self.selected_feed else {
-            return;
-        };
-        if self.podcast_loading {
-            return;
-        }
-        let Some(feed) = self.podcast_feeds.iter().find(|feed| feed.id == feed_id) else {
-            return;
-        };
-        let url = feed.url.clone();
-        self.start_podcast_fetch(feed_id, url);
-    }
-
-    /// Network reach for podcast feeds and episodes, from the user's setting.
-    pub fn podcast_access(&self) -> musicwasp_core::netguard::Access {
-        if self.settings.allow_local_feeds {
-            musicwasp_core::netguard::Access::AnyHost
-        } else {
-            musicwasp_core::netguard::Access::PublicOnly
-        }
-    }
-
-    fn start_podcast_fetch(&mut self, feed_id: i64, url: String) {
-        let (tx, rx) = mpsc::channel();
-        self.podcast_rx = Some(rx);
-        self.podcast_loading = true;
-        self.podcast_status = Some("fetching feed…".to_string());
-        let access = self.podcast_access();
-        std::thread::spawn(move || {
-            let result =
-                musicwasp_core::podcast::fetch(&url, access).map_err(|error| format!("{error:#}"));
-            let _ = tx.send(PodcastMsg::Feed { feed_id, result });
-        });
-    }
-
-    pub fn poll_podcasts(&mut self) {
-        let Some(rx) = self.podcast_rx.take() else {
-            return;
-        };
-        match rx.try_recv() {
-            Ok(PodcastMsg::Feed { feed_id, result }) => {
-                self.podcast_loading = false;
-                match result {
-                    Ok(feed) => match self.lib.update_podcast_feed(feed_id, &feed) {
-                        Ok(()) => {
-                            self.podcast_status =
-                                Some(format!("{} episode(s)", feed.episodes.len()));
-                            self.refresh_podcast_feeds();
-                            if self.selected_feed == Some(feed_id) {
-                                self.load_podcast_episodes();
-                            }
-                        }
-                        Err(error) => {
-                            self.podcast_status = Some(format!("could not save feed: {error}"))
-                        }
-                    },
-                    Err(error) => self.podcast_status = Some(format!("feed failed: {error}")),
-                }
-            }
-            Err(mpsc::TryRecvError::Empty) => self.podcast_rx = Some(rx),
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.podcast_loading = false;
-                self.podcast_status = Some("feed worker stopped".to_string());
-            }
-        }
-    }
-
-    pub fn delete_podcast_feed(&mut self, feed_id: i64) {
-        if let Err(error) = self.lib.delete_podcast_feed(feed_id) {
-            self.podcast_status = Some(format!("could not delete feed: {error}"));
-            return;
-        }
-        if self.selected_feed == Some(feed_id) {
-            self.selected_feed = None;
-            self.podcast_episodes.clear();
-        }
-        self.refresh_podcast_feeds();
-    }
-
-    pub fn refresh_radio_stations(&mut self) {
-        match self.lib.radio_stations() {
-            Ok(stations) => self.radio_stations = stations,
-            Err(error) => self.radio_status = Some(format!("could not load stations: {error}")),
-        }
-    }
-
-    pub fn add_radio_station(&mut self, name: &str, url: &str, genre: &str) {
-        let url = url.trim();
-        if !(url.starts_with("https://") || url.starts_with("http://")) {
-            self.radio_status = Some("enter an http(s) stream URL".to_string());
-            return;
-        }
-        if name.trim().is_empty() {
-            self.radio_status = Some("enter a station name".to_string());
-            return;
-        }
-        match self.lib.add_radio_station(name, url, genre) {
-            Ok(_) => {
-                self.show_radio_dialog = false;
-                self.radio_name.clear();
-                self.radio_url.clear();
-                self.radio_genre.clear();
-                self.radio_status = Some("station saved".to_string());
-                self.refresh_radio_stations();
-            }
-            Err(error) => self.radio_status = Some(format!("could not save station: {error}")),
-        }
-    }
-
-    pub fn delete_radio_station(&mut self, id: i64) {
-        match self.lib.delete_radio_station(id) {
-            Ok(()) => self.refresh_radio_stations(),
-            Err(error) => self.radio_status = Some(format!("could not delete station: {error}")),
-        }
-    }
-
-    pub fn play_radio_station(&mut self, station: &RadioStation) {
-        self.play_stream(StreamInfo {
-            title: station.name.clone(),
-            subtitle: if station.genre.trim().is_empty() {
-                "Internet radio".to_string()
-            } else {
-                station.genre.clone()
-            },
-            url: station.url.clone(),
-            kind: StreamKind::Radio,
-            episode_id: None,
-            duration_secs: 0,
-        });
-    }
-
-    pub fn play_podcast_episode(&mut self, episode: &PodcastEpisode) {
-        let feed_title = self
-            .podcast_feeds
-            .iter()
-            .find(|feed| feed.id == episode.feed_id)
-            .map(|feed| feed.title.clone())
-            .unwrap_or_else(|| "Podcast".to_string());
-        self.play_stream(StreamInfo {
-            title: episode.title.clone(),
-            subtitle: feed_title,
-            url: episode.audio_url.clone(),
-            kind: StreamKind::Podcast,
-            episode_id: Some(episode.id),
-            duration_secs: episode.duration_secs,
-        });
-    }
-
-    fn play_stream(&mut self, stream: StreamInfo) {
-        self.finalize_stream();
-        self.queue.clear();
-        self.queue_pos = None;
-        self.playing_id = None;
-        self.art = None;
-        self.art_key = None;
-        self.gapless_for = None;
-        self.selected.clear();
-        self.finish_scrobble();
-        if let Some(player) = &self.player {
-            // Radio streams are URLs the user typed. Podcast episodes come from
-            // the feed, so they follow the local-feeds setting.
-            let access = match stream.kind {
-                StreamKind::Radio => musicwasp_core::netguard::Access::AnyHost,
-                StreamKind::Podcast => self.podcast_access(),
-            };
-            player.load_url(&stream.url, access);
-        }
-        self.message = match stream.kind {
-            StreamKind::Radio => format!("Radio: {}", stream.title),
-            StreamKind::Podcast => format!("Podcast: {}", stream.title),
-        };
-        self.stream = Some(Arc::new(stream));
-        self.stream_started = std::time::Instant::now();
-        self.stream_saved = std::time::Instant::now();
-    }
-
-    /// Save podcast listening position without clearing the stream.
-    fn save_stream_progress(&mut self, finished: bool) {
-        let Some(stream) = &self.stream else {
-            return;
-        };
-        let Some(episode_id) = stream.episode_id else {
-            return;
-        };
-        let position = self
-            .player
-            .as_ref()
-            .map(|player| player.snapshot().position.max(0.0) as u64)
-            .unwrap_or(0);
-        let played = finished
-            || (stream.duration_secs > 0 && position.saturating_add(15) >= stream.duration_secs);
-        if let Err(error) = self.lib.set_podcast_progress(episode_id, position, played) {
-            eprintln!("MusicWasp: could not save podcast progress: {error}");
-        }
-        if let Some(episode) = self
-            .podcast_episodes
-            .iter_mut()
-            .find(|episode| episode.id == episode_id)
-        {
-            episode.position_secs = position;
-            episode.played |= played;
-        }
-    }
-
-    fn finalize_stream(&mut self) {
-        if self.stream.is_some() {
-            self.save_stream_progress(false);
-            self.stream = None;
-        }
-    }
-
-    /// Persist podcast position every few seconds and when playback stops.
-    pub fn update_stream_progress(&mut self) {
-        let Some(stream) = &self.stream else {
-            return;
-        };
-        if stream.episode_id.is_none() {
-            return;
-        }
-        let Some(player) = &self.player else {
-            return;
-        };
-        let snapshot = player.snapshot();
-        let loaded = snapshot
-            .current
-            .as_ref()
-            .is_some_and(|path| path.to_string_lossy() == stream.url);
-        if !loaded && self.stream_started.elapsed() < std::time::Duration::from_secs(10) {
-            // The audio thread may still be opening the HTTP stream.
-            return;
-        }
-        if snapshot.status == musicwasp_core::PlayerStatus::Stopped {
-            // The natural end of an episode goes through `on_track_finished`;
-            // stopping here means a failed or dropped stream.
-            self.save_stream_progress(false);
-            self.stream = None;
-            self.message = "stream stopped".to_string();
-            return;
-        }
-        if self.stream_saved.elapsed() >= std::time::Duration::from_secs(5) {
-            self.save_stream_progress(false);
-            self.stream_saved = std::time::Instant::now();
         }
     }
 
@@ -3424,158 +3087,6 @@ impl App {
         self.lyrics_track = None;
         self.lyrics_active = None;
         self.sync_lyrics();
-    }
-
-    // ---- visualizer ----
-
-    /// Create the MilkDrop engine on first use.
-    pub fn ensure_visualizer(&mut self) -> bool {
-        if self.visualizer.is_some() {
-            return true;
-        }
-        let Some(state) = self.wgpu_state.clone() else {
-            self.viz_error = Some("the wgpu renderer is not available".to_string());
-            return false;
-        };
-        let presets = crate::visualizer::load_presets();
-        match crate::visualizer::Visualizer::new(
-            &state,
-            presets,
-            Some(self.settings.visualizer.preset.as_str()),
-        ) {
-            Ok(visualizer) => {
-                self.visualizer = Some(visualizer);
-                self.viz_error = None;
-                true
-            }
-            Err(error) => {
-                self.viz_error = Some(error);
-                false
-            }
-        }
-    }
-
-    pub fn set_visualizer_enabled(&mut self, enabled: bool, ctx: &egui::Context) {
-        self.settings.visualizer.enabled = enabled;
-        if enabled {
-            self.ensure_visualizer();
-        } else {
-            self.viz_fullscreen = false;
-            self.viz_pcm.clear();
-        }
-        self.persist_settings();
-        ctx.request_repaint();
-    }
-
-    /// Drain the audio tap and advance shuffle mode. Call once per frame before
-    /// drawing the UI.
-    pub fn update_visualizer(&mut self, ctx: &egui::Context) {
-        if !self.settings.visualizer.enabled {
-            self.viz_pcm.clear();
-            return;
-        }
-        if let Some(player) = &self.player {
-            let tap = player.audio_tap();
-            let (sample_rate, channels) = tap.format();
-            self.viz_channels = channels;
-            if let Some(visualizer) = &mut self.visualizer {
-                visualizer.ensure_sample_rate(sample_rate);
-            }
-            self.viz_pcm.clear();
-            tap.drain_into(&mut self.viz_pcm, 16_384);
-        } else {
-            self.viz_pcm.clear();
-        }
-
-        let shuffle = self.settings.visualizer.mode == crate::settings::VisualizerMode::Shuffle;
-        let interval = self.settings.visualizer.interval_secs;
-        let switched = self.visualizer.as_mut().and_then(|visualizer| {
-            visualizer
-                .maybe_advance(shuffle, interval)
-                .then(|| visualizer.current_name().to_string())
-        });
-        if let Some(name) = switched {
-            self.settings.visualizer.preset = name;
-            self.persist_settings();
-        }
-
-        let fps = self.settings.visualizer.fps.clamp(15, 60);
-        ctx.request_repaint_after(std::time::Duration::from_millis(1000 / u64::from(fps)));
-    }
-
-    /// Render the visualizer for `size` and return the egui texture. Rendering
-    /// happens at most once per frame; repeated calls reuse the same texture.
-    pub fn render_visualizer(
-        &mut self,
-        ctx: &egui::Context,
-        size: egui::Vec2,
-    ) -> Option<egui::TextureId> {
-        if !self.settings.visualizer.enabled {
-            return None;
-        }
-        if self.visualizer.is_none() && !self.ensure_visualizer() {
-            return None;
-        }
-        let mut pcm = std::mem::take(&mut self.viz_pcm);
-        let result = self
-            .visualizer
-            .as_mut()
-            .and_then(|visualizer| visualizer.render(ctx, size, &pcm, self.viz_channels));
-        pcm.clear();
-        self.viz_pcm = pcm;
-        result
-    }
-
-    pub fn select_visualizer_preset(&mut self, name: &str) {
-        self.settings.visualizer.preset = name.to_string();
-        if let Some(visualizer) = &mut self.visualizer {
-            match visualizer.select_by_name(name, true) {
-                Ok(()) => self.viz_error = None,
-                Err(error) => self.viz_error = Some(error),
-            }
-        }
-        self.persist_settings();
-    }
-
-    pub fn next_visualizer_preset(&mut self) {
-        let shuffle = self.settings.visualizer.mode == crate::settings::VisualizerMode::Shuffle;
-        if let Some(visualizer) = &mut self.visualizer {
-            match visualizer.next(shuffle) {
-                Ok(()) => {
-                    self.settings.visualizer.preset = visualizer.current_name().to_string();
-                    self.viz_error = None;
-                }
-                Err(error) => self.viz_error = Some(error),
-            }
-        }
-        self.persist_settings();
-    }
-
-    pub fn previous_visualizer_preset(&mut self) {
-        if let Some(visualizer) = &mut self.visualizer {
-            let count = visualizer.presets().len();
-            if count == 0 {
-                return;
-            }
-            let index = if visualizer.current_index() == 0 {
-                count - 1
-            } else {
-                visualizer.current_index() - 1
-            };
-            match visualizer.select(index, true) {
-                Ok(()) => {
-                    self.settings.visualizer.preset = visualizer.current_name().to_string();
-                    self.viz_error = None;
-                }
-                Err(error) => self.viz_error = Some(error),
-            }
-        }
-        self.persist_settings();
-    }
-
-    pub fn set_visualizer_mode(&mut self, mode: crate::settings::VisualizerMode) {
-        self.settings.visualizer.mode = mode;
-        self.persist_settings();
     }
 
     // ---- track-list columns ----
@@ -6347,258 +5858,6 @@ impl eframe::App for App {
 impl App {
     pub fn scan_clicked(&mut self) {
         self.scan();
-    }
-
-    fn handle_screenshot_capture(&mut self, ctx: &egui::Context) {
-        let Some(path) = self.shot_path.clone() else {
-            return;
-        };
-        self.frames += 1;
-
-        // Debug hook: MUSICWASP_AUTOPLAY=1 starts the first track (muted).
-        if self.frames == 15 && debug_hooks::is_set("MUSICWASP_AUTOPLAY") && !self.tracks.is_empty()
-        {
-            self.volume = 0.0;
-            self.play_from_list(0);
-        }
-
-        if self.frames == 20 {
-            if let Some(seconds) = debug_hooks::var("MUSICWASP_SEEK") {
-                if let (Ok(seconds), Some(player)) = (seconds.parse::<f64>(), &self.player) {
-                    player.seek(seconds);
-                }
-            }
-        }
-
-        if self.frames == 15
-            && debug_hooks::is_set("MUSICWASP_PLAY_RADIO")
-            && !self.radio_stations.is_empty()
-        {
-            let station = self.radio_stations[0].clone();
-            self.play_radio_station(&station);
-        }
-        if self.frames == 15 && debug_hooks::is_set("MUSICWASP_PLAY_PODCAST") {
-            if let Some(feed) = self
-                .podcast_feeds
-                .iter()
-                .find(|feed| feed.episode_count > 0)
-            {
-                let feed_id = feed.id;
-                self.select_podcast_feed(feed_id);
-                if let Some(episode) = self.podcast_episodes.first().cloned() {
-                    self.play_podcast_episode(&episode);
-                }
-            }
-        }
-
-        // Debug hook: MUSICWASP_SETTINGS=1 opens the settings panel;
-        // MUSICWASP_SETTINGS_TAB=keybindings|about picks a tab.
-        if self.frames == 20 && debug_hooks::is_set("MUSICWASP_SETTINGS") {
-            self.show_settings = true;
-            self.settings_tab = match debug_hooks::var("MUSICWASP_SETTINGS_TAB").as_deref() {
-                Some("keybindings") => SettingsTab::Keybindings,
-                Some("about") => SettingsTab::About,
-                Some("look") => SettingsTab::LookAndFeel,
-                Some("tracks") => SettingsTab::Tracks,
-                Some("visualizer") => SettingsTab::Visualizer,
-                _ => SettingsTab::General,
-            };
-        }
-
-        // Debug hook: MUSICWASP_EDITOR=1 opens the tag editor for the first
-        // track; MUSICWASP_EDITOR=multi selects everything first.
-        if self.frames == 20 {
-            match debug_hooks::var("MUSICWASP_EDITOR").as_deref() {
-                Some("multi") => {
-                    self.select_all_in_view();
-                    self.open_editor();
-                }
-                Some(_) if !self.tracks.is_empty() => {
-                    self.selected.clear();
-                    self.selected.insert(self.tracks[0].id);
-                    self.anchor = Some(self.tracks[0].id);
-                    self.open_editor();
-                }
-                _ => {}
-            }
-        }
-
-        // Debug hook: MUSICWASP_RENAME=1 opens rename for the first track title.
-        if self.frames == 20
-            && debug_hooks::is_set("MUSICWASP_RENAME")
-            && self.rename.is_none()
-            && !self.tracks.is_empty()
-        {
-            let id = self.tracks[0].id;
-            self.selected.clear();
-            self.selected.insert(id);
-            self.anchor = Some(id);
-            self.rename_field = TrackField::Title;
-            self.focus = Focus::Tracks;
-            self.start_rename();
-        }
-
-        // Debug hook: MUSICWASP_AUTOTAG=1 opens the dialog and searches;
-        // MUSICWASP_AUTOTAG=one tags just the first track.
-        if self.frames == 20 && !self.tracks.is_empty() {
-            match debug_hooks::var("MUSICWASP_AUTOTAG").as_deref() {
-                Some("one") => {
-                    let id = self.tracks[0].id;
-                    self.selected.clear();
-                    self.selected.insert(id);
-                    self.anchor = Some(id);
-                    self.open_autotag();
-                    self.start_autotag_search();
-                }
-                Some(_) => {
-                    self.select_all_in_view();
-                    self.open_autotag();
-                    self.start_autotag_search();
-                }
-                None => {}
-            }
-        }
-
-        // Debug hook: MUSICWASP_AUTOTAG_APPLY=1 applies the loaded candidate
-        // (paired with MUSICWASP_AUTOTAG=one).
-        if debug_hooks::is_set("MUSICWASP_AUTOTAG_APPLY") && self.frames > 20 {
-            let ready = self.autotag.as_ref().is_some_and(|state| {
-                matches!(state.stage, AutoTagStage::Results(_))
-                    && state.release.is_some()
-                    && !state.loading_release
-            });
-            if ready {
-                self.start_autotag_apply();
-            }
-        }
-
-        // Debug hook: MUSICWASP_SMART=1 creates; =edit opens the first existing.
-        if self.frames == 20 {
-            match debug_hooks::var("MUSICWASP_SMART").as_deref() {
-                Some("edit") => {
-                    if let Some(smart) = self.smart_playlists.first() {
-                        self.edit_smart_dialog(smart.id);
-                    }
-                }
-                Some(_) => self.open_smart_dialog(),
-                None => {}
-            }
-        }
-
-        // Debug hook: MUSICWASP_PLAYLIST=1 (or =smart) opens a playlist view.
-        if self.frames == 20 {
-            match debug_hooks::var("MUSICWASP_PLAYLIST").as_deref() {
-                Some("smart") => {
-                    if let Some(first) = self.smart_playlists.first() {
-                        self.view = View::Smart(first.id);
-                        self.mark_tracks_dirty();
-                    }
-                }
-                Some(_) => {
-                    if let Some(first) = self.playlists.first() {
-                        self.view = View::Playlist(first.id);
-                        self.mark_tracks_dirty();
-                    }
-                }
-                None => {}
-            }
-        }
-
-        // Debug hook: MUSICWASP_PICKER=1 opens the folder chooser.
-        if self.frames == 20 && debug_hooks::is_set("MUSICWASP_PICKER") {
-            self.open_picker();
-        }
-
-        // Debug hook: MUSICWASP_EQ=1 opens the equalizer.
-        if self.frames == 20 && debug_hooks::is_set("MUSICWASP_EQ") {
-            self.show_equalizer = true;
-        }
-
-        // Debug hook: MUSICWASP_COLUMNS=1 opens the column manager.
-        if self.frames == 20 && debug_hooks::is_set("MUSICWASP_COLUMNS") {
-            self.show_columns = true;
-        }
-
-        // Debug hook: MUSICWASP_SCAN=/path starts a background scan.
-        if self.frames == 20 {
-            if let Some(path) = debug_hooks::var("MUSICWASP_SCAN") {
-                self.scan_path = path;
-                self.scan_clicked();
-            }
-        }
-
-        // Debug hook: MUSICWASP_UNDO=1 restores the last tag snapshot.
-        if self.frames == 20 && debug_hooks::is_set("MUSICWASP_UNDO") {
-            self.undo_last_tag_write();
-        }
-
-        // Debug hook: MUSICWASP_ALBUM_GRID=1 opens the cover grid.
-        if self.frames == 20 && debug_hooks::is_set("MUSICWASP_ALBUM_GRID") {
-            self.album_view = true;
-            self.albums_dirty = true;
-        }
-
-        // Debug hook: MUSICWASP_HYGIENE=1 opens the library hygiene window.
-        if self.frames == 20 && debug_hooks::is_set("MUSICWASP_HYGIENE") {
-            self.open_hygiene();
-        }
-
-        if self.frames == 30 && debug_hooks::is_set("MUSICWASP_MINI") {
-            self.set_mini_player(true, ctx);
-        }
-
-        // Debug hook: MUSICWASP_RESTORE_DIALOG=1 makes a backup and opens it.
-        if self.frames == 30 && debug_hooks::is_set("MUSICWASP_RESTORE_DIALOG") {
-            let _ = self.backup_library();
-            self.open_restore_dialog();
-        }
-
-        // Debug hook: MUSICWASP_SKIN_EDITOR=1 opens the colour editor.
-        if self.frames == 30 && debug_hooks::is_set("MUSICWASP_SKIN_EDITOR") {
-            self.open_skin_editor();
-        }
-
-        // Debug hook: MUSICWASP_ORGANIZE=1 opens the file organizer preview.
-        if self.frames == 20 && debug_hooks::is_set("MUSICWASP_ORGANIZE") {
-            self.open_organize();
-        }
-
-        // Debug hook: MUSICWASP_RECONCILE=1 also runs the rename preview.
-        if self.frames == 30 && debug_hooks::is_set("MUSICWASP_RECONCILE") {
-            self.show_hygiene = true;
-            self.reconcile_hygiene();
-        }
-
-        let shot_frame = debug_hooks::var("MUSICWASP_SCREENSHOT_FRAME")
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(40);
-
-        if self.frames == shot_frame && !self.shot_requested {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
-            self.shot_requested = true;
-            return;
-        }
-
-        let image = ctx.input(|i| {
-            i.raw.events.iter().find_map(|e| match e {
-                egui::Event::Screenshot { image, .. } => Some(image.clone()),
-                _ => None,
-            })
-        });
-
-        if let Some(img) = image {
-            let [w, h] = img.size;
-            if let Some(buf) = image::RgbaImage::from_raw(
-                w as u32,
-                h as u32,
-                img.pixels.iter().flat_map(|c| c.to_array()).collect(),
-            ) {
-                let _ = buf.save(&path);
-            }
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
-
-        ctx.request_repaint();
     }
 }
 
