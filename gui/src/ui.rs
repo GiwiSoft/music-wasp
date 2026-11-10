@@ -2054,19 +2054,13 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
     }
     let mut act: Option<Act> = None;
 
-    // Snapshot the queue so the UI can borrow tracks without holding a mutable
-    // borrow of the app.
-    let queue = app.queue.clone();
     let pos = app.queue_pos;
-    let current_id = pos.and_then(|pos| queue.get(pos).copied());
-    let upcoming: Vec<(usize, i64)> = queue
-        .iter()
-        .copied()
-        .enumerate()
-        .skip(pos.map(|pos| pos + 1).unwrap_or(0))
-        .collect();
+    let queue_len = app.queue.len();
+    let first_upcoming = pos.map(|pos| pos + 1).unwrap_or(0);
+    let upcoming_len = queue_len.saturating_sub(first_upcoming);
+    let current_id = pos.and_then(|pos| app.queue.get(pos).copied());
 
-    let can_clear = !upcoming.is_empty();
+    let can_clear = upcoming_len > 0;
 
     // Borrow the visible tracks only; missing ones are fetched in one small
     // batch for the rows currently on screen.
@@ -2144,9 +2138,9 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label(th::semibold(tr("queue.up_next_upper"), 9.5).color(th::text_dim()));
-                    if !upcoming.is_empty() {
+                    if upcoming_len > 0 {
                         ui.label(
-                            RichText::new(format!("{} track(s)", upcoming.len()))
+                            RichText::new(format!("{upcoming_len} track(s)"))
                                 .size(9.5)
                                 .color(th::text_dim()),
                         );
@@ -2154,7 +2148,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                 });
                 ui.add_space(2.0);
 
-                if upcoming.is_empty() {
+                if upcoming_len == 0 {
                     ui.add_space(10.0);
                     ui.label(
                         RichText::new(format!("{} {}", icons::CHECK.as_str(), tr("queue.empty")))
@@ -2174,10 +2168,10 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                 egui::ScrollArea::vertical()
                     .id_salt("queue_list")
                     .auto_shrink([false, false])
-                    .show_rows(ui, 26.0, upcoming.len(), |ui, range| {
+                    .show_rows(ui, 26.0, upcoming_len, |ui, range| {
                         let missing_ids: Vec<i64> = range
                             .clone()
-                            .map(|row| upcoming[row].1)
+                            .map(|row| app.queue[first_upcoming + row])
                             .filter(|id| !local.contains_key(id))
                             .collect();
                         let fetched: HashMap<i64, Track> = if missing_ids.is_empty() {
@@ -2193,7 +2187,8 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
 
                         let range_end = range.end;
                         for row in range {
-                            let (index, id) = upcoming[row];
+                            let index = first_upcoming + row;
+                            let id = app.queue[index];
                             let display_row = row + 1;
                             let track = local
                                 .get(&id)
@@ -2384,7 +2379,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                         }
 
                         // Drop below the last row to move an entry to the end.
-                        if range_end == upcoming.len() {
+                        if range_end == upcoming_len {
                             let (end_rect, end_resp) = ui.allocate_exact_size(
                                 egui::vec2(ui.available_width(), 18.0),
                                 egui::Sense::hover(),
@@ -2411,7 +2406,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                             {
                                 act = Some(Act::Move {
                                     from: drag.index,
-                                    to: queue.len(),
+                                    to: queue_len,
                                 });
                             }
                         }

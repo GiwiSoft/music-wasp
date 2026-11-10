@@ -1040,3 +1040,48 @@ fn radio_station_delete_runs_after_the_list_pass() {
     harness.run_steps(2);
     assert!(harness.state().radio_stations.is_empty());
 }
+
+#[test]
+fn queue_panel_click_uses_the_live_queue() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[
+            SeedTrack {
+                file: "one.wav",
+                title: "One",
+                artist: "Artist",
+                album: "Album",
+                year: 2026,
+                track_no: 1,
+            },
+            SeedTrack {
+                file: "two.wav",
+                title: "Two",
+                artist: "Artist",
+                album: "Album",
+                year: 2026,
+                track_no: 2,
+            },
+        ],
+    );
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    let ids: Vec<i64> = harness
+        .state()
+        .tracks
+        .iter()
+        .map(|track| track.id)
+        .collect();
+    assert!(ids.len() >= 2);
+    harness.state_mut().queue = ids;
+    harness.state_mut().queue_pos = Some(0);
+    harness.state_mut().settings.queue_open = true;
+    harness.run_steps(2);
+
+    harness.get_by_label_contains("Queue entry 1").click();
+    harness.run_steps(2);
+    assert_eq!(harness.state().queue_pos, Some(1));
+}

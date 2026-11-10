@@ -1424,8 +1424,9 @@ pub struct App {
     /// Line highlighted last frame, used to auto-scroll only on changes.
     pub lyrics_active: Option<usize>,
     pub lyrics_autoscroll: bool,
-    /// Internet radio and podcast playback.
-    pub stream: Option<StreamInfo>,
+    /// Internet radio and podcast playback. Kept behind an `Arc` so the UI can
+    /// cheaply snapshot it while the rest of the app stays mutable.
+    pub stream: Option<Arc<StreamInfo>>,
     stream_started: std::time::Instant,
     stream_saved: std::time::Instant,
     pub podcast_feeds: Vec<PodcastFeed>,
@@ -2226,7 +2227,7 @@ impl App {
             StreamKind::Radio => format!("Radio: {}", stream.title),
             StreamKind::Podcast => format!("Podcast: {}", stream.title),
         };
-        self.stream = Some(stream);
+        self.stream = Some(Arc::new(stream));
         self.stream_started = std::time::Instant::now();
         self.stream_saved = std::time::Instant::now();
     }
