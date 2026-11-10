@@ -49,7 +49,7 @@ impl Action {
 
     pub fn label(self) -> &'static str {
         match self {
-            Action::PlayPause => "Play / pause",
+            Action::PlayPause => tr("transport.play_pause"),
             Action::PlaySelected => "Play selected track",
             Action::NextTrack => "Next track",
             Action::PrevTrack => "Previous track",

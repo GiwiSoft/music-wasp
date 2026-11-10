@@ -1928,8 +1928,8 @@ impl App {
                 .find(|p| p.id == id)
                 .map(|p| format!("Smart · {}", p.name))
                 .unwrap_or_else(|| tr("library.title").to_string()),
-            View::Podcasts => "Podcasts".to_string(),
-            View::Radio => "Radio".to_string(),
+            View::Podcasts => tr("podcasts.title").to_string(),
+            View::Radio => tr("radio.title").to_string(),
         }
     }
 

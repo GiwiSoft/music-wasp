@@ -736,7 +736,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         }
                         if ui
                             .add(
-                                egui::Button::new(icons::with(icons::QUOTES, "Lyrics"))
+                                egui::Button::new(icons::with(icons::QUOTES, tr("lyrics.toggle")))
                                     .selected(app.settings.lyrics_open),
                             )
                             .clicked()
@@ -788,7 +788,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                             ui.close();
                         }
                         let podcasts = ui.add(
-                            egui::Button::new(icons::with(icons::MICROPHONE, "Podcasts"))
+                            egui::Button::new(icons::with(icons::MICROPHONE, tr("podcasts.title")))
                                 .selected(matches!(app.view, View::Podcasts)),
                         );
                         if podcasts.clicked() {
@@ -797,7 +797,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                             ui.close();
                         }
                         let radio = ui.add(
-                            egui::Button::new(icons::with(icons::BROADCAST, "Radio"))
+                            egui::Button::new(icons::with(icons::BROADCAST, tr("radio.title")))
                                 .selected(matches!(app.view, View::Radio)),
                         );
                         if radio.clicked() {
@@ -1150,7 +1150,7 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                 ui,
                 matches!(app.view, View::Podcasts),
                 0.0,
-                icons::with(icons::MICROPHONE, "Podcasts"),
+                icons::with(icons::MICROPHONE, tr("podcasts.title")),
             )
             .clicked()
             {
@@ -1160,7 +1160,7 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                 ui,
                 matches!(app.view, View::Radio),
                 0.0,
-                icons::with(icons::BROADCAST, "Radio"),
+                icons::with(icons::BROADCAST, tr("radio.title")),
             )
             .clicked()
             {
@@ -4072,13 +4072,11 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.checkbox(
                     &mut local_feeds,
-                    RichText::new("Allow podcasts from local network addresses").size(11.5),
+                    RichText::new(tr("settings.allow_local_podcasts")).size(11.5),
                 );
                 ui.label(
                     RichText::new(
-                        "Off: feeds and episodes may only use public addresses. Turn on only for a \
-                         podcast server on your own network; a feed you subscribe to can otherwise \
-                         reach local services.",
+                        tr("settings.allow_local_podcasts_hint"),
                     )
                     .size(9.5)
                     .color(th::text_dim()),

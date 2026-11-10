@@ -8,15 +8,18 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
     egui::CentralPanel::default().show(ui, |ui| {
         ui.horizontal(|ui| {
             if ui
-                .button(icons::with(icons::ARROW_LEFT, "Library"))
+                .button(icons::with(icons::ARROW_LEFT, tr("library.title")))
                 .clicked()
             {
                 app.view = View::Library;
                 app.mark_browser_dirty();
             }
-            ui.label(th::semibold("Radio", 18.0).color(th::text()));
+            ui.label(th::semibold(tr("radio.title"), 18.0).color(th::text()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(icons::with(icons::PLUS, "Add station")).clicked() {
+                if ui
+                    .button(icons::with(icons::PLUS, tr("radio.add_station")))
+                    .clicked()
+                {
                     app.radio.show_dialog = true;
                 }
             });
@@ -32,7 +35,7 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
         if app.radio.stations.is_empty() {
             ui.centered_and_justified(|ui| {
                 ui.label(
-                    RichText::new("No radio stations yet. Add an MP3 or AAC stream URL.")
+                    RichText::new(tr("radio.empty"))
                         .size(12.0)
                         .color(th::text_dim()),
                 );
@@ -57,7 +60,7 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
                         if icons::compact(
                             ui,
                             if playing { icons::PAUSE } else { icons::PLAY },
-                            "Play station",
+                            tr("radio.play_station"),
                         )
                         .clicked()
                         {
@@ -72,7 +75,9 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
                             );
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icons::compact(ui, icons::TRASH, "Delete station").clicked() {
+                            if icons::compact(ui, icons::TRASH, tr("radio.delete_station"))
+                                .clicked()
+                            {
                                 station_action = Some(StationAction::Delete(station.id));
                             }
                             ui.add(
@@ -110,34 +115,34 @@ fn radio_dialog(app: &mut App, ctx: &egui::Context) {
     let mut url = app.radio.url.clone();
     let mut genre = app.radio.genre.clone();
     let mut add = false;
-    egui::Window::new("Add radio station")
+    egui::Window::new(tr("radio.add_dialog_title"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .default_width(480.0)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
-            ui.label(RichText::new("Name").size(10.5));
+            ui.label(RichText::new(tr("ui.name")).size(10.5));
             ui.add_sized(
                 [460.0, 22.0],
-                egui::TextEdit::singleline(&mut name).hint_text("Station name"),
+                egui::TextEdit::singleline(&mut name).hint_text(tr("radio.station_name_hint")),
             );
-            ui.label(RichText::new("Stream URL").size(10.5));
+            ui.label(RichText::new(tr("radio.stream_url")).size(10.5));
             ui.add_sized(
                 [460.0, 22.0],
                 egui::TextEdit::singleline(&mut url).hint_text("https://example.com/stream.mp3"),
             );
-            ui.label(RichText::new("Genre (optional)").size(10.5));
+            ui.label(RichText::new(tr("radio.genre_optional")).size(10.5));
             ui.add_sized(
                 [460.0, 22.0],
-                egui::TextEdit::singleline(&mut genre).hint_text("Jazz"),
+                egui::TextEdit::singleline(&mut genre).hint_text(tr("radio.genre_hint")),
             );
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button("Add station").clicked() {
+                if ui.button(tr("radio.add_station")).clicked() {
                     add = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(tr("common.cancel")).clicked() {
                     app.radio.show_dialog = false;
                 }
             });

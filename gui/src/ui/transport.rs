@@ -25,7 +25,7 @@ fn transport_buttons(app: &mut App, ui: &mut egui::Ui, playing: bool, size: Tran
         app.prev_track();
     }
     let icon = if playing { icons::PAUSE } else { icons::PLAY };
-    if icons::transport(ui, icon, size.main, true, "Play / pause").clicked() {
+    if icons::transport(ui, icon, size.main, true, tr("transport.play_pause")).clicked() {
         app.toggle_pause();
     }
     if icons::transport(
@@ -243,8 +243,13 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     });
                     ui.label(icons::text(icons::SPEAKER_HIGH, 14.0).color(th::text_dim()))
                         .on_hover_text(tr("transport.volume"));
-                    if icons::toggle(ui, app.settings.lyrics_open, icons::QUOTES, "Lyrics")
-                        .clicked()
+                    if icons::toggle(
+                        ui,
+                        app.settings.lyrics_open,
+                        icons::QUOTES,
+                        tr("lyrics.toggle"),
+                    )
+                    .clicked()
                     {
                         app.toggle_lyrics();
                     }
@@ -267,17 +272,21 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     );
                     match stream.kind {
                         StreamKind::Radio => {
-                            ui.label(RichText::new("● LIVE").size(10.5).color(th::accent()));
+                            ui.label(
+                                RichText::new(tr("transport.live"))
+                                    .size(10.5)
+                                    .color(th::accent()),
+                            );
                         }
                         StreamKind::Podcast => {
                             ui.label(
-                                RichText::new(format!(
-                                    "STREAMING  ·  {}",
-                                    if duration > 0.0 {
+                                RichText::new(tr("transport.streaming").replace(
+                                    "{duration}",
+                                    &if duration > 0.0 {
                                         fmt_time(duration)
                                     } else {
-                                        "unknown length".to_string()
-                                    }
+                                        tr("transport.unknown_length").to_string()
+                                    },
                                 ))
                                 .size(10.5)
                                 .color(th::text_dim()),
@@ -326,9 +335,11 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
 
             if let Some(err) = &app.audio_error {
                 ui.label(
-                    RichText::new(format!("audio unavailable: {err}"))
-                        .size(10.0)
-                        .color(Color32::from_rgb(220, 110, 110)),
+                    RichText::new(
+                        tr("transport.audio_unavailable").replace("{error}", &err.to_string()),
+                    )
+                    .size(10.0)
+                    .color(Color32::from_rgb(220, 110, 110)),
                 );
             }
         });
@@ -413,8 +424,8 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                 );
                 ui.label(
                     RichText::new(match stream.kind {
-                        StreamKind::Radio => "Internet radio",
-                        StreamKind::Podcast => "Podcast",
+                        StreamKind::Radio => tr("radio.subtitle"),
+                        StreamKind::Podcast => tr("podcasts.subtitle"),
                     })
                     .size(10.5)
                     .color(th::text_dim()),
@@ -441,7 +452,7 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                 let position = fmt_time(snap.position);
                 if stream.kind == StreamKind::Radio {
                     ui.label(
-                        RichText::new(format!("{position}  ·  ● LIVE"))
+                        RichText::new(format!("{position}  ·  {}", tr("transport.live")))
                             .size(11.5)
                             .color(th::accent()),
                     );
@@ -511,7 +522,7 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
             let subtitle = current_track
                 .as_ref()
                 .map(artist_album_line)
-                .unwrap_or_else(|| "Pick a track in the library to start".to_string());
+                .unwrap_or_else(|| tr("transport.pick_track").to_string());
             ui.label(RichText::new(subtitle).size(14.0).color(th::text_dim()));
             if let Some(track) = &current_track {
                 let mut rating = None;
@@ -595,8 +606,13 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                     {
                         app.shuffle = !app.shuffle;
                     }
-                    if icons::toggle(ui, app.settings.lyrics_open, icons::QUOTES, "Lyrics")
-                        .clicked()
+                    if icons::toggle(
+                        ui,
+                        app.settings.lyrics_open,
+                        icons::QUOTES,
+                        tr("lyrics.toggle"),
+                    )
+                    .clicked()
                     {
                         app.toggle_lyrics();
                     }
@@ -636,9 +652,13 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                 }
                 None => {
                     ui.label(
-                        RichText::new(format!("{} end of queue", icons::CHECK.as_str()))
-                            .size(11.0)
-                            .color(th::text_dim()),
+                        RichText::new(format!(
+                            "{} {}",
+                            icons::CHECK.as_str(),
+                            tr("transport.end_of_queue")
+                        ))
+                        .size(11.0)
+                        .color(th::text_dim()),
                     );
                 }
             }
@@ -647,8 +667,9 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(format!(
-                        "{} audio unavailable: {err}",
-                        icons::WARNING.as_str()
+                        "{} {}",
+                        icons::WARNING.as_str(),
+                        tr("transport.audio_unavailable").replace("{error}", &err.to_string())
                     ))
                     .size(10.0)
                     .color(Color32::from_rgb(220, 110, 110)),

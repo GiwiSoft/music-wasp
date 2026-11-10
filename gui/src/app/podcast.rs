@@ -37,7 +37,10 @@ impl App {
                     }
                 }
             }
-            Err(error) => self.podcast.status = Some(format!("could not load feeds: {error}")),
+            Err(error) => {
+                self.podcast.status =
+                    Some(tr("podcasts.error_load_feeds").replace("{error}", &error.to_string()))
+            }
         }
     }
 
@@ -48,7 +51,10 @@ impl App {
         };
         match self.lib.podcast_episodes(feed_id) {
             Ok(episodes) => self.podcast.episodes = episodes,
-            Err(error) => self.podcast.status = Some(format!("could not load episodes: {error}")),
+            Err(error) => {
+                self.podcast.status =
+                    Some(tr("podcasts.error_load_episodes").replace("{error}", &error.to_string()))
+            }
         }
     }
 
@@ -60,11 +66,11 @@ impl App {
     pub fn add_podcast_feed(&mut self, url: &str) {
         let url = url.trim().to_string();
         if !(url.starts_with("https://") || url.starts_with("http://")) {
-            self.podcast.status = Some("enter an http(s) feed URL".to_string());
+            self.podcast.status = Some(tr("podcasts.invalid_url").to_string());
             return;
         }
         if self.podcast.loading {
-            self.podcast.status = Some("a feed refresh is already running".to_string());
+            self.podcast.status = Some(tr("podcasts.refresh_running").to_string());
             return;
         }
         match self.lib.add_podcast_feed(&url) {
@@ -74,7 +80,10 @@ impl App {
                 self.podcast.url.clear();
                 self.start_podcast_fetch(feed_id, url);
             }
-            Err(error) => self.podcast.status = Some(format!("could not save feed: {error}")),
+            Err(error) => {
+                self.podcast.status =
+                    Some(tr("podcasts.error_save_feed").replace("{error}", &error.to_string()))
+            }
         }
     }
 
@@ -105,7 +114,7 @@ impl App {
         let (tx, rx) = mpsc::channel();
         self.podcast.rx = Some(rx);
         self.podcast.loading = true;
-        self.podcast.status = Some("fetching feed…".to_string());
+        self.podcast.status = Some(tr("podcasts.fetching_feed").to_string());
         let access = self.podcast_access();
         std::thread::spawn(move || {
             let result =
@@ -124,31 +133,40 @@ impl App {
                 match result {
                     Ok(feed) => match self.lib.update_podcast_feed(feed_id, &feed) {
                         Ok(()) => {
-                            self.podcast.status =
-                                Some(format!("{} episode(s)", feed.episodes.len()));
+                            self.podcast.status = Some(
+                                tr("podcasts.episode_count")
+                                    .replace("{count}", &feed.episodes.len().to_string()),
+                            );
                             self.refresh_podcast_feeds();
                             if self.podcast.selected_feed == Some(feed_id) {
                                 self.load_podcast_episodes();
                             }
                         }
                         Err(error) => {
-                            self.podcast.status = Some(format!("could not save feed: {error}"))
+                            self.podcast.status = Some(
+                                tr("podcasts.error_save_feed")
+                                    .replace("{error}", &error.to_string()),
+                            )
                         }
                     },
-                    Err(error) => self.podcast.status = Some(format!("feed failed: {error}")),
+                    Err(error) => {
+                        self.podcast.status =
+                            Some(tr("podcasts.feed_failed").replace("{error}", &error.to_string()))
+                    }
                 }
             }
             Err(mpsc::TryRecvError::Empty) => self.podcast.rx = Some(rx),
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.podcast.loading = false;
-                self.podcast.status = Some("feed worker stopped".to_string());
+                self.podcast.status = Some(tr("podcasts.worker_stopped").to_string());
             }
         }
     }
 
     pub fn delete_podcast_feed(&mut self, feed_id: i64) {
         if let Err(error) = self.lib.delete_podcast_feed(feed_id) {
-            self.podcast.status = Some(format!("could not delete feed: {error}"));
+            self.podcast.status =
+                Some(tr("podcasts.error_delete_feed").replace("{error}", &error.to_string()));
             return;
         }
         if self.podcast.selected_feed == Some(feed_id) {

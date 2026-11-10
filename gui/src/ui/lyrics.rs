@@ -46,14 +46,17 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(2.0);
             ui.horizontal(|ui| {
                 ui.label(
-                    th::semibold(format!("{} LYRICS", icons::QUOTES.as_str()), 10.0)
-                        .color(th::text_dim()),
+                    th::semibold(
+                        format!("{} {}", icons::QUOTES.as_str(), tr("lyrics.title")),
+                        10.0,
+                    )
+                    .color(th::text_dim()),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if icons::compact(ui, icons::X, "Hide lyrics").clicked() {
+                    if icons::compact(ui, icons::X, tr("lyrics.hide")).clicked() {
                         close = true;
                     }
-                    if icons::compact(ui, icons::ARROWS_CLOCKWISE, "Reload lyrics").clicked() {
+                    if icons::compact(ui, icons::ARROWS_CLOCKWISE, tr("lyrics.reload")).clicked() {
                         reload = true;
                     }
                     if stream.is_none()
@@ -62,7 +65,7 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
                             ui,
                             app.lyrics_autoscroll,
                             icons::ARROW_DOWN,
-                            "Auto-scroll",
+                            tr("lyrics.autoscroll"),
                         )
                         .clicked()
                     {
@@ -78,7 +81,7 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
                     ui.label(icons::text(icons::QUOTES, 32.0).color(th::text_dim()));
                     ui.add_space(8.0);
                     ui.label(
-                        RichText::new("Lyrics are available for local tracks.")
+                        RichText::new(tr("lyrics.local_only"))
                             .size(11.0)
                             .color(th::text_dim()),
                     );
@@ -91,15 +94,15 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
                 ui.vertical_centered(|ui| {
                     ui.label(icons::text(icons::QUOTES, 32.0).color(th::text_dim()));
                     ui.add_space(8.0);
-                    ui.label(th::semibold("No lyrics found", 13.0).color(th::text()));
+                    ui.label(th::semibold(tr("lyrics.none"), 13.0).color(th::text()));
                     ui.add_space(4.0);
                     let hint = current_track
                         .as_ref()
                         .map(|track| {
                             let path = std::path::Path::new(&track.path).with_extension("lrc");
-                            format!("Add {} next to the audio file.", path.display())
+                            tr("lyrics.add_sidecar").replace("{path}", &path.display().to_string())
                         })
-                        .unwrap_or_else(|| "Start a track to show its .lrc lyrics.".to_string());
+                        .unwrap_or_else(|| tr("lyrics.start_track").to_string());
                     ui.label(RichText::new(hint).size(10.0).color(th::text_dim()));
                 });
                 return;
@@ -137,10 +140,10 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
                         if synced {
                             let response = inner
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .on_hover_text(format!(
-                                    "Seek to {}",
-                                    fmt_time(line.time_ms as f64 / 1000.0)
-                                ));
+                                .on_hover_text(
+                                    tr("lyrics.seek_to")
+                                        .replace("{time}", &fmt_time(line.time_ms as f64 / 1000.0)),
+                                );
                             if response.clicked() {
                                 seek_to = Some(line.time_ms);
                             }

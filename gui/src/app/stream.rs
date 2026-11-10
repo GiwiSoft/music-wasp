@@ -53,18 +53,21 @@ impl App {
     pub fn refresh_radio_stations(&mut self) {
         match self.lib.radio_stations() {
             Ok(stations) => self.radio.stations = stations,
-            Err(error) => self.radio.status = Some(format!("could not load stations: {error}")),
+            Err(error) => {
+                self.radio.status =
+                    Some(tr("radio.error_load_stations").replace("{error}", &error.to_string()))
+            }
         }
     }
 
     pub fn add_radio_station(&mut self, name: &str, url: &str, genre: &str) {
         let url = url.trim();
         if !(url.starts_with("https://") || url.starts_with("http://")) {
-            self.radio.status = Some("enter an http(s) stream URL".to_string());
+            self.radio.status = Some(tr("radio.invalid_url").to_string());
             return;
         }
         if name.trim().is_empty() {
-            self.radio.status = Some("enter a station name".to_string());
+            self.radio.status = Some(tr("radio.invalid_name").to_string());
             return;
         }
         match self.lib.add_radio_station(name, url, genre) {
@@ -73,17 +76,23 @@ impl App {
                 self.radio.name.clear();
                 self.radio.url.clear();
                 self.radio.genre.clear();
-                self.radio.status = Some("station saved".to_string());
+                self.radio.status = Some(tr("radio.saved").to_string());
                 self.refresh_radio_stations();
             }
-            Err(error) => self.radio.status = Some(format!("could not save station: {error}")),
+            Err(error) => {
+                self.radio.status =
+                    Some(tr("radio.error_save_station").replace("{error}", &error.to_string()))
+            }
         }
     }
 
     pub fn delete_radio_station(&mut self, id: i64) {
         match self.lib.delete_radio_station(id) {
             Ok(()) => self.refresh_radio_stations(),
-            Err(error) => self.radio.status = Some(format!("could not delete station: {error}")),
+            Err(error) => {
+                self.radio.status =
+                    Some(tr("radio.error_delete_station").replace("{error}", &error.to_string()))
+            }
         }
     }
 
@@ -91,7 +100,7 @@ impl App {
         self.play_stream(StreamInfo {
             title: station.name.clone(),
             subtitle: if station.genre.trim().is_empty() {
-                "Internet radio".to_string()
+                tr("radio.subtitle").to_string()
             } else {
                 station.genre.clone()
             },
@@ -109,7 +118,7 @@ impl App {
             .iter()
             .find(|feed| feed.id == episode.feed_id)
             .map(|feed| feed.title.clone())
-            .unwrap_or_else(|| "Podcast".to_string());
+            .unwrap_or_else(|| tr("podcasts.subtitle").to_string());
         self.play_stream(StreamInfo {
             title: episode.title.clone(),
             subtitle: feed_title,
@@ -140,8 +149,8 @@ impl App {
             player.load_url(&stream.url, access);
         }
         self.message = match stream.kind {
-            StreamKind::Radio => format!("Radio: {}", stream.title),
-            StreamKind::Podcast => format!("Podcast: {}", stream.title),
+            StreamKind::Radio => tr("radio.now_playing").replace("{title}", &stream.title),
+            StreamKind::Podcast => tr("podcasts.now_playing").replace("{title}", &stream.title),
         };
         self.stream.info = Some(Arc::new(stream));
         self.stream.started = std::time::Instant::now();
@@ -209,7 +218,7 @@ impl App {
             // stopping here means a failed or dropped stream.
             self.save_stream_progress(false);
             self.stream.info = None;
-            self.message = "stream stopped".to_string();
+            self.message = tr("stream.stopped").to_string();
             return;
         }
         if self.stream.saved.elapsed() >= std::time::Duration::from_secs(5) {
