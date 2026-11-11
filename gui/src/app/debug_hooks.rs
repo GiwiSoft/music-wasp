@@ -3,6 +3,14 @@
 use super::*;
 use crate::debug_hooks as debug_env;
 
+// Frame numbers used by the screenshot hooks. The ordering is intentional:
+// playback starts first, panels open next, delayed hooks run later, and the
+// screenshot is taken last.
+const START_PLAYBACK_FRAME: u32 = 15;
+const OPEN_PANEL_FRAME: u32 = 20;
+const DELAYED_HOOK_FRAME: u32 = 30;
+const DEFAULT_SCREENSHOT_FRAME: u32 = 40;
+
 pub(super) fn apply_initial(app: &mut App) {
     if let Some(view) = debug_env::var("MUSICWASP_VIEW") {
         app.view = match view.as_str() {
@@ -35,12 +43,15 @@ impl App {
         self.frames += 1;
 
         // Debug hook: MUSICWASP_AUTOPLAY=1 starts the first track (muted).
-        if self.frames == 15 && debug_env::is_set("MUSICWASP_AUTOPLAY") && !self.tracks.is_empty() {
+        if self.frames == START_PLAYBACK_FRAME
+            && debug_env::is_set("MUSICWASP_AUTOPLAY")
+            && !self.tracks.is_empty()
+        {
             self.volume = 0.0;
             self.play_from_list(0);
         }
 
-        if self.frames == 20 {
+        if self.frames == OPEN_PANEL_FRAME {
             if let Some(seconds) = debug_env::var("MUSICWASP_SEEK") {
                 if let (Ok(seconds), Some(player)) = (seconds.parse::<f64>(), &self.player) {
                     player.seek(seconds);
@@ -48,14 +59,14 @@ impl App {
             }
         }
 
-        if self.frames == 15
+        if self.frames == START_PLAYBACK_FRAME
             && debug_env::is_set("MUSICWASP_PLAY_RADIO")
             && !self.radio.stations.is_empty()
         {
             let station = self.radio.stations[0].clone();
             self.play_radio_station(&station);
         }
-        if self.frames == 15 && debug_env::is_set("MUSICWASP_PLAY_PODCAST") {
+        if self.frames == START_PLAYBACK_FRAME && debug_env::is_set("MUSICWASP_PLAY_PODCAST") {
             if let Some(feed) = self
                 .podcast
                 .feeds
@@ -72,7 +83,7 @@ impl App {
 
         // Debug hook: MUSICWASP_SETTINGS=1 opens the settings panel;
         // MUSICWASP_SETTINGS_TAB=keybindings|about picks a tab.
-        if self.frames == 20 && debug_env::is_set("MUSICWASP_SETTINGS") {
+        if self.frames == OPEN_PANEL_FRAME && debug_env::is_set("MUSICWASP_SETTINGS") {
             self.show_settings = true;
             self.settings_tab = match debug_env::var("MUSICWASP_SETTINGS_TAB").as_deref() {
                 Some("keybindings") => SettingsTab::Keybindings,
@@ -86,7 +97,7 @@ impl App {
 
         // Debug hook: MUSICWASP_EDITOR=1 opens the tag editor for the first
         // track; MUSICWASP_EDITOR=multi selects everything first.
-        if self.frames == 20 {
+        if self.frames == OPEN_PANEL_FRAME {
             match debug_env::var("MUSICWASP_EDITOR").as_deref() {
                 Some("multi") => {
                     self.select_all_in_view();
@@ -103,7 +114,7 @@ impl App {
         }
 
         // Debug hook: MUSICWASP_RENAME=1 opens rename for the first track title.
-        if self.frames == 20
+        if self.frames == OPEN_PANEL_FRAME
             && debug_env::is_set("MUSICWASP_RENAME")
             && self.rename.is_none()
             && !self.tracks.is_empty()
@@ -119,7 +130,7 @@ impl App {
 
         // Debug hook: MUSICWASP_AUTOTAG=1 opens the dialog and searches;
         // MUSICWASP_AUTOTAG=one tags just the first track.
-        if self.frames == 20 && !self.tracks.is_empty() {
+        if self.frames == OPEN_PANEL_FRAME && !self.tracks.is_empty() {
             match debug_env::var("MUSICWASP_AUTOTAG").as_deref() {
                 Some("one") => {
                     let id = self.tracks[0].id;
@@ -140,7 +151,7 @@ impl App {
 
         // Debug hook: MUSICWASP_AUTOTAG_APPLY=1 applies the loaded candidate
         // (paired with MUSICWASP_AUTOTAG=one).
-        if debug_env::is_set("MUSICWASP_AUTOTAG_APPLY") && self.frames > 20 {
+        if debug_env::is_set("MUSICWASP_AUTOTAG_APPLY") && self.frames > OPEN_PANEL_FRAME {
             let ready = self.autotag.as_ref().is_some_and(|state| {
                 matches!(state.stage, AutoTagStage::Results(_))
                     && state.release.is_some()
@@ -152,7 +163,7 @@ impl App {
         }
 
         // Debug hook: MUSICWASP_SMART=1 creates; =edit opens the first existing.
-        if self.frames == 20 {
+        if self.frames == OPEN_PANEL_FRAME {
             match debug_env::var("MUSICWASP_SMART").as_deref() {
                 Some("edit") => {
                     if let Some(smart) = self.smart_playlists.first() {
@@ -165,7 +176,7 @@ impl App {
         }
 
         // Debug hook: MUSICWASP_PLAYLIST=1 (or =smart) opens a playlist view.
-        if self.frames == 20 {
+        if self.frames == OPEN_PANEL_FRAME {
             match debug_env::var("MUSICWASP_PLAYLIST").as_deref() {
                 Some("smart") => {
                     if let Some(first) = self.smart_playlists.first() {
@@ -184,22 +195,22 @@ impl App {
         }
 
         // Debug hook: MUSICWASP_PICKER=1 opens the folder chooser.
-        if self.frames == 20 && debug_env::is_set("MUSICWASP_PICKER") {
+        if self.frames == OPEN_PANEL_FRAME && debug_env::is_set("MUSICWASP_PICKER") {
             self.open_picker();
         }
 
         // Debug hook: MUSICWASP_EQ=1 opens the equalizer.
-        if self.frames == 20 && debug_env::is_set("MUSICWASP_EQ") {
+        if self.frames == OPEN_PANEL_FRAME && debug_env::is_set("MUSICWASP_EQ") {
             self.show_equalizer = true;
         }
 
         // Debug hook: MUSICWASP_COLUMNS=1 opens the column manager.
-        if self.frames == 20 && debug_env::is_set("MUSICWASP_COLUMNS") {
+        if self.frames == OPEN_PANEL_FRAME && debug_env::is_set("MUSICWASP_COLUMNS") {
             self.show_columns = true;
         }
 
         // Debug hook: MUSICWASP_SCAN=/path starts a background scan.
-        if self.frames == 20 {
+        if self.frames == OPEN_PANEL_FRAME {
             if let Some(path) = debug_env::var("MUSICWASP_SCAN") {
                 self.scan_path = path;
                 self.scan_clicked();
@@ -207,50 +218,50 @@ impl App {
         }
 
         // Debug hook: MUSICWASP_UNDO=1 restores the last tag snapshot.
-        if self.frames == 20 && debug_env::is_set("MUSICWASP_UNDO") {
+        if self.frames == OPEN_PANEL_FRAME && debug_env::is_set("MUSICWASP_UNDO") {
             self.undo_last_tag_write();
         }
 
         // Debug hook: MUSICWASP_ALBUM_GRID=1 opens the cover grid.
-        if self.frames == 20 && debug_env::is_set("MUSICWASP_ALBUM_GRID") {
+        if self.frames == OPEN_PANEL_FRAME && debug_env::is_set("MUSICWASP_ALBUM_GRID") {
             self.album_view = true;
             self.albums_dirty = true;
         }
 
         // Debug hook: MUSICWASP_HYGIENE=1 opens the library hygiene window.
-        if self.frames == 20 && debug_env::is_set("MUSICWASP_HYGIENE") {
+        if self.frames == OPEN_PANEL_FRAME && debug_env::is_set("MUSICWASP_HYGIENE") {
             self.open_hygiene();
         }
 
-        if self.frames == 30 && debug_env::is_set("MUSICWASP_MINI") {
+        if self.frames == DELAYED_HOOK_FRAME && debug_env::is_set("MUSICWASP_MINI") {
             self.set_mini_player(true, ctx);
         }
 
         // Debug hook: MUSICWASP_RESTORE_DIALOG=1 makes a backup and opens it.
-        if self.frames == 30 && debug_env::is_set("MUSICWASP_RESTORE_DIALOG") {
+        if self.frames == DELAYED_HOOK_FRAME && debug_env::is_set("MUSICWASP_RESTORE_DIALOG") {
             let _ = self.backup_library();
             self.open_restore_dialog();
         }
 
         // Debug hook: MUSICWASP_SKIN_EDITOR=1 opens the colour editor.
-        if self.frames == 30 && debug_env::is_set("MUSICWASP_SKIN_EDITOR") {
+        if self.frames == DELAYED_HOOK_FRAME && debug_env::is_set("MUSICWASP_SKIN_EDITOR") {
             self.open_skin_editor();
         }
 
         // Debug hook: MUSICWASP_ORGANIZE=1 opens the file organizer preview.
-        if self.frames == 20 && debug_env::is_set("MUSICWASP_ORGANIZE") {
+        if self.frames == OPEN_PANEL_FRAME && debug_env::is_set("MUSICWASP_ORGANIZE") {
             self.open_organize();
         }
 
         // Debug hook: MUSICWASP_RECONCILE=1 also runs the rename preview.
-        if self.frames == 30 && debug_env::is_set("MUSICWASP_RECONCILE") {
+        if self.frames == DELAYED_HOOK_FRAME && debug_env::is_set("MUSICWASP_RECONCILE") {
             self.show_hygiene = true;
             self.reconcile_hygiene();
         }
 
         let shot_frame = debug_env::var("MUSICWASP_SCREENSHOT_FRAME")
             .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(40);
+            .unwrap_or(DEFAULT_SCREENSHOT_FRAME);
 
         if self.frames == shot_frame && !self.shot_requested {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
