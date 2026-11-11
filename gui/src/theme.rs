@@ -40,27 +40,19 @@ impl<'de> Deserialize<'de> for Skin {
 }
 
 impl Skin {
-    #[allow(dead_code)]
     pub const WASP: Skin = Skin { id: "wasp" };
-    #[allow(dead_code)]
     pub const MIDNIGHT: Skin = Skin { id: "midnight" };
-    #[allow(dead_code)]
     pub const FOREST: Skin = Skin { id: "forest" };
-    #[allow(dead_code)]
     pub const MONO: Skin = Skin { id: "mono" };
-    #[allow(dead_code)]
     pub const HIGH_CONTRAST: Skin = Skin {
         id: "high_contrast",
     };
-    #[allow(dead_code)]
     pub const LIQUID_GLASS_DARK: Skin = Skin {
         id: "liquid_glass_dark",
     };
-    #[allow(dead_code)]
     pub const LIQUID_GLASS_LIGHT: Skin = Skin {
         id: "liquid_glass_light",
     };
-    #[allow(dead_code)]
     pub const LIGHT: Skin = Skin { id: "light" };
 
     /// All skins in display order.

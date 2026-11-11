@@ -39,7 +39,6 @@ impl Language {
         }
     }
 
-    #[allow(dead_code)]
     pub fn code(self) -> &'static str {
         match self {
             Language::English => "en",
