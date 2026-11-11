@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://giwisoft.github.io/music-wasp/sitemap.xml

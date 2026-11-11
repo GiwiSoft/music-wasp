@@ -3,6 +3,11 @@
 A native music manager and player for **Linux, Windows and macOS**. One binary, no Electron and no
 web view.
 
+MusicWasp is an open-source, local-first desktop music library built with Rust and egui. It combines
+library scanning, FLAC/MP3 and 16 other audio formats, gapless playback, tag editing, MusicBrainz and
+AcoustID auto-tagging, smart playlists, podcast subscriptions, internet radio, synchronized `.lrc`
+lyrics and a MilkDrop visualizer in one fast native app.
+
 Website: <https://giwisoft.github.io/music-wasp/>  
 Full documentation: <https://github.com/GiwiSoft/music-wasp/wiki>
 
