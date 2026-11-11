@@ -45,7 +45,7 @@
       "description": "Fast native music library, player, tag editor and MilkDrop visualizer for Linux, Windows and macOS.",
       "url": "https://giwisoft.github.io/music-wasp/",
       "downloadUrl": "https://github.com/GiwiSoft/music-wasp/releases/latest",
-      "softwareVersion": "0.6.0",
+      "softwareVersion": "0.7.0",
       "license": "https://www.gnu.org/licenses/gpl-3.0.html",
       "screenshot": "https://giwisoft.github.io/music-wasp/screenshot.png",
       "author": {
@@ -150,7 +150,7 @@
     <a href="https://github.com/GiwiSoft/music-wasp/wiki">Docs</a>
   </nav>
   <div class="header-actions">
-    <span class="version">v0.6.0</span>
+    <span class="version">v0.7.0</span>
     <a class="button small" href="https://github.com/GiwiSoft/music-wasp">GitHub</a>
   </div>
 </header>
@@ -168,7 +168,7 @@
       <div class="actions">
         <div class="download" data-download>
           <a class="button primary download-main" data-download-main
-             href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.6.0/musicwasp-v0.6.0-linux-x86_64.tar.gz">
+             href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-linux-x86_64.tar.gz">
             <i class="bi bi-download" aria-hidden="true"></i>
             <span data-download-label>Download for Linux</span>
           </a>
@@ -178,12 +178,12 @@
           </button>
           <div class="download-menu" data-download-menu role="menu" hidden>
             <a role="menuitem" data-download-os="linux"
-               href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.6.0/musicwasp-v0.6.0-linux-x86_64.tar.gz">
+               href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-linux-x86_64.tar.gz">
               <span><i class="bi bi-ubuntu" aria-hidden="true"></i> Linux</span>
               <span class="download-meta">x86_64 · .tar.gz</span>
             </a>
             <a role="menuitem" data-download-os="windows"
-               href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.6.0/musicwasp-v0.6.0-windows-x86_64.zip">
+               href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-windows-x86_64.zip">
               <span><i class="bi bi-windows" aria-hidden="true"></i> Windows</span>
               <span class="download-meta">x86_64 · .zip</span>
             </a>
@@ -360,7 +360,7 @@
 <span class="prompt">$</span> ./scripts/install-desktop.sh</code></pre>
         <p>Release archives include the binaries, desktop entry, icons, sample skins and translation catalogues.</p>
         <a class="button small" data-download-os="linux"
-           href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.6.0/musicwasp-v0.6.0-linux-x86_64.tar.gz">
+           href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-linux-x86_64.tar.gz">
           <i class="bi bi-ubuntu" aria-hidden="true"></i> Download for Linux
         </a>
       </article>
@@ -369,7 +369,7 @@
         <pre><code><span class="prompt">&gt;</span> cargo build --release</code></pre>
         <p>MSVC Rust toolchain only. SQLite is bundled and audio uses WASAPI.</p>
         <a class="button small" data-download-os="windows"
-           href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.6.0/musicwasp-v0.6.0-windows-x86_64.zip">
+           href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-windows-x86_64.zip">
           <i class="bi bi-windows" aria-hidden="true"></i> Download for Windows
         </a>
       </article>
@@ -421,7 +421,7 @@
 <footer class="site-footer">
   <div class="footer-brand">
     <img src="logo.png" alt="" width="30" height="30">
-    <span>MusicWasp <b>v0.6.0</b></span>
+    <span>MusicWasp <b>v0.7.0</b></span>
   </div>
   <p>Copyright © 2026 <a href="https://giwi.fr">giwi.fr</a>. Released under the GNU GPL v3.</p>
   <nav aria-label="Footer">
@@ -512,8 +512,8 @@
   var items = Array.prototype.slice.call(document.querySelectorAll('[data-download-os]'));
   var api = 'https://api.github.com/repos/GiwiSoft/music-wasp/releases/latest';
   var fallback = {
-    linux: 'https://github.com/GiwiSoft/music-wasp/releases/download/v0.6.0/musicwasp-v0.6.0-linux-x86_64.tar.gz',
-    windows: 'https://github.com/GiwiSoft/music-wasp/releases/download/v0.6.0/musicwasp-v0.6.0-windows-x86_64.zip'
+    linux: 'https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-linux-x86_64.tar.gz',
+    windows: 'https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-windows-x86_64.zip'
   };
   var assets = {};
   var current = 'linux';
