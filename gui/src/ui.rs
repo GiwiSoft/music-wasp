@@ -2230,7 +2230,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
         AddToQueue(usize),
         Rename(usize),
         EditTags(usize),
-        FindMetadata(usize),
+        AutoTag(usize),
         RemoveFromPlaylist(usize),
         AddToPlaylist(usize, i64),
     }
@@ -2655,6 +2655,8 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                         });
                     }
                     resp.context_menu(|ui| {
+                        let row_id = tracks[idx].id;
+                        let multi_selected = selected.len() > 1 && selected.contains(&row_id);
                         if ui
                             .button(icons::with(icons::PLAY, tr("ui.play_now")))
                             .clicked()
@@ -2684,18 +2686,25 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                             menu_action = Some(MenuAction::Rename(idx));
                             ui.close();
                         }
-                        if ui
-                            .button(icons::with(icons::TAG, tr("ui.edit_tags")))
-                            .clicked()
-                        {
+                        let edit_label = if multi_selected {
+                            tr("ui.bulk_properties")
+                        } else {
+                            tr("ui.edit_tags")
+                        };
+                        if ui.button(icons::with(icons::TAG, edit_label)).clicked() {
                             menu_action = Some(MenuAction::EditTags(idx));
                             ui.close();
                         }
+                        let auto_tag_label = if multi_selected {
+                            tr("ui.auto_tag_selection")
+                        } else {
+                            tr("ui.auto_tag_by_album")
+                        };
                         if ui
-                            .button(icons::with(icons::MAGIC_WAND, tr("ui.find_metadata")))
+                            .button(icons::with(icons::MAGIC_WAND, auto_tag_label))
                             .clicked()
                         {
-                            menu_action = Some(MenuAction::FindMetadata(idx));
+                            menu_action = Some(MenuAction::AutoTag(idx));
                             ui.close();
                         }
                         ui.separator();
@@ -2876,14 +2885,8 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                 app.select_only_row(index);
                 app.start_rename();
             }
-            MenuAction::EditTags(index) => {
-                app.select_only_row(index);
-                app.open_editor();
-            }
-            MenuAction::FindMetadata(index) => {
-                app.select_only_row(index);
-                app.open_autotag();
-            }
+            MenuAction::EditTags(index) => app.edit_row_from_context(index),
+            MenuAction::AutoTag(index) => app.auto_tag_row_from_context(index),
             MenuAction::RemoveFromPlaylist(index) => {
                 app.select_row_for_action(index);
                 app.remove_selection_from_playlist();

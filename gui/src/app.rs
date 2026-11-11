@@ -4722,6 +4722,51 @@ impl App {
         });
     }
 
+    /// Open the properties editor for a context-menu row. A multi-selection
+    /// containing that row is kept, so the batch editor opens for every
+    /// selected track; otherwise only the row is selected.
+    pub fn edit_row_from_context(&mut self, index: usize) {
+        let clicked_is_selected = self
+            .tracks
+            .get(index)
+            .is_some_and(|track| self.selected.contains(&track.id));
+        if !clicked_is_selected {
+            self.select_only_row(index);
+        }
+        self.open_editor();
+    }
+
+    /// Open auto-tag for a context-menu row. A multi-selection containing that
+    /// row is kept; a single row selects the rest of its album first.
+    pub fn auto_tag_row_from_context(&mut self, index: usize) {
+        let clicked_is_selected = self.selected.len() > 1
+            && self
+                .tracks
+                .get(index)
+                .is_some_and(|track| self.selected.contains(&track.id));
+        if !clicked_is_selected {
+            let album = self
+                .tracks
+                .get(index)
+                .map(|track| (track.album.clone(), track.artist.clone(), track.id));
+            if let Some((album, artist, id)) = album {
+                if album.trim().is_empty() {
+                    self.select_only_row(index);
+                } else {
+                    let ids: Vec<i64> = self
+                        .tracks
+                        .iter()
+                        .filter(|track| track.album == album && track.artist == artist)
+                        .map(|track| track.id)
+                        .collect();
+                    self.selected = ids.into_iter().collect();
+                    self.anchor = Some(id);
+                }
+            }
+        }
+        self.open_autotag();
+    }
+
     /// Snapshot files immediately before a tag write, so it can be undone.
     fn store_tag_undo(&mut self, paths: &[PathBuf]) -> Result<(), String> {
         let snapshots = musicwasp_core::tags::snapshot_paths(paths)

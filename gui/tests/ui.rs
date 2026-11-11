@@ -1085,3 +1085,84 @@ fn queue_panel_click_uses_the_live_queue() {
     harness.run_steps(2);
     assert_eq!(harness.state().queue_pos, Some(1));
 }
+
+#[test]
+fn track_context_menu_offers_bulk_properties_for_a_multi_selection() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[
+            SeedTrack {
+                file: "one.wav",
+                title: "Track 1",
+                artist: "Radiohead",
+                album: "Fake Album",
+                year: 1997,
+                track_no: 1,
+            },
+            SeedTrack {
+                file: "two.wav",
+                title: "Track 2",
+                artist: "Radiohead",
+                album: "Fake Album",
+                year: 1997,
+                track_no: 2,
+            },
+        ],
+    );
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.state_mut().select_all_in_view();
+    harness.run_steps(1);
+    harness.state_mut().edit_row_from_context(0);
+    harness.run_steps(1);
+
+    let editing = harness
+        .state()
+        .editing
+        .as_ref()
+        .expect("editor should open");
+    assert!(editing.batch);
+    assert_eq!(editing.paths.len(), 2);
+}
+
+#[test]
+fn track_context_menu_can_auto_tag_the_clicked_album() {
+    let dir = tempfile::tempdir().unwrap();
+    let _env = TestEnv::new(dir.path());
+    seed_library(
+        dir.path(),
+        &[
+            SeedTrack {
+                file: "one.wav",
+                title: "Track 1",
+                artist: "Radiohead",
+                album: "Fake Album",
+                year: 1997,
+                track_no: 1,
+            },
+            SeedTrack {
+                file: "two.wav",
+                title: "Track 2",
+                artist: "Radiohead",
+                album: "Fake Album",
+                year: 1997,
+                track_no: 2,
+            },
+        ],
+    );
+
+    let mut harness = harness();
+    harness.run_steps(3);
+    harness.state_mut().auto_tag_row_from_context(0);
+    harness.run_steps(1);
+
+    let state = harness
+        .state()
+        .autotag
+        .as_ref()
+        .expect("auto-tag should open");
+    assert_eq!(state.targets.len(), 2);
+}

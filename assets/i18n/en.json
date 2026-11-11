@@ -51,7 +51,6 @@
   "ui.export": "Export",
   "ui.export_m3u": "Export M3U…",
   "ui.fetch_missing_cover": "Fetch missing cover",
-  "ui.find_metadata": "Find metadata",
   "ui.folder": "Folder",
   "ui.folder_name": "Folder name",
   "column.format": "Format",
@@ -224,5 +223,7 @@
   "transport.end_of_queue": "end of queue",
   "transport.audio_unavailable": "audio unavailable: {error}",
   "settings.allow_local_podcasts": "Allow podcasts from local network addresses",
-  "settings.allow_local_podcasts_hint": "Off: feeds and episodes may only use public addresses. Turn on only for a podcast server on your own network; a feed you subscribe to can otherwise reach local services."
+  "settings.allow_local_podcasts_hint": "Off: feeds and episodes may only use public addresses. Turn on only for a podcast server on your own network; a feed you subscribe to can otherwise reach local services.",
+  "ui.bulk_properties": "Bulk properties",
+  "ui.auto_tag_selection": "Auto-tag selection"
 }

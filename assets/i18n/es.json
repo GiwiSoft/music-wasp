@@ -52,7 +52,6 @@
   "ui.add_to_queue": "Añadir a la cola",
   "ui.rename": "Renombrar",
   "ui.edit_tags": "Editar propiedades",
-  "ui.find_metadata": "Buscar metadatos",
   "ui.remove_from_playlist": "Quitar de la lista",
   "ui.add_to_playlist": "Añadir a la lista",
   "common.remove": "Quitar",
@@ -223,5 +222,7 @@
   "transport.end_of_queue": "fin de la cola",
   "transport.audio_unavailable": "audio no disponible: {error}",
   "settings.allow_local_podcasts": "Permitir podcasts desde direcciones de red local",
-  "settings.allow_local_podcasts_hint": "Desactivado: los feeds y episodios solo pueden usar direcciones públicas. Actívalo solo para un servidor de podcast en tu red; de lo contrario, un feed podría acceder a servicios locales."
+  "settings.allow_local_podcasts_hint": "Desactivado: los feeds y episodios solo pueden usar direcciones públicas. Actívalo solo para un servidor de podcast en tu red; de lo contrario, un feed podría acceder a servicios locales.",
+  "ui.bulk_properties": "Propiedades en lote",
+  "ui.auto_tag_selection": "Etiquetar selección automáticamente"
 }

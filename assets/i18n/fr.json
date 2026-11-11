@@ -52,7 +52,6 @@
   "ui.add_to_queue": "Ajouter à la file",
   "ui.rename": "Renommer",
   "ui.edit_tags": "Modifier les propriétés",
-  "ui.find_metadata": "Rechercher les métadonnées",
   "ui.remove_from_playlist": "Retirer de la playlist",
   "ui.add_to_playlist": "Ajouter à la playlist",
   "common.remove": "Retirer",
@@ -223,5 +222,7 @@
   "transport.end_of_queue": "fin de la file",
   "transport.audio_unavailable": "audio indisponible : {error}",
   "settings.allow_local_podcasts": "Autoriser les podcasts depuis le réseau local",
-  "settings.allow_local_podcasts_hint": "Désactivé : les flux et épisodes ne peuvent utiliser que des adresses publiques. Activez uniquement pour un serveur de podcast sur votre réseau ; sinon un flux peut atteindre des services locaux."
+  "settings.allow_local_podcasts_hint": "Désactivé : les flux et épisodes ne peuvent utiliser que des adresses publiques. Activez uniquement pour un serveur de podcast sur votre réseau ; sinon un flux peut atteindre des services locaux.",
+  "ui.bulk_properties": "Propriétés groupées",
+  "ui.auto_tag_selection": "Auto-tag de la sélection"
 }

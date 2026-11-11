@@ -52,7 +52,6 @@
   "ui.add_to_queue": "Zur Warteschlange",
   "ui.rename": "Umbenennen",
   "ui.edit_tags": "Eigenschaften bearbeiten",
-  "ui.find_metadata": "Metadaten suchen",
   "ui.remove_from_playlist": "Aus Playlist entfernen",
   "ui.add_to_playlist": "Zur Playlist hinzufügen",
   "common.remove": "Entfernen",
@@ -223,5 +222,7 @@
   "transport.end_of_queue": "Ende der Warteschlange",
   "transport.audio_unavailable": "Audio nicht verfügbar: {error}",
   "settings.allow_local_podcasts": "Podcasts aus lokalen Netzwerkadressen erlauben",
-  "settings.allow_local_podcasts_hint": "Aus: Feeds und Folgen dürfen nur öffentliche Adressen verwenden. Nur für einen Podcast-Server im eigenen Netzwerk aktivieren; sonst kann ein Feed lokale Dienste erreichen."
+  "settings.allow_local_podcasts_hint": "Aus: Feeds und Folgen dürfen nur öffentliche Adressen verwenden. Nur für einen Podcast-Server im eigenen Netzwerk aktivieren; sonst kann ein Feed lokale Dienste erreichen.",
+  "ui.bulk_properties": "Eigenschaften für mehrere Titel",
+  "ui.auto_tag_selection": "Auswahl automatisch taggen"
 }
