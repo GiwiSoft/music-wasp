@@ -3,6 +3,7 @@ use crate::i18n::{tr, Language};
 use crate::settings::{
     Action, Session, SessionView, Settings, Shortcut, TrackColumn, WindowGeometry,
 };
+use anyhow::Context;
 use musicwasp_core::autotag::{self, Candidate, Cover, LocalTrack, Release};
 use musicwasp_core::dsp::Equalizer;
 use musicwasp_core::lyrics::Lyrics;
@@ -1465,7 +1466,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> anyhow::Result<Self> {
         crate::theme::load_user_skins();
         let settings_path = Settings::path();
         // Test runs keep the developer's real credential store out of reach.
@@ -1491,7 +1492,7 @@ impl App {
 
         // Headless UI tests use a temporary data dir and no audio/watcher/MPRIS.
         let test_mode = debug_env::is_set("MUSICWASP_TEST");
-        let lib = Library::open().expect("cannot open library database");
+        let lib = Library::open().context("cannot start MusicWasp")?;
         let (player, audio_error) = if test_mode {
             (None, None)
         } else {
@@ -1684,7 +1685,7 @@ impl App {
         if app.session_enabled {
             app.restart_watcher(&cc.egui_ctx);
         }
-        app
+        Ok(app)
     }
 
     /// Selected ids in the order they appear on screen.
@@ -2459,7 +2460,12 @@ impl App {
             .filter(|(_, t)| self.selected.contains(&t.id))
             .map(|(i, _)| i)
             .collect();
-        let (first, last) = (indices[0], *indices.last().unwrap());
+        let Some(&first) = indices.first() else {
+            return;
+        };
+        let Some(&last) = indices.last() else {
+            return;
+        };
 
         let before = if delta < 0 {
             if first == 0 {

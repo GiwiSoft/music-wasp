@@ -92,7 +92,7 @@ fn main_skins_and_accessibility_states() {
 
     let mut harness: Harness<'static, App> = Harness::builder()
         .with_size(egui::vec2(1000.0, 700.0))
-        .build_eframe(|cc| App::new(cc));
+        .build_eframe(|cc| App::new(cc).expect("app"));
     harness.run_steps(4);
 
     let states = [

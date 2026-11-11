@@ -185,7 +185,9 @@ pub fn target_for(root: &Path, track: &Track, pattern: &str) -> Result<PathBuf> 
     if !has_ext {
         if let Some(extension) = source.extension().and_then(|ext| ext.to_str()) {
             if !extension.is_empty() {
-                let last = segments.last_mut().expect("segments is not empty");
+                let last = segments
+                    .last_mut()
+                    .context("the pattern produced no filename")?;
                 last.push('.');
                 last.push_str(extension);
             }

@@ -9,7 +9,8 @@ pub fn data_dir() -> Result<PathBuf> {
         Some(dir) => PathBuf::from(dir),
         None => dirs::data_dir().context("no data dir")?.join("musicwasp"),
     };
-    std::fs::create_dir_all(&dir)?;
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("cannot create data directory {}", dir.display()))?;
     Ok(dir)
 }
 
@@ -22,7 +23,8 @@ pub fn open() -> Result<Connection> {
 }
 
 pub fn open_at(path: &Path) -> Result<Connection> {
-    let conn = Connection::open(path)?;
+    let conn = Connection::open(path)
+        .with_context(|| format!("cannot open library database {}", path.display()))?;
     conn.execute_batch(
         "PRAGMA busy_timeout = 5000;
          PRAGMA journal_mode = WAL;

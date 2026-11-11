@@ -549,7 +549,9 @@ mod audio_impl {
                         let inactive = 1 - active;
                         sinks[inactive].set_volume(0.0);
                         sinks[inactive].play();
-                        let next = pending.take().expect("pending checked above");
+                        let Some(next) = pending.take() else {
+                            continue;
+                        };
                         fade = Some(Fade {
                             from: active,
                             to: inactive,
@@ -573,7 +575,9 @@ mod audio_impl {
                 .as_ref()
                 .is_some_and(|fade| fade.started.elapsed().as_secs_f32() >= fade.secs);
             if finished_fade {
-                let fade = fade.take().expect("fade checked above");
+                let Some(fade) = fade.take() else {
+                    continue;
+                };
                 sinks[fade.from].stop();
                 sinks[fade.from].pause();
                 sinks[fade.from].set_volume(0.0);

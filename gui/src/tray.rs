@@ -193,9 +193,17 @@ impl TrayController {
 fn icon() -> ksni::Icon {
     static ICON: OnceLock<ksni::Icon> = OnceLock::new();
     ICON.get_or_init(|| {
-        let image = image::load_from_memory(include_bytes!("../../assets/MusicWasp-dark.png"))
-            .expect("embedded logo")
-            .to_rgba8();
+        let Some(image) =
+            image::load_from_memory(include_bytes!("../../assets/MusicWasp-dark.png"))
+                .ok()
+                .map(|image| image.to_rgba8())
+        else {
+            return ksni::Icon {
+                width: 32,
+                height: 32,
+                data: vec![0; 32 * 32 * 4],
+            };
+        };
         let image = image::imageops::resize(&image, 32, 32, image::imageops::FilterType::Lanczos3);
         let mut data = Vec::with_capacity(32 * 32 * 4);
         for pixel in image.pixels() {

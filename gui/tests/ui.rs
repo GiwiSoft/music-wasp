@@ -173,7 +173,7 @@ fn seed_library(root: &Path, tracks: &[SeedTrack]) {
 fn harness() -> Harness<'static, App> {
     Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
-        .build_eframe(|cc| App::new(cc))
+        .build_eframe(|cc| App::new(cc).expect("app"))
 }
 
 fn text_inputs<'a>(harness: &'a Harness<'static, App>) -> Vec<egui_kittest::Node<'a>> {

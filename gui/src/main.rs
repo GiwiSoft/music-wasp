@@ -47,7 +47,13 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "MusicWasp",
         options,
-        Box::new(|cc| Ok(Box::new(App::new(cc)))),
+        Box::new(|cc| {
+            let app =
+                App::new(cc).map_err(|error| -> Box<dyn std::error::Error + Send + Sync> {
+                    format!("{error:#}").into()
+                })?;
+            Ok(Box::new(app))
+        }),
     )
 }
 

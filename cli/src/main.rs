@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use musicwasp_core::{db, library, m3u, playlist, Player};
 use std::path::PathBuf;
@@ -195,7 +196,7 @@ fn main() -> anyhow::Result<()> {
                     .iter()
                     .max_by_key(|c| musicwasp_core::autotag::relevance(c, ids.len()))
                     .map(|c| c.release_id.clone())
-                    .unwrap()
+                    .context("no MusicBrainz candidates to apply")?
             } else {
                 target
             };
