@@ -21,9 +21,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Pin the Ubuntu image: the ubuntu-latest migration to 26.04
-          # introduced amd64v3 packages that the hosted apt mirrors failed to
-          # serve consistently.
+          # Stay on 24.04 while the 26.04 runner image and its amd64v3
+          # package set settle.
           - os: ubuntu-24.04
             name: linux
           - os: windows-latest
@@ -38,9 +37,22 @@ jobs:
       - name: Install Linux audio dev headers
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          set -euo pipefail
+          mirror="http://mirrors.edge.kernel.org/ubuntu"
+          if ! getent hosts azure.archive.ubuntu.com >/dev/null 2>&1; then
+            echo "Ubuntu archive host is not resolvable; switching to $mirror"
+            echo "$mirror" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            sudo sed -i \
+              -e "s|http://azure.archive.ubuntu.com/ubuntu|$mirror|g" \
+              -e "s|http://archive.ubuntu.com/ubuntu|$mirror|g" \
+              -e "s|http://security.ubuntu.com/ubuntu|$mirror|g" \
+              -e "s|https://archive.ubuntu.com/ubuntu|$mirror|g" \
+              -e "s|https://security.ubuntu.com/ubuntu|$mirror|g" \
+              /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+          fi
+          sudo apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
           sudo apt-get install -y --no-install-recommends \
-            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+            -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
             libasound2-dev pkg-config libxkbcommon-dev mesa-vulkan-drivers libegl-mesa0
 
       - uses: dtolnay/rust-toolchain@stable
@@ -62,9 +74,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Pin the Ubuntu image: the ubuntu-latest migration to 26.04
-          # introduced amd64v3 packages that the hosted apt mirrors failed to
-          # serve consistently.
+          # Stay on 24.04 while the 26.04 runner image and its amd64v3
+          # package set settle.
           - os: ubuntu-24.04
             name: linux
           - os: windows-latest
@@ -88,9 +99,22 @@ jobs:
       - name: Install Linux audio dev headers
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          set -euo pipefail
+          mirror="http://mirrors.edge.kernel.org/ubuntu"
+          if ! getent hosts azure.archive.ubuntu.com >/dev/null 2>&1; then
+            echo "Ubuntu archive host is not resolvable; switching to $mirror"
+            echo "$mirror" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            sudo sed -i \
+              -e "s|http://azure.archive.ubuntu.com/ubuntu|$mirror|g" \
+              -e "s|http://archive.ubuntu.com/ubuntu|$mirror|g" \
+              -e "s|http://security.ubuntu.com/ubuntu|$mirror|g" \
+              -e "s|https://archive.ubuntu.com/ubuntu|$mirror|g" \
+              -e "s|https://security.ubuntu.com/ubuntu|$mirror|g" \
+              /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+          fi
+          sudo apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
           sudo apt-get install -y --no-install-recommends \
-            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+            -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
             libasound2-dev pkg-config libxkbcommon-dev mesa-vulkan-drivers libegl-mesa0
 
       - uses: dtolnay/rust-toolchain@stable
