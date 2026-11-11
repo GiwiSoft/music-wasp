@@ -21,7 +21,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pin the Ubuntu image: the ubuntu-latest migration to 26.04
+          # introduced amd64v3 packages that the hosted apt mirrors failed to
+          # serve consistently.
+          - os: ubuntu-24.04
             name: linux
           - os: windows-latest
             name: windows
@@ -35,9 +38,10 @@ jobs:
       - name: Install Linux audio dev headers
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config libxkbcommon-dev \
-            mesa-vulkan-drivers libegl-mesa0
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          sudo apt-get install -y --no-install-recommends \
+            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+            libasound2-dev pkg-config libxkbcommon-dev mesa-vulkan-drivers libegl-mesa0
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -58,7 +62,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pin the Ubuntu image: the ubuntu-latest migration to 26.04
+          # introduced amd64v3 packages that the hosted apt mirrors failed to
+          # serve consistently.
+          - os: ubuntu-24.04
             name: linux
           - os: windows-latest
             name: windows
@@ -81,9 +88,10 @@ jobs:
       - name: Install Linux audio dev headers
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config libxkbcommon-dev \
-            mesa-vulkan-drivers libegl-mesa0
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          sudo apt-get install -y --no-install-recommends \
+            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+            libasound2-dev pkg-config libxkbcommon-dev mesa-vulkan-drivers libegl-mesa0
 
       - uses: dtolnay/rust-toolchain@stable
 
