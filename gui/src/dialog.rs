@@ -5,10 +5,11 @@ use crate::i18n::tr;
 use crate::theme as th;
 use egui::{Response, RichText};
 
-/// Accent-filled primary button used for Save/Create/Apply.
+/// Off-white primary button used for Save/Create/Apply. Green stays reserved
+/// for playback and the single active indicator.
 pub fn primary_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> Response {
     let button = egui::Button::new(RichText::new(label).strong().color(th::current().bg_dark))
-        .fill(th::accent())
+        .fill(th::text())
         .min_size(egui::vec2(84.0, 28.0));
     if enabled {
         ui.add(button)
@@ -43,7 +44,7 @@ pub fn save_cancel(ui: &mut egui::Ui, save_label: &str, save_enabled: bool) -> (
                 .strong()
                 .color(th::current().bg_dark),
         )
-        .fill(th::accent());
+        .fill(th::text());
         let response = if save_enabled {
             ui.add_sized(size, save_button)
         } else {

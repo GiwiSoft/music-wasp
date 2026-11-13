@@ -27,7 +27,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
 
                 let current = eq.preset_name().unwrap_or("Custom");
                 egui::ComboBox::from_id_salt("eq_preset")
-                    .selected_text(RichText::new(current).size(12.0))
+                    .selected_text(RichText::new(current).size(th::TEXT_BODY))
                     .width(130.0)
                     .show_ui(ui, |ui| {
                         for preset in dsp::PRESETS.iter() {
@@ -52,8 +52,8 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                 ui.separator();
                 ui.label(
                     RichText::new(dsp::describe(eq))
-                        .size(11.0)
-                        .color(th::accent()),
+                        .size(th::TEXT_SMALL)
+                        .color(th::text_dim()),
                 );
             });
 
@@ -66,8 +66,8 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
 
                 ui.vertical(|ui| {
                     ui.label(
-                        RichText::new("PREAMP")
-                            .size(9.0)
+                        RichText::new("Preamp")
+                            .size(th::TEXT_CAPTION)
                             .strong()
                             .color(th::text_dim()),
                     );
@@ -83,10 +83,14 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                     ui.label(
                         RichText::new(format!("{:+.1}", eq.preamp_db))
                             .monospace()
-                            .size(10.0)
+                            .size(th::TEXT_CAPTION)
                             .color(th::text_dim()),
                     );
-                    ui.label(RichText::new("dB").size(9.0).color(th::text_dim()));
+                    ui.label(
+                        RichText::new("dB")
+                            .size(th::TEXT_CAPTION)
+                            .color(th::text_dim()),
+                    );
                 });
 
                 ui.separator();
@@ -110,7 +114,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                         ui.label(
                             RichText::new(format!("{:+.1}", *gain))
                                 .monospace()
-                                .size(9.0)
+                                .size(th::TEXT_CAPTION)
                                 .color(if gain.abs() > 0.05 {
                                     th::accent()
                                 } else {
@@ -119,7 +123,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                         );
                         ui.label(
                             RichText::new(dsp::band_label(*freq))
-                                .size(10.0)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         );
                     });
@@ -131,7 +135,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                 RichText::new(
                     "Changes apply to the current track immediately and are saved automatically.",
                 )
-                .size(10.0)
+                .size(th::TEXT_CAPTION)
                 .color(th::text_dim()),
             );
             ui.add_space(6.0);
@@ -224,8 +228,8 @@ fn curve(ui: &mut egui::Ui, eq: &Equalizer) {
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            "BYPASSED",
-            egui::FontId::proportional(11.0),
+            "Bypassed",
+            egui::FontId::proportional(th::TEXT_SMALL),
             th::text_dim(),
         );
     }

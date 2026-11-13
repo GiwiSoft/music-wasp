@@ -31,7 +31,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                     "Editing \"{}\". Changes preview immediately.",
                     state.skin.label()
                 ))
-                .size(10.5)
+                .size(theme::TEXT_CAPTION)
                 .color(theme::text_dim()),
             );
             ui.add_space(6.0);
@@ -40,7 +40,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                 .spacing([12.0, 5.0])
                 .show(ui, |ui| {
                     for field in PaletteField::ALL {
-                        ui.label(RichText::new(field.label()).size(11.0));
+                        ui.label(RichText::new(field.label()).size(theme::TEXT_SMALL));
                         let mut color = field.get(&state.palette);
                         if ui.color_edit_button_srgba(&mut color).changed() {
                             field.set(&mut state.palette, color);
@@ -59,7 +59,11 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             save |= save_clicked;
             cancel |= cancel_clicked;
             if let Some(status) = &state.status {
-                ui.label(RichText::new(status).size(10.5).color(theme::accent()));
+                ui.label(
+                    RichText::new(status)
+                        .size(theme::TEXT_CAPTION)
+                        .color(theme::accent()),
+                );
             }
         });
 

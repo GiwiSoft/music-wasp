@@ -8,17 +8,17 @@
       ],
       "icon": "dark",
       "palette": {
-        "bg_dark": "#161a16",
-        "bg_panel": "#1d221d",
-        "bg_row_alt": "#222822",
-        "bg_selected": "#2d4826",
+        "bg_dark": "#121412",
+        "bg_panel": "#191c19",
+        "bg_row_alt": "#1f231f",
+        "bg_selected": "#262c26",
         "accent": "#5ad51b",
-        "text_dim": "#96a096",
-        "text": "#e0e8df",
-        "extreme_bg": "#101310",
-        "widget_inactive": "#2d342d",
-        "widget_weak": "#272d27",
-        "widget_hover": "#3d473c"
+        "text_dim": "#8d958b",
+        "text": "#e7ece4",
+        "extreme_bg": "#0d0f0d",
+        "widget_inactive": "#272c27",
+        "widget_weak": "#202420",
+        "widget_hover": "#323832"
       }
     },
     {

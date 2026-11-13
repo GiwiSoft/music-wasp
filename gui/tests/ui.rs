@@ -622,7 +622,7 @@ fn advanced_search_and_column_manager_update_the_ui() {
     harness.get_by_label("Track options").click_accesskit();
     harness.run_steps(1);
     assert!(harness.query_by_label("Scan").is_some());
-    assert!(harness.query_by_label("Library").is_some());
+    assert!(harness.query_by_label("Back up library").is_some());
     harness.get_by_label("General").click_accesskit();
     harness.run_steps(1);
     harness
@@ -641,7 +641,9 @@ fn advanced_search_and_column_manager_update_the_ui() {
     harness.get_by_label("Options des pistes").click_accesskit();
     harness.run_steps(1);
     assert!(harness.query_by_label("Scanner").is_some());
-    assert!(harness.query_by_label("Bibliothèque").is_some());
+    assert!(harness
+        .query_by_label("Sauvegarder la bibliothèque")
+        .is_some());
     harness.state_mut().set_language(Language::English);
     harness.run_steps(1);
 }

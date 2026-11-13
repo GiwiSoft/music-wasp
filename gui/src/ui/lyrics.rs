@@ -82,7 +82,7 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
                     ui.add_space(8.0);
                     ui.label(
                         RichText::new(tr("lyrics.local_only"))
-                            .size(11.0)
+                            .size(th::TEXT_SMALL)
                             .color(th::text_dim()),
                     );
                 });
@@ -103,7 +103,11 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
                             tr("lyrics.add_sidecar").replace("{path}", &path.display().to_string())
                         })
                         .unwrap_or_else(|| tr("lyrics.start_track").to_string());
-                    ui.label(RichText::new(hint).size(10.0).color(th::text_dim()));
+                    ui.label(
+                        RichText::new(hint)
+                            .size(th::TEXT_CAPTION)
+                            .color(th::text_dim()),
+                    );
                 });
                 return;
             };
@@ -121,15 +125,17 @@ pub fn lyrics_panel(app: &mut App, ui: &mut egui::Ui) {
                     for (index, line) in lyrics.lines.iter().enumerate() {
                         let is_active = active == Some(index);
                         let text = if is_active {
-                            th::semibold(&line.text, 16.0).color(th::accent())
+                            th::semibold(&line.text, th::TEXT_TITLE).color(th::accent())
                         } else {
-                            RichText::new(&line.text).size(13.0).color(if !synced {
-                                th::text()
-                            } else if active.is_none_or(|active| index < active) {
-                                th::text_dim()
-                            } else {
-                                th::text()
-                            })
+                            RichText::new(&line.text)
+                                .size(th::TEXT_BODY)
+                                .color(if !synced {
+                                    th::text()
+                                } else if active.is_none_or(|active| index < active) {
+                                    th::text_dim()
+                                } else {
+                                    th::text()
+                                })
                         };
                         let mut label = egui::Label::new(text).wrap();
                         if synced {

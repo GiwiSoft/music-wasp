@@ -105,7 +105,8 @@ fn fold_button(ui: &mut egui::Ui, folded: bool, tooltip: &str) -> bool {
 
 /// Section title; clicking it also folds the section.
 fn section_label(ui: &mut egui::Ui, icon: egui_phosphor_icons::Icon, title: &str) -> bool {
-    let text = th::semibold(format!("{} {}", icon.as_str(), title), 10.5).color(th::text_dim());
+    let text = th::semibold(format!("{} {}", icon.as_str(), title), th::TEXT_CAPTION)
+        .color(th::text_dim());
     ui.add(egui::Label::new(text).sense(egui::Sense::click()))
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
@@ -137,19 +138,18 @@ fn nav_row(
     if selected {
         ui.painter()
             .rect_filled(rect, th::corner(7), ui.visuals().selection.bg_fill);
+        ui.painter().rect_stroke(
+            rect,
+            th::corner(7),
+            egui::Stroke::new(1.0, th::hairline()),
+            egui::StrokeKind::Inside,
+        );
     } else if response.hovered() {
         ui.painter()
             .rect_filled(rect, th::corner(7), th::hover_fill());
     }
-    if selected {
-        let bar = egui::Rect::from_min_size(
-            egui::pos2(rect.left() + 3.0, rect.center().y - 6.5),
-            egui::vec2(3.0, 13.0),
-        );
-        ui.painter().rect_filled(bar, th::pill(), th::accent());
-    }
 
-    let color = if selected { th::accent() } else { th::text() };
+    let color = th::text();
     let available = (rect.width() - indent - 22.0).max(12.0);
     let rich = RichText::new(&label)
         .size(if th::is_compact() { 12.0 } else { 13.0 })
@@ -463,7 +463,7 @@ fn scan_controls(app: &mut App, ui: &mut egui::Ui) {
             app.scan_clicked();
         }
         if scanning {
-            let spinner = ui.add(egui::Spinner::new().size(14.0));
+            let spinner = ui.add(egui::Spinner::new().size(th::TEXT_TITLE));
             if let Some(label) = app.scan_progress_label() {
                 spinner.on_hover_text(label);
             }
@@ -481,7 +481,7 @@ fn scan_controls(app: &mut App, ui: &mut egui::Ui) {
                 ui.add(
                     egui::ProgressBar::new(fraction)
                         .desired_width(110.0)
-                        .text(RichText::new(text).size(9.0)),
+                        .text(RichText::new(text).size(th::TEXT_CAPTION)),
                 );
             }
             if icons::compact(ui, icons::X, "Stop indexing").clicked() {
@@ -510,7 +510,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                         Color32::WHITE,
                     );
                 }
-                ui.label(th::semibold("MusicWasp", 18.0).color(th::text()));
+                ui.label(th::semibold("MusicWasp", th::TEXT_HEADING).color(th::text()));
                 egui::Frame::new()
                     .fill(th::raised())
                     .corner_radius(th::corner(5))
@@ -518,7 +518,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                     .show(ui, |ui| {
                         ui.label(
                             RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-                                .size(9.0)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         );
                     });
@@ -527,7 +527,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                 if view_label.chars().count() > 26 {
                     view_label = view_label.chars().take(25).collect::<String>() + "…";
                 }
-                ui.label(th::semibold(view_label, 12.5).color(th::text_dim()));
+                ui.label(th::semibold(view_label, th::TEXT_BODY).color(th::text_dim()));
                 ui.add_space(8.0);
 
                 let mut search_label_id = None;
@@ -554,7 +554,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                             });
                             search_label_id = Some(icon.id);
                             ui.add_sized(
-                                [168.0, 20.0],
+                                [206.0, 20.0],
                                 egui::TextEdit::singleline(&mut app.search)
                                     .id(egui::Id::new("search_box"))
                                     .frame(egui::Frame::new())
@@ -880,7 +880,7 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                             // Not enough room: the table already shows what matters.
                             (None, th::text_dim())
                         } else if selected > 1 {
-                            (Some(format!("{selected} selected")), th::accent())
+                            (Some(format!("{selected} selected")), th::text_dim())
                         } else {
                             app.lib
                                 .stats()
@@ -907,7 +907,9 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                             .show(ui, |ui| {
                                 ui.add(
                                     egui::Label::new(
-                                        RichText::new(text).size(10.5).color(chip_color),
+                                        RichText::new(text)
+                                            .size(th::TEXT_CAPTION)
+                                            .color(chip_color),
                                     )
                                     .truncate(),
                                 );
@@ -1133,13 +1135,13 @@ pub fn browser(app: &mut App, ui: &mut egui::Ui) {
                         {
                             ui.label(
                                 RichText::new(tr("ui.no_playlists_yet"))
-                                    .size(10.0)
+                                    .size(th::TEXT_CAPTION)
                                     .color(th::text_dim()),
                             );
                         } else if egui::DragAndDrop::has_any_payload(ui.ctx()) {
                             ui.label(
                                 RichText::new(tr("ui.drop_tracks_here"))
-                                    .size(9.0)
+                                    .size(th::TEXT_CAPTION)
                                     .color(th::accent()),
                             );
                         }
@@ -1303,7 +1305,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                     ui.label(
                         th::semibold(
                             format!("{} {}", icons::QUEUE.as_str(), tr("queue.title")),
-                            10.0,
+                            th::TEXT_CAPTION,
                         )
                         .color(th::text_dim()),
                     );
@@ -1327,16 +1329,21 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
 
                 if let Some(track) = &current_track {
                     ui.add_space(4.0);
-                    ui.label(th::semibold("NOW PLAYING", 9.5).color(th::accent()));
+                    ui.label(
+                        th::semibold(tr("queue.now_playing"), th::TEXT_CAPTION)
+                            .color(th::text_dim()),
+                    );
                     ui.add_space(2.0);
                     ui.add(
-                        egui::Label::new(th::semibold(&track.title, 13.0).color(th::text()))
-                            .truncate(),
+                        egui::Label::new(
+                            th::semibold(&track.title, th::TEXT_BODY).color(th::text()),
+                        )
+                        .truncate(),
                     );
                     ui.add(
                         egui::Label::new(
                             RichText::new(format!("{}  ·  {}", track.artist, track.album))
-                                .size(10.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         )
                         .truncate(),
@@ -1346,11 +1353,14 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
 
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    ui.label(th::semibold(tr("queue.up_next_upper"), 9.5).color(th::text_dim()));
+                    ui.label(
+                        th::semibold(tr("queue.up_next_upper"), th::TEXT_CAPTION)
+                            .color(th::text_dim()),
+                    );
                     if upcoming_len > 0 {
                         ui.label(
                             RichText::new(format!("{upcoming_len} track(s)"))
-                                .size(9.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         );
                     }
@@ -1361,14 +1371,14 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                     ui.add_space(10.0);
                     ui.label(
                         RichText::new(format!("{} {}", icons::CHECK.as_str(), tr("queue.empty")))
-                            .size(11.0)
+                            .size(th::TEXT_SMALL)
                             .color(th::text_dim()),
                     );
                     ui.label(
                         RichText::new(tr(
                             "ui.right_click_a_track_and_choose_play_next_or_add_to_queue",
                         ))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .color(th::text_dim()),
                     );
                     return;
@@ -1406,7 +1416,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                             let Some(track) = track else {
                                 ui.label(
                                     RichText::new(format!("{:>2}  missing track", index + 1))
-                                        .size(10.5)
+                                        .size(th::TEXT_CAPTION)
                                         .color(th::text_dim()),
                                 );
                                 continue;
@@ -1454,7 +1464,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                             egui::Label::new(
                                                 RichText::new(display_row.to_string())
                                                     .monospace()
-                                                    .size(10.5)
+                                                    .size(th::TEXT_CAPTION)
                                                     .color(th::text_dim()),
                                             )
                                             .selectable(false),
@@ -1478,7 +1488,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                         ui.add(
                                             egui::Label::new(
                                                 RichText::new(&title_text)
-                                                    .size(11.5)
+                                                    .size(th::TEXT_SMALL)
                                                     .color(th::text()),
                                             )
                                             .truncate()
@@ -1504,7 +1514,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                         ui.add(
                                             egui::Label::new(
                                                 RichText::new(&artist_text)
-                                                    .size(11.0)
+                                                    .size(th::TEXT_SMALL)
                                                     .color(th::text_dim()),
                                             )
                                             .truncate()
@@ -1655,11 +1665,11 @@ pub fn visualizer_panel(app: &mut App, ui: &mut egui::Ui) {
         )
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(th::semibold("Visualizer", 10.5).color(th::text_dim()));
+                ui.label(th::semibold("Visualizer", th::TEXT_CAPTION).color(th::text_dim()));
                 if let Some(visualizer) = &app.visualizer {
                     ui.label(
                         RichText::new(visualizer.current_name())
-                            .size(11.0)
+                            .size(th::TEXT_SMALL)
                             .color(th::text()),
                     );
                     ui.label(
@@ -1668,14 +1678,14 @@ pub fn visualizer_panel(app: &mut App, ui: &mut egui::Ui) {
                             visualizer.current_index() + 1,
                             visualizer.presets().len()
                         ))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .color(th::text_dim()),
                     );
                 }
                 if let Some(error) = &app.viz_error {
                     ui.label(
                         RichText::new(error.as_str())
-                            .size(10.0)
+                            .size(th::TEXT_CAPTION)
                             .color(Color32::from_rgb(220, 110, 110)),
                     );
                 }
@@ -1712,7 +1722,11 @@ pub fn visualizer_panel(app: &mut App, ui: &mut egui::Ui) {
             } else {
                 ui.centered_and_justified(|ui| {
                     let text = app.viz_error.as_deref().unwrap_or("Visualizer unavailable");
-                    ui.label(RichText::new(text).size(11.0).color(th::text_dim()));
+                    ui.label(
+                        RichText::new(text)
+                            .size(th::TEXT_SMALL)
+                            .color(th::text_dim()),
+                    );
                 });
             }
         });
@@ -1736,7 +1750,7 @@ pub fn visualizer_fullscreen(app: &mut App, ui: &mut egui::Ui) {
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     app.viz_error.as_deref().unwrap_or("Visualizer unavailable"),
-                    egui::FontId::proportional(16.0),
+                    egui::FontId::proportional(th::TEXT_TITLE),
                     Color32::LIGHT_GRAY,
                 );
             }
@@ -1760,7 +1774,7 @@ pub fn visualizer_fullscreen(app: &mut App, ui: &mut egui::Ui) {
                         .as_ref()
                         .map(|visualizer| visualizer.current_name().to_string())
                         .unwrap_or_default();
-                    ui.label(th::semibold(name, 12.0).color(Color32::WHITE));
+                    ui.label(th::semibold(name, th::TEXT_BODY).color(Color32::WHITE));
                     ui.add_space(8.0);
                     if ui.button("Previous").clicked() {
                         app.previous_visualizer_preset();
@@ -1790,7 +1804,7 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
         ui.centered_and_justified(|ui| {
             ui.label(
                 RichText::new(tr("ui.no_albums_yet_scan_a_music_folder_first"))
-                    .size(13.0)
+                    .size(th::TEXT_BODY)
                     .color(th::text_dim()),
             );
         });
@@ -1814,12 +1828,12 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.label(
             RichText::new(format!("{} album(s)", groups.len()))
-                .size(10.5)
+                .size(th::TEXT_CAPTION)
                 .color(th::text_dim()),
         );
         ui.label(
             RichText::new("Click to open · right-click for cover tools")
-                .size(10.0)
+                .size(th::TEXT_CAPTION)
                 .color(th::text_dim()),
         );
     });
@@ -1910,8 +1924,8 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                             ui.painter().text(
                                 cover.center(),
                                 egui::Align2::CENTER_CENTER,
-                                "NO COVER",
-                                egui::FontId::proportional(10.5),
+                                "No cover",
+                                egui::FontId::proportional(th::TEXT_CAPTION),
                                 th::text_dim(),
                             );
                         }
@@ -1922,7 +1936,7 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                                 egui::Stroke::new(
                                     1.0,
                                     if hover > 0.0 {
-                                        th::alpha(th::accent(), (hover * 150.0) as u8)
+                                        th::alpha(th::text(), (hover * 120.0) as u8)
                                     } else {
                                         th::hairline()
                                     },
@@ -1941,14 +1955,16 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                         );
                         labels.spacing_mut().item_spacing.y = 1.0;
                         labels.add(
-                            egui::Label::new(th::semibold(&group.album, 12.5).color(th::text()))
-                                .truncate()
-                                .selectable(false),
+                            egui::Label::new(
+                                th::semibold(&group.album, th::TEXT_BODY).color(th::text()),
+                            )
+                            .truncate()
+                            .selectable(false),
                         );
                         labels.add(
                             egui::Label::new(
                                 RichText::new(&group.artist)
-                                    .size(11.0)
+                                    .size(th::TEXT_SMALL)
                                     .color(th::text_dim()),
                             )
                             .truncate()
@@ -1957,7 +1973,7 @@ pub fn album_grid(app: &mut App, ui: &mut egui::Ui) {
                         labels.add(
                             egui::Label::new(
                                 RichText::new(format!("{} track(s)", group.track_count))
-                                    .size(9.5)
+                                    .size(th::TEXT_CAPTION)
                                     .color(th::text_dim()),
                             )
                             .selectable(false),
@@ -2046,7 +2062,7 @@ pub fn cover_picker(app: &mut App, ctx: &egui::Context) {
                 }
                 ui.label(
                     RichText::new(format!("Cover for {}", picker.album))
-                        .size(11.0)
+                        .size(th::TEXT_SMALL)
                         .color(th::text_dim()),
                 );
             });
@@ -2054,7 +2070,7 @@ pub fn cover_picker(app: &mut App, ctx: &egui::Context) {
             ui.label(
                 RichText::new(picker.current.display().to_string())
                     .monospace()
-                    .size(11.0)
+                    .size(th::TEXT_SMALL)
                     .color(th::text_dim()),
             );
             ui.separator();
@@ -2089,14 +2105,14 @@ pub fn cover_picker(app: &mut App, ctx: &egui::Context) {
                     if picker.dirs.is_empty() && picker.images.is_empty() {
                         ui.label(
                             RichText::new("No sub-folders or images here.")
-                                .size(11.0)
+                                .size(th::TEXT_SMALL)
                                 .color(th::text_dim()),
                         );
                     }
                     if let Some(error) = &picker.error {
                         ui.label(
                             RichText::new(error)
-                                .size(10.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(Color32::from_rgb(220, 110, 110)),
                         );
                     }
@@ -2264,10 +2280,15 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
             ui.horizontal(|ui| {
-                ui.label(RichText::new(name).size(12.0).strong().color(th::text()));
+                ui.label(
+                    RichText::new(name)
+                        .size(th::TEXT_BODY)
+                        .strong()
+                        .color(th::text()),
+                );
                 ui.label(
                     RichText::new(format!("{} tracks", tracks.len()))
-                        .size(11.0)
+                        .size(th::TEXT_SMALL)
                         .color(th::text_dim()),
                 );
                 ui.separator();
@@ -2300,7 +2321,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                 }
                 ui.label(
                     RichText::new("drag rows to reorder, drag onto another playlist to move")
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .color(th::text_dim()),
                 );
             });
@@ -2324,12 +2345,16 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(tr("ui.nothing_here_yet"))
-                        .size(16.0)
+                        .size(th::TEXT_TITLE)
                         .strong()
                         .color(th::text()),
                 );
                 ui.add_space(2.0);
-                ui.label(RichText::new(hint).size(11.0).color(th::text_dim()));
+                ui.label(
+                    RichText::new(hint)
+                        .size(th::TEXT_SMALL)
+                        .color(th::text_dim()),
+                );
             });
             return;
         }
@@ -2347,9 +2372,21 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
             TrackLayout::AlbumArt => 52.0,
         };
         let header_height = if compact { 22.0 } else { 26.0 };
-        let title_size = if compact { 11.5 } else { 13.0 };
-        let text_size = if compact { 11.0 } else { 12.0 };
-        let small_size = if compact { 10.5 } else { 11.5 };
+        let title_size = if compact {
+            th::TEXT_SMALL
+        } else {
+            th::TEXT_BODY
+        };
+        let text_size = if compact {
+            th::TEXT_SMALL
+        } else {
+            th::TEXT_BODY
+        };
+        let small_size = if compact {
+            th::TEXT_CAPTION
+        } else {
+            th::TEXT_SMALL
+        };
 
         // If the configured widths fit, keep them all. Otherwise shrink every
         // resizable column proportionally, down to its minimum, so the last
@@ -2426,29 +2463,27 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
         // Absorb unused room when every configured width fits.
         table = table.column(Column::remainder().resizable(false));
 
-        let mut header = |ui: &mut egui::Ui, label: &str, key: Option<SortKey>| {
-            let active = key == Some(sort);
-            let arrow = if active {
-                if sort_asc {
-                    format!(" {}", icons::CARET_UP.as_str())
+        let mut header =
+            |ui: &mut egui::Ui, label: &str, key: Option<SortKey>| {
+                let active = key == Some(sort);
+                let arrow = if active {
+                    if sort_asc {
+                        format!(" {}", icons::CARET_UP.as_str())
+                    } else {
+                        format!(" {}", icons::CARET_DOWN.as_str())
+                    }
                 } else {
-                    format!(" {}", icons::CARET_DOWN.as_str())
+                    String::new()
+                };
+                let text = th::semibold(format!("{label}{arrow}"), th::TEXT_CAPTION)
+                    .color(if active { th::text() } else { th::text_dim() });
+                let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                if resp.clicked() {
+                    if let Some(k) = key {
+                        new_sort = Some(k);
+                    }
                 }
-            } else {
-                String::new()
             };
-            let text = th::semibold(format!("{label}{arrow}"), 10.5).color(if active {
-                th::accent()
-            } else {
-                th::text_dim()
-            });
-            let resp = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
-            if resp.clicked() {
-                if let Some(k) = key {
-                    new_sort = Some(k);
-                }
-            }
-        };
 
         table
             .header(header_height, |mut h| {
@@ -2639,14 +2674,6 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                     row.col(|_ui| {});
 
                     let resp = row.response();
-                    if is_sel && !art_column {
-                        let rect = resp.rect;
-                        let bar = egui::Rect::from_min_size(
-                            egui::pos2(rect.left() + 2.0, rect.top() + 5.0),
-                            egui::vec2(3.0, (rect.height() - 10.0).max(4.0)),
-                        );
-                        row_painter.rect_filled(bar, th::pill(), th::accent());
-                    }
                     if resp.secondary_clicked() && !is_sel {
                         act = Some(RowAct::Click {
                             index: idx,
@@ -2726,7 +2753,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
                             if playlists.is_empty() {
                                 ui.label(
                                     RichText::new(tr("ui.no_playlists_yet"))
-                                        .size(11.0)
+                                        .size(th::TEXT_SMALL)
                                         .color(th::text_dim()),
                                 );
                             }
@@ -2922,7 +2949,7 @@ pub fn tracklist(app: &mut App, ui: &mut egui::Ui) {
 
 fn batch_field_combo(ui: &mut egui::Ui, id: &str, field: &mut BatchField) {
     egui::ComboBox::from_id_salt(id)
-        .selected_text(RichText::new(field.label()).size(11.0))
+        .selected_text(RichText::new(field.label()).size(th::TEXT_SMALL))
         .width(120.0)
         .show_ui(ui, |ui| {
             for candidate in BatchField::ALL {
@@ -2968,19 +2995,19 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
             if batch {
                 ui.label(
                     RichText::new("Empty fields are left unchanged in every file.")
-                        .size(11.0)
-                        .color(th::accent()),
+                        .size(th::TEXT_SMALL)
+                        .color(th::text_dim()),
                 );
             }
             ui.label(
                 RichText::new(state.paths[0].display().to_string())
-                    .size(10.0)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
             if batch {
                 ui.label(
                     RichText::new(format!("…and {} more", count.saturating_sub(1)))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .color(th::text_dim()),
                 );
             }
@@ -2991,7 +3018,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
                     let field = |ui: &mut egui::Ui, label: &str, value: &mut String| {
-                        let label = ui.label(RichText::new(label).size(12.0).color(th::text_dim()));
+                        let label = ui.label(RichText::new(label).size(th::TEXT_BODY).color(th::text_dim()));
                         ui.add_sized(
                             [320.0, 22.0],
                             egui::TextEdit::singleline(value).hint_text(hint),
@@ -3011,7 +3038,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
 
                     let year_label = ui.label(
                         RichText::new(tr("column.year"))
-                            .size(12.0)
+                            .size(th::TEXT_BODY)
                             .color(th::text_dim()),
                     );
                     ui.add(egui::DragValue::new(&mut year).range(0..=9999).speed(1.0))
@@ -3019,7 +3046,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                     ui.end_row();
 
                     let track_label =
-                        ui.label(RichText::new("Track no").size(12.0).color(th::text_dim()));
+                        ui.label(RichText::new("Track no").size(th::TEXT_BODY).color(th::text_dim()));
                     ui.add(
                         egui::DragValue::new(&mut track_no)
                             .range(0..=999)
@@ -3029,7 +3056,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                     ui.end_row();
 
                     let disc_label =
-                        ui.label(RichText::new("Disc no").size(12.0).color(th::text_dim()));
+                        ui.label(RichText::new("Disc no").size(th::TEXT_BODY).color(th::text_dim()));
                     ui.add(egui::DragValue::new(&mut disc_no).range(0..=99).speed(1.0))
                         .labelled_by(disc_label.id);
                     ui.end_row();
@@ -3040,7 +3067,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
 
                     let gain_label = ui.label(
                         RichText::new("Volume (ReplayGain)")
-                            .size(12.0)
+                            .size(th::TEXT_BODY)
                             .color(th::text_dim()),
                     );
                     gain_label.on_hover_text(
@@ -3063,7 +3090,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                         if batch && !has_gain {
                             ui.label(
                                 RichText::new("leave unchanged")
-                                    .size(9.5)
+                                    .size(th::TEXT_CAPTION)
                                     .color(th::text_dim()),
                             );
                         }
@@ -3074,7 +3101,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                     if batch {
                         ui.label(
                             RichText::new("0 keeps the existing number")
-                                .size(9.0)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         );
                         ui.end_row();
@@ -3086,7 +3113,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                 ui.separator();
                 ui.label(
                     RichText::new(tr("ui.batch_actions"))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
@@ -3094,16 +3121,16 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                     RichText::new(
                         "These read and write each file immediately; Undo restores the batch.",
                     )
-                    .size(9.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
                 );
                 ui.horizontal(|ui| {
                     if ui.button("Auto-number tracks").clicked() {
                         batch_action = Some(BatchAction::AutoNumber);
                     }
-                    ui.label(RichText::new("Case").size(10.5).color(th::text_dim()));
+                    ui.label(RichText::new("Case").size(th::TEXT_CAPTION).color(th::text_dim()));
                     egui::ComboBox::from_id_salt("batch_case")
-                        .selected_text(RichText::new(app.batch_case.label()).size(11.0))
+                        .selected_text(RichText::new(app.batch_case.label()).size(th::TEXT_SMALL))
                         .width(110.0)
                         .show_ui(ui, |ui| {
                             for case in BatchCase::ALL {
@@ -3117,7 +3144,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(tr("common.clear"))
-                            .size(10.5)
+                            .size(th::TEXT_CAPTION)
                             .color(th::text_dim()),
                     );
                     batch_field_combo(ui, "batch_clear", &mut app.batch_field);
@@ -3128,7 +3155,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new("Copy field from the first track")
-                            .size(10.5)
+                            .size(th::TEXT_CAPTION)
                             .color(th::text_dim()),
                     );
                     batch_field_combo(ui, "batch_copy", &mut app.batch_copy);
@@ -3140,7 +3167,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
 
             if let Some(status) = &state.status {
                 ui.add_space(4.0);
-                ui.label(RichText::new(status).size(11.0).color(th::accent()));
+                ui.label(RichText::new(status).size(th::TEXT_SMALL).color(th::accent()));
             }
 
             ui.add_space(8.0);
@@ -3150,7 +3177,7 @@ pub fn tag_editor(app: &mut App, ctx: &egui::Context) {
                 } else {
                     "Writes tags into the file itself"
                 })
-                .size(10.0)
+                .size(th::TEXT_CAPTION)
                 .color(th::text_dim()),
             );
             ui.add_space(4.0);
@@ -3202,7 +3229,11 @@ pub fn rename_window(app: &mut App, ctx: &egui::Context) {
                 }
                 _ => "New name".to_string(),
             };
-            let hint_label = ui.label(RichText::new(&hint).size(10.5).color(th::text_dim()));
+            let hint_label = ui.label(
+                RichText::new(&hint)
+                    .size(th::TEXT_CAPTION)
+                    .color(th::text_dim()),
+            );
             ui.add_space(4.0);
 
             let resp = ui
@@ -3220,7 +3251,7 @@ pub fn rename_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new(format!("{} {error}", icons::WARNING.as_str()))
-                        .size(10.5)
+                        .size(th::TEXT_CAPTION)
                         .color(Color32::from_rgb(230, 120, 120)),
                 );
             }
@@ -3228,7 +3259,7 @@ pub fn rename_window(app: &mut App, ctx: &egui::Context) {
             ui.add_space(8.0);
             ui.label(
                 RichText::new("Enter saves, Escape cancels")
-                    .size(10.0)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
             ui.add_space(4.0);
@@ -3284,7 +3315,7 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
                 } else {
                     format!("all {total} tracks in this view will be saved")
                 })
-                .size(11.0)
+                .size(th::TEXT_SMALL)
                 .color(th::text_dim()),
             );
             if let Some(folder) = app.playlist_dialog_folder {
@@ -3292,19 +3323,19 @@ pub fn playlist_dialog(app: &mut App, ctx: &egui::Context) {
                 if !path.is_empty() {
                     ui.label(
                         RichText::new(format!("Destination: {path}"))
-                            .size(10.5)
-                            .color(th::accent()),
+                            .size(th::TEXT_CAPTION)
+                            .color(th::text_dim()),
                     );
                 }
             }
             ui.add_space(4.0);
             ui.checkbox(
                 &mut empty,
-                RichText::new(tr("ui.create_empty_playlist")).size(11.0),
+                RichText::new(tr("ui.create_empty_playlist")).size(th::TEXT_SMALL),
             )
             .on_hover_text(tr("ui.do_not_copy_the_current_selection_or_view"));
             ui.add_space(4.0);
-            let name_label = ui.label(RichText::new(tr("ui.playlist_name")).size(10.5));
+            let name_label = ui.label(RichText::new(tr("ui.playlist_name")).size(th::TEXT_CAPTION));
             let resp = ui
                 .add_sized(
                     [260.0, 22.0],
@@ -3360,7 +3391,7 @@ pub fn folder_dialog(app: &mut App, ctx: &egui::Context) {
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.add_space(4.0);
-            let name_label = ui.label(RichText::new(tr("ui.folder_name")).size(10.5));
+            let name_label = ui.label(RichText::new(tr("ui.folder_name")).size(th::TEXT_CAPTION));
             let resp = ui
                 .add_sized(
                     [280.0, 22.0],
@@ -3374,7 +3405,7 @@ pub fn folder_dialog(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new(format!("{} {error}", icons::WARNING.as_str()))
-                        .size(10.5)
+                        .size(th::TEXT_CAPTION)
                         .color(Color32::from_rgb(230, 120, 120)),
                 );
             }
@@ -3427,12 +3458,12 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
                 } else {
                     "The playlist is written with absolute track paths and #EXTINF metadata."
                 })
-                .size(10.5)
+                .size(th::TEXT_CAPTION)
                 .color(th::text_dim()),
             );
             ui.add_space(6.0);
 
-            let file_label = ui.label(RichText::new(tr("ui.playlist_file")).size(10.5));
+            let file_label = ui.label(RichText::new(tr("ui.playlist_file")).size(th::TEXT_CAPTION));
             let path_resp = ui
                 .add_sized(
                     [520.0, 22.0],
@@ -3446,7 +3477,8 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
 
             if importing {
                 ui.add_space(6.0);
-                let name_label = ui.label(RichText::new(tr("ui.playlist_name")).size(10.5));
+                let name_label =
+                    ui.label(RichText::new(tr("ui.playlist_name")).size(th::TEXT_CAPTION));
                 ui.add_sized(
                     [320.0, 22.0],
                     egui::TextEdit::singleline(&mut draft.name)
@@ -3455,7 +3487,7 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
                 .labelled_by(name_label.id);
 
                 ui.add_space(6.0);
-                ui.label(RichText::new(tr("ui.folder")).size(10.5));
+                ui.label(RichText::new(tr("ui.folder")).size(th::TEXT_CAPTION));
                 let selected = draft
                     .folder_id
                     .map(|id| app.playlist_folder_path(id))
@@ -3476,7 +3508,7 @@ pub fn m3u_dialog(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(format!("{} {error}", icons::WARNING.as_str()))
-                        .size(10.5)
+                        .size(th::TEXT_CAPTION)
                         .color(Color32::from_rgb(230, 120, 120)),
                 );
             }
@@ -3533,7 +3565,7 @@ pub fn columns_window(app: &mut App, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.label(
                 RichText::new(tr("ui.layout"))
-                    .size(10.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
             ui.horizontal(|ui| {
@@ -3544,14 +3576,14 @@ pub fn columns_window(app: &mut App, ctx: &egui::Context) {
             ui.add_space(4.0);
             ui.label(
                 RichText::new("Compact rows are denser; album art adds a cover thumbnail per row.")
-                    .size(10.0)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
             ui.separator();
 
             ui.label(
                 RichText::new(tr("ui.columns"))
-                    .size(10.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
             ui.add_space(2.0);
@@ -3602,7 +3634,7 @@ pub fn columns_window(app: &mut App, ctx: &egui::Context) {
                 }
                 ui.label(
                     RichText::new("drag column dividers in the table to resize")
-                        .size(9.5)
+                        .size(th::TEXT_CAPTION)
                         .color(th::text_dim()),
                 );
             });
@@ -3647,7 +3679,7 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
     .default_width(460.0)
     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
     .show(ctx, |ui| {
-        let name_label = ui.label(RichText::new(tr("ui.name")).size(10.5));
+        let name_label = ui.label(RichText::new(tr("ui.name")).size(th::TEXT_CAPTION));
         let name_resp = ui
             .add_sized(
                 [440.0, 22.0],
@@ -3655,7 +3687,7 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
             )
             .labelled_by(name_label.id);
         ui.add_space(6.0);
-        let query_label = ui.label(RichText::new(tr("ui.query")).size(10.5));
+        let query_label = ui.label(RichText::new(tr("ui.query")).size(th::TEXT_CAPTION));
         let query_resp = ui
             .add_sized(
                 [440.0, 22.0],
@@ -3669,7 +3701,7 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
                 "Fields: title, artist, album, albumartist, genre, format, \
                  year, track, disc, duration.",
             )
-            .size(10.0)
+            .size(th::TEXT_CAPTION)
             .color(th::text_dim()),
         );
 
@@ -3677,7 +3709,7 @@ pub fn saved_search_dialog(app: &mut App, ctx: &egui::Context) {
             ui.add_space(6.0);
             ui.label(
                 RichText::new(format!("{} {error}", icons::WARNING.as_str()))
-                    .size(10.5)
+                    .size(th::TEXT_CAPTION)
                     .color(Color32::from_rgb(230, 120, 120)),
             );
         }
@@ -3773,13 +3805,13 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(tr("settings.language_section"))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
                 ui.add_space(4.0);
                 egui::ComboBox::from_id_salt("language_select")
-                    .selected_text(RichText::new(app.settings.language.label()).size(12.0))
+                    .selected_text(RichText::new(app.settings.language.label()).size(th::TEXT_BODY))
                     .width(220.0)
                     .show_ui(ui, |ui| {
                         for language in Language::ALL {
@@ -3797,7 +3829,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(tr("settings.accessibility_section"))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
@@ -3806,7 +3838,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 if ui
                     .checkbox(
                         &mut large_fonts,
-                        RichText::new(tr("ui.larger_text_and_controls")).size(11.5),
+                        RichText::new(tr("ui.larger_text_and_controls")).size(th::TEXT_SMALL),
                     )
                     .on_hover_text("Scales the whole interface, including tables and dialogs")
                     .changed()
@@ -3817,7 +3849,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     RichText::new(
                         "Use Tab and Shift+Tab to move through controls; tooltips describe icon-only buttons.",
                     )
-                    .size(10.0)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
                 );
 
@@ -3827,13 +3859,13 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(tr("settings.skin_section"))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
                 ui.add_space(4.0);
                 egui::ComboBox::from_id_salt("skin_select")
-                    .selected_text(RichText::new(app.settings.skin.label()).size(12.0))
+                    .selected_text(RichText::new(app.settings.skin.label()).size(th::TEXT_BODY))
                     .width(220.0)
                     .show_ui(ui, |ui| {
                         for skin in crate::theme::Skin::all() {
@@ -3848,7 +3880,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new(tr("ui.skins_apply_immediately_and_are_remembered_in_settings_json"))
-                        .size(10.5)
+                        .size(th::TEXT_CAPTION)
                         .color(th::text_dim()),
                 );
                 ui.add_space(4.0);
@@ -3871,8 +3903,8 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
 
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new("WINDOW")
-                        .size(10.0)
+                    RichText::new("Window")
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
@@ -3887,7 +3919,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
 
                 ui.label(
                     RichText::new(tr("library.section"))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
@@ -3907,7 +3939,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                                     "{} / {} files",
                                     progress.found, progress.total
                                 ))
-                                .size(9.5),
+                                .size(th::TEXT_CAPTION),
                             ),
                     );
                     if let Some(label) = app.scan_progress_label() {
@@ -3919,17 +3951,17 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                                 "{} indexed · {} unchanged",
                                 progress.indexed, progress.unchanged
                             ))
-                            .size(9.5)
+                            .size(th::TEXT_CAPTION)
                             .color(th::text_dim()),
                         );
                     }
                 }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    if ui.small_button("Back up library").clicked() {
+                    if ui.small_button(tr("ui.back_up_library")).clicked() {
                         backup_library = true;
                     }
-                    if ui.small_button("Restore…").clicked() {
+                    if ui.small_button(tr("ui.restore")).clicked() {
                         open_restore = true;
                     }
                 });
@@ -3938,7 +3970,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 if ui
                     .checkbox(
                         &mut watching,
-                        RichText::new(tr("ui.watch_scanned_folders_for_new_or_changed_files")).size(11.5),
+                        RichText::new(tr("ui.watch_scanned_folders_for_new_or_changed_files")).size(th::TEXT_SMALL),
                     )
                     .on_hover_text(
                         "New audio files are imported automatically and tag edits refresh \
@@ -3951,7 +3983,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 if app.settings.watch_folders.is_empty() {
                     ui.label(
                         RichText::new("Scan a folder once to start watching it.")
-                            .size(10.0)
+                            .size(th::TEXT_CAPTION)
                             .color(th::text_dim()),
                     );
                 } else {
@@ -3962,7 +3994,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                                 "{} watched folder(s)",
                                 app.settings.watch_folders.len()
                             ))
-                            .size(10.0)
+                            .size(th::TEXT_CAPTION)
                             .color(th::text_dim()),
                         )
                         .on_hover_text(folders);
@@ -3981,7 +4013,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 let mut album_gain = app.settings.replaygain_album;
                 ui.checkbox(
                     &mut replaygain,
-                    RichText::new(tr("ui.apply_replaygain_tags")).size(11.5),
+                    RichText::new(tr("ui.apply_replaygain_tags")).size(th::TEXT_SMALL),
                 )
                 .on_hover_text(
                     "Uses REPLAYGAIN_TRACK_GAIN / REPLAYGAIN_ALBUM_GAIN from the file when present.",
@@ -3989,7 +4021,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_enabled_ui(replaygain, |ui| {
                     ui.checkbox(
                         &mut album_gain,
-                        RichText::new(tr("ui.prefer_album_gain")).size(11.0),
+                        RichText::new(tr("ui.prefer_album_gain")).size(th::TEXT_SMALL),
                     );
                 });
                 if replaygain != app.settings.replaygain
@@ -4001,7 +4033,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(tr("settings.output_section"))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
@@ -4011,7 +4043,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     .clone()
                     .unwrap_or_else(|| "System default".to_string());
                 egui::ComboBox::from_id_salt("output_device")
-                    .selected_text(RichText::new(selected).size(11.5))
+                    .selected_text(RichText::new(selected).size(th::TEXT_SMALL))
                     .width(260.0)
                     .show_ui(ui, |ui| {
                         if ui
@@ -4051,11 +4083,11 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.checkbox(
                     &mut scrobble_enabled,
-                    RichText::new(tr("ui.scrobble_to_listenbrainz")).size(11.5),
+                    RichText::new(tr("ui.scrobble_to_listenbrainz")).size(th::TEXT_SMALL),
                 );
                 if scrobble_enabled {
                     let token_label =
-                        ui.label(RichText::new("ListenBrainz token").size(10.5));
+                        ui.label(RichText::new("ListenBrainz token").size(th::TEXT_CAPTION));
                     ui.add_sized(
                         [300.0, 22.0],
                         egui::TextEdit::singleline(&mut scrobble_token)
@@ -4067,7 +4099,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         RichText::new(
                             "No developer API key: paste a token from your ListenBrainz profile.",
                         )
-                        .size(9.5)
+                        .size(th::TEXT_CAPTION)
                         .color(th::text_dim()),
                     );
                 }
@@ -4075,13 +4107,13 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(8.0);
                 ui.checkbox(
                     &mut local_feeds,
-                    RichText::new(tr("settings.allow_local_podcasts")).size(11.5),
+                    RichText::new(tr("settings.allow_local_podcasts")).size(th::TEXT_SMALL),
                 );
                 ui.label(
                     RichText::new(
                         tr("settings.allow_local_podcasts_hint"),
                     )
-                    .size(9.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
                 );
                         }
@@ -4089,8 +4121,8 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
             if tab == SettingsTab::Visualizer {
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new("MILKDROP VISUALIZER")
-                        .size(10.0)
+                    RichText::new("MilkDrop visualizer")
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
@@ -4100,19 +4132,19 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     RichText::new(
                         "Shows a panel in the library view and behind the Now Playing screen.",
                     )
-                    .size(10.0)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
                 );
                 if let Some(error) = &app.viz_error {
                     ui.label(
                         RichText::new(error.as_str())
-                            .size(10.0)
+                            .size(th::TEXT_CAPTION)
                             .color(Color32::from_rgb(220, 110, 110)),
                     );
                 }
 
                 ui.add_space(10.0);
-                ui.label(RichText::new("Preset mode").size(11.0).color(th::text()));
+                ui.label(RichText::new("Preset mode").size(th::TEXT_SMALL).color(th::text()));
                 ui.radio_value(
                     &mut viz_mode,
                     crate::settings::VisualizerMode::Selected,
@@ -4139,7 +4171,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     if presets.is_empty() {
                         ui.label(
                             RichText::new("No presets loaded. Enable the visualizer first.")
-                                .size(10.0)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         );
                     } else {
@@ -4205,7 +4237,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     RichText::new(
                         "Drop extra .milk / .milk2 files into the presets folder in the data directory.",
                     )
-                    .size(9.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
                 );
             }
@@ -4213,7 +4245,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
             if tab == SettingsTab::Keybindings {
                 ui.label(
                     RichText::new(tr("ui.keyboard_shortcuts"))
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
@@ -4223,7 +4255,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                         "Click a binding, then press the new key combination. \
                          Delete clears it, Escape cancels.",
                     )
-                    .size(11.0)
+                    .size(th::TEXT_SMALL)
                     .color(th::text_dim()),
                 );
                 ui.add_space(8.0);
@@ -4233,7 +4265,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     .spacing([16.0, 6.0])
                     .show(ui, |ui| {
                         for action in crate::settings::Action::ALL {
-                            ui.label(RichText::new(action.label()).size(12.0));
+                            ui.label(RichText::new(action.label()).size(th::TEXT_BODY));
 
                             let capturing = app.capture == Some(action);
                             let bound = app.settings.shortcut(action);
@@ -4247,7 +4279,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
 
                             let conflict = conflicts.contains(&action);
                             let mut button = egui::Button::new(
-                                RichText::new(text).size(12.0).color(if capturing {
+                                RichText::new(text).size(th::TEXT_BODY).color(if capturing {
                                     th::accent()
                                 } else if conflict {
                                     Color32::from_rgb(230, 120, 120)
@@ -4288,7 +4320,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     ui.add_space(6.0);
                     ui.label(
                         RichText::new("Conflicting bindings are shown in red.")
-                            .size(10.0)
+                            .size(th::TEXT_CAPTION)
                             .color(Color32::from_rgb(230, 120, 120)),
                     );
                 }
@@ -4297,25 +4329,25 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
             if tab == SettingsTab::About {
                 ui.label(
                     RichText::new("MusicWasp")
-                        .size(20.0)
+                        .size(th::TEXT_HEADING)
                         .strong()
-                        .color(th::accent()),
+                        .color(th::text()),
                 );
                 ui.label(
                     RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
-                        .size(11.0)
+                        .size(th::TEXT_SMALL)
                         .color(th::text_dim()),
                 );
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(
-                        "A native music library and player for Linux and Windows.",
+                        "A native music library, player and tag editor for Linux, Windows and macOS.",
                     )
-                    .size(12.0),
+                    .size(th::TEXT_BODY),
                 );
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Website").size(11.0).color(th::text_dim()));
+                    ui.label(RichText::new("Website").size(th::TEXT_SMALL).color(th::text_dim()));
                     ui.hyperlink_to("https://giwi.fr", "https://giwi.fr");
                 });
 
@@ -4324,12 +4356,12 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new("Copyright © 2026 giwi.fr")
-                        .size(11.5)
+                        .size(th::TEXT_SMALL)
                         .color(th::text()),
                 );
                 ui.label(
                     RichText::new("Released under the GNU General Public License v3.")
-                        .size(11.0)
+                        .size(th::TEXT_SMALL)
                         .color(th::text_dim()),
                 );
                 ui.hyperlink_to(
@@ -4342,13 +4374,13 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new("Settings file")
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .strong()
                         .color(th::text_dim()),
                 );
                 ui.label(
                     RichText::new(app.settings_path.display().to_string())
-                        .size(10.0)
+                        .size(th::TEXT_CAPTION)
                         .color(th::text_dim()),
                 );
             }
@@ -4362,7 +4394,7 @@ pub fn settings_window(app: &mut App, ctx: &egui::Context) {
                     }
                     ui.label(
                         RichText::new("Language, appearance and session are reset.")
-                            .size(10.0)
+                            .size(th::TEXT_CAPTION)
                             .color(th::text_dim()),
                     );
                 });
@@ -4521,7 +4553,7 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
             ui.label(
                 RichText::new(picker.current.display().to_string())
                     .monospace()
-                    .size(11.0)
+                    .size(th::TEXT_SMALL)
                     .color(th::text_dim()),
             );
             ui.separator();
@@ -4547,14 +4579,14 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
                     if picker.entries.is_empty() {
                         ui.label(
                             RichText::new("no sub-folders")
-                                .size(11.0)
+                                .size(th::TEXT_SMALL)
                                 .color(th::text_dim()),
                         );
                     }
                     if let Some(error) = &picker.error {
                         ui.label(
                             RichText::new(error)
-                                .size(10.0)
+                                .size(th::TEXT_CAPTION)
                                 .color(Color32::from_rgb(220, 110, 110)),
                         );
                     }
@@ -4563,7 +4595,7 @@ pub fn folder_picker(app: &mut App, ctx: &egui::Context) {
             ui.separator();
             ui.label(
                 RichText::new(tr("ui.music_folders_are_scanned_recursively"))
-                    .size(10.0)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
             let (choose_clicked, cancel_clicked) =
@@ -4620,9 +4652,9 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(tr("column.artist")).size(12.0).color(th::text_dim()));
+                ui.label(RichText::new(tr("column.artist")).size(th::TEXT_BODY).color(th::text_dim()));
                 ui.add_sized([170.0, 22.0], egui::TextEdit::singleline(&mut state.artist));
-                ui.label(RichText::new("Album").size(12.0).color(th::text_dim()));
+                ui.label(RichText::new("Album").size(th::TEXT_BODY).color(th::text_dim()));
                 ui.add_sized([170.0, 22.0], egui::TextEdit::singleline(&mut state.album));
                 if ui
                     .add_enabled(
@@ -4667,14 +4699,14 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                         RichText::new(format!(
                             "{targets} track(s) will be tagged. Search MusicBrainz by name, or identify by audio fingerprint with AcoustID."
                         ))
-                        .size(11.0)
+                        .size(th::TEXT_SMALL)
                         .color(th::text_dim()),
                     );
                 }
                 AutoTagStage::Searching => {
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label(RichText::new("Searching MusicBrainz…").size(12.0));
+                        ui.label(RichText::new("Searching MusicBrainz…").size(th::TEXT_BODY));
                     });
                 }
                 AutoTagStage::Fingerprinting => {
@@ -4682,27 +4714,27 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                         ui.spinner();
                         ui.label(
                             RichText::new("Fingerprinting with Chromaprint and asking AcoustID…")
-                                .size(12.0),
+                                .size(th::TEXT_BODY),
                         );
                     });
                 }
                 AutoTagStage::Applying => {
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label(RichText::new("Writing tags and cover…").size(12.0));
+                        ui.label(RichText::new("Writing tags and cover…").size(th::TEXT_BODY));
                     });
                 }
                 AutoTagStage::Results(candidates) => {
                     if candidates.is_empty() {
                         ui.label(
                             RichText::new("No releases found. Try a shorter album name.")
-                                .size(12.0)
+                                .size(th::TEXT_BODY)
                                 .color(th::text_dim()),
                         );
                     } else {
                         ui.label(
                             RichText::new(format!("{} candidate release(s)", candidates.len()))
-                                .size(11.0)
+                                .size(th::TEXT_SMALL)
                                 .color(th::text_dim()),
                         );
                         ui.add_space(2.0);
@@ -4737,7 +4769,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                 ui.spinner();
                                 ui.label(
                                     RichText::new("Loading the release's track list…")
-                                        .size(11.0)
+                                        .size(th::TEXT_SMALL)
                                         .color(th::text_dim()),
                                 );
                             });
@@ -4747,7 +4779,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                     "{} could not load track list: {error}",
                                     icons::WARNING.as_str()
                                 ))
-                                .size(10.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(Color32::from_rgb(230, 120, 120)),
                             );
                         } else if let Some(release) = state.release.clone() {
@@ -4756,7 +4788,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                     "Review the file-to-release mapping before writing. \
                                      Pick another track in any row to override it.",
                                 )
-                                .size(10.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                             );
                             ui.add_space(4.0);
@@ -4789,7 +4821,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                     header.col(|ui| {
                                         ui.label(
                                             RichText::new("File")
-                                                .size(10.0)
+                                                .size(th::TEXT_CAPTION)
                                                 .strong()
                                                 .color(th::text_dim()),
                                         );
@@ -4797,7 +4829,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                     header.col(|ui| {
                                         ui.label(
                                             RichText::new("Release track")
-                                                .size(10.0)
+                                                .size(th::TEXT_CAPTION)
                                                 .strong()
                                                 .color(th::text_dim()),
                                         );
@@ -4805,7 +4837,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                     header.col(|ui| {
                                         ui.label(
                                             RichText::new("Changes")
-                                                .size(10.0)
+                                                .size(th::TEXT_CAPTION)
                                                 .strong()
                                                 .color(th::text_dim()),
                                         );
@@ -4836,7 +4868,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                                 ui.add(
                                                     egui::Label::new(
                                                         RichText::new(file_label)
-                                                            .size(11.0)
+                                                            .size(th::TEXT_SMALL)
                                                             .color(th::text()),
                                                     )
                                                     .truncate(),
@@ -4866,7 +4898,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                                     mapping.track.id,
                                                 ))
                                                 .selected_text(
-                                                    RichText::new(selected).size(11.0),
+                                                    RichText::new(selected).size(th::TEXT_SMALL),
                                                 )
                                                 .width((ui.available_width() - 4.0).max(80.0))
                                                 .show_ui(ui, |ui| {
@@ -4909,7 +4941,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                                 ui.add(
                                                     egui::Label::new(
                                                         RichText::new(summary)
-                                                            .size(10.5)
+                                                            .size(th::TEXT_CAPTION)
                                                             .color(if changes.is_empty() {
                                                                 th::text_dim()
                                                             } else {
@@ -4943,7 +4975,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                         "{} row(s) use the same release track.",
                                         duplicates
                                     ))
-                                    .size(10.5)
+                                    .size(th::TEXT_CAPTION)
                                     .color(Color32::from_rgb(230, 150, 90)),
                                 );
                             }
@@ -4952,7 +4984,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                     RichText::new(format!(
                                         "{skipped} file(s) will be skipped."
                                     ))
-                                    .size(10.5)
+                                    .size(th::TEXT_CAPTION)
                                     .color(th::text_dim()),
                                 );
                             }
@@ -4961,7 +4993,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                                     "Album: {}  ·  {}",
                                     release.title, release.album_artist
                                 ))
-                                .size(10.0)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                             );
                         }
@@ -4996,7 +5028,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                         if let Some(candidate) = candidates.get(state.selected) {
                             ui.label(
                                 RichText::new(format!("release id: {}", candidate.release_id))
-                                    .size(9.5)
+                                    .size(th::TEXT_CAPTION)
                                     .color(th::text_dim()),
                             );
                         }
@@ -5006,7 +5038,7 @@ pub fn autotag_window(app: &mut App, ctx: &egui::Context) {
                     let failed = message.starts_with("failed") || message.contains("failed");
                     ui.label(
                         RichText::new(message)
-                            .size(12.0)
+                            .size(th::TEXT_BODY)
                             .color(if failed {
                                 Color32::from_rgb(230, 120, 120)
                             } else {
@@ -5082,7 +5114,7 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(tr("ui.name"))
-                    .size(12.0)
+                    .size(th::TEXT_BODY)
                     .color(th::text_dim()),
             );
             ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut draft.name));
@@ -5090,14 +5122,18 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
         if let Some(folder) = folder {
             ui.label(
                 RichText::new(format!("Folder: {folder}"))
-                    .size(10.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
         }
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Match").size(12.0).color(th::text_dim()));
+            ui.label(
+                RichText::new("Match")
+                    .size(th::TEXT_BODY)
+                    .color(th::text_dim()),
+            );
             egui::ComboBox::from_id_salt("match_mode")
                 .selected_text(if draft.definition.match_all {
                     "all rules"
@@ -5155,14 +5191,18 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
         if draft.definition.rules.is_empty() {
             ui.label(
                 RichText::new("No rules: the playlist contains everything.")
-                    .size(10.0)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
         }
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Sort").size(12.0).color(th::text_dim()));
+            ui.label(
+                RichText::new("Sort")
+                    .size(th::TEXT_BODY)
+                    .color(th::text_dim()),
+            );
             egui::ComboBox::from_id_salt("smart_sort")
                 .selected_text(draft.definition.sort.label())
                 .show_ui(ui, |ui| {
@@ -5177,7 +5217,11 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
             }
             if let Some(limit) = &mut draft.definition.limit {
                 ui.add(egui::DragValue::new(limit).range(1..=10_000).speed(1.0));
-                ui.label(RichText::new("tracks").size(10.0).color(th::text_dim()));
+                ui.label(
+                    RichText::new("tracks")
+                        .size(th::TEXT_CAPTION)
+                        .color(th::text_dim()),
+                );
             }
         });
 
@@ -5189,14 +5233,14 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
             .unwrap_or(0);
         ui.label(
             RichText::new(format!("matches {preview} track(s) right now"))
-                .size(11.0)
-                .color(th::accent()),
+                .size(th::TEXT_SMALL)
+                .color(th::text_dim()),
         );
 
         if let Some(status) = &draft.status {
             ui.label(
                 RichText::new(status)
-                    .size(11.0)
+                    .size(th::TEXT_SMALL)
                     .color(Color32::from_rgb(230, 120, 120)),
             );
         }
@@ -5204,7 +5248,7 @@ pub fn smart_dialog(app: &mut App, ctx: &egui::Context) {
         ui.add_space(8.0);
         ui.label(
             RichText::new("Smart playlists re-query the library every time they open")
-                .size(10.0)
+                .size(th::TEXT_CAPTION)
                 .color(th::text_dim()),
         );
         ui.add_space(4.0);

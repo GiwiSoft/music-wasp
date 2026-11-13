@@ -503,17 +503,18 @@ pub struct Palette {
 impl Default for Palette {
     fn default() -> Self {
         Self {
-            bg_dark: Color32::from_rgb(22, 26, 22),
-            bg_panel: Color32::from_rgb(29, 34, 29),
-            bg_row_alt: Color32::from_rgb(34, 40, 34),
-            bg_selected: Color32::from_rgb(45, 72, 38),
+            // Neutral graphite ramp: the green accent stays the only hue.
+            bg_dark: Color32::from_rgb(18, 20, 18),
+            bg_panel: Color32::from_rgb(25, 28, 25),
+            bg_row_alt: Color32::from_rgb(31, 35, 31),
+            bg_selected: Color32::from_rgb(38, 44, 38),
             accent: Color32::from_rgb(90, 213, 27),
-            text_dim: Color32::from_rgb(150, 160, 150),
-            text: Color32::from_rgb(224, 232, 223),
-            extreme_bg: Color32::from_rgb(16, 19, 16),
-            widget_inactive: Color32::from_rgb(45, 52, 45),
-            widget_weak: Color32::from_rgb(39, 45, 39),
-            widget_hover: Color32::from_rgb(61, 71, 60),
+            text_dim: Color32::from_rgb(141, 149, 139),
+            text: Color32::from_rgb(231, 236, 228),
+            extreme_bg: Color32::from_rgb(13, 15, 13),
+            widget_inactive: Color32::from_rgb(39, 44, 39),
+            widget_weak: Color32::from_rgb(32, 36, 32),
+            widget_hover: Color32::from_rgb(50, 56, 50),
         }
     }
 }
@@ -772,6 +773,15 @@ static BACKGROUNDS: OnceLock<RwLock<HashMap<PathBuf, (u128, egui::TextureHandle)
 /// Extra UI scale used by the larger-font accessibility mode.
 pub const LARGE_TEXT_SCALE: f32 = 1.2;
 
+/// Six-step type scale. Use these instead of one-off pixel sizes so labels,
+/// rows and dialogs share the same hierarchy across the app.
+pub const TEXT_CAPTION: f32 = 10.5;
+pub const TEXT_SMALL: f32 = 11.5;
+pub const TEXT_BODY: f32 = 13.0;
+pub const TEXT_TITLE: f32 = 15.0;
+pub const TEXT_HEADING: f32 = 18.0;
+pub const TEXT_DISPLAY: f32 = 27.0;
+
 /// Fixed-size pill drawn over the seek rail. Keeping this independent of the
 /// slider height stops the cursor from changing size between skins or layouts.
 pub const SEEK_HANDLE_WIDTH: f32 = 14.0;
@@ -974,14 +984,17 @@ fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
     } else {
         blend(palette.bg_row_alt, palette.bg_dark, 0.55)
     };
-    v.selection.bg_fill = if high_contrast || palette.bg_selected.a() < 255 {
-        palette.bg_selected
-    } else {
-        blend(palette.bg_selected, palette.bg_dark, 0.26)
-    };
-    // A zero-width stroke still supplies the accent text colour that egui
-    // uses for selected labels; it simply does not paint an outline.
-    v.selection.stroke = Stroke::new(if high_contrast { 2.0 } else { 0.0 }, palette.accent);
+    v.selection.bg_fill = palette.bg_selected;
+    // Selected labels keep the primary text colour; the fill alone marks the
+    // selection. High-contrast skins still outline it in the accent.
+    v.selection.stroke = Stroke::new(
+        if high_contrast { 2.0 } else { 0.0 },
+        if high_contrast {
+            palette.accent
+        } else {
+            palette.text
+        },
+    );
     v.hyperlink_color = palette.accent;
     v.window_stroke = Stroke::new(1.0, hairline);
     v.interact_cursor = Some(egui::CursorIcon::PointingHand);
@@ -1039,7 +1052,7 @@ fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
             palette.text
         },
     );
-    v.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, palette.accent);
+    v.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, palette.text);
     for w in [
         &mut v.widgets.inactive,
         &mut v.widgets.hovered,
@@ -1091,15 +1104,15 @@ fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
         }
         style.text_styles.insert(
             egui::TextStyle::Body,
-            egui::FontId::new(13.5, egui::FontFamily::Proportional),
+            egui::FontId::new(TEXT_BODY, egui::FontFamily::Proportional),
         );
         style.text_styles.insert(
             egui::TextStyle::Button,
-            egui::FontId::new(13.0, egui::FontFamily::Proportional),
+            egui::FontId::new(TEXT_BODY, egui::FontFamily::Proportional),
         );
         style.text_styles.insert(
             egui::TextStyle::Small,
-            egui::FontId::new(11.0, egui::FontFamily::Proportional),
+            egui::FontId::new(TEXT_SMALL, egui::FontFamily::Proportional),
         );
         style.text_styles.insert(
             egui::TextStyle::Monospace,
@@ -1107,7 +1120,7 @@ fn apply_palette(ctx: &egui::Context, skin: Skin, palette: Palette) {
         );
         style.text_styles.insert(
             egui::TextStyle::Heading,
-            egui::FontId::new(20.0, egui::FontFamily::Name(SEMIBOLD_FAMILY.into())),
+            egui::FontId::new(TEXT_HEADING, egui::FontFamily::Name(SEMIBOLD_FAMILY.into())),
         );
     });
 }

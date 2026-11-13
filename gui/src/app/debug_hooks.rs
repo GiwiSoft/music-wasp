@@ -40,6 +40,9 @@ impl App {
         let Some(path) = self.shot_path.clone() else {
             return;
         };
+        // Screenshot runs must not capture hover tooltips: the pointer sits
+        // wherever the compositor left it.
+        ctx.all_styles_mut(|style| style.interaction.tooltip_delay = f32::INFINITY);
         self.frames += 1;
 
         // Debug hook: MUSICWASP_AUTOPLAY=1 starts the first track (muted).
@@ -51,7 +54,7 @@ impl App {
             self.play_from_list(0);
         }
 
-        if self.frames == OPEN_PANEL_FRAME {
+        if self.frames == DELAYED_HOOK_FRAME {
             if let Some(seconds) = debug_env::var("MUSICWASP_SEEK") {
                 if let (Ok(seconds), Some(player)) = (seconds.parse::<f64>(), &self.player) {
                     player.seek(seconds);

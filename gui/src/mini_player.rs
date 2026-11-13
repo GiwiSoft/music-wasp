@@ -129,7 +129,12 @@ pub fn ui(
             subtitle.push_str(&state.album);
         }
         ui.add(
-            egui::Label::new(RichText::new(subtitle).size(10.5).color(th::text_dim())).truncate(),
+            egui::Label::new(
+                RichText::new(subtitle)
+                    .size(th::TEXT_CAPTION)
+                    .color(th::text_dim()),
+            )
+            .truncate(),
         );
 
         ui.add_space(4.0);
@@ -145,7 +150,7 @@ pub fn ui(
                     crate::app::fmt_time(state.position),
                     crate::app::fmt_time(state.duration)
                 ))
-                .size(9.5)
+                .size(th::TEXT_CAPTION)
                 .color(th::text_dim()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

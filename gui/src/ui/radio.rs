@@ -27,7 +27,7 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
         if let Some(status) = &app.radio.status {
             ui.label(
                 RichText::new(status.as_str())
-                    .size(10.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
         }
@@ -36,7 +36,7 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
             ui.centered_and_justified(|ui| {
                 ui.label(
                     RichText::new(tr("radio.empty"))
-                        .size(12.0)
+                        .size(th::TEXT_BODY)
                         .color(th::text_dim()),
                 );
             });
@@ -67,10 +67,10 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
                             station_action = Some(StationAction::Play(index));
                         }
                         ui.vertical(|ui| {
-                            ui.label(th::semibold(&station.name, 13.0).color(th::text()));
+                            ui.label(th::semibold(&station.name, th::TEXT_BODY).color(th::text()));
                             ui.label(
                                 RichText::new(station.genre.as_str())
-                                    .size(10.0)
+                                    .size(th::TEXT_CAPTION)
                                     .color(th::text_dim()),
                             );
                         });
@@ -83,7 +83,7 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
                             ui.add(
                                 egui::Label::new(
                                     RichText::new(station.url.as_str())
-                                        .size(9.5)
+                                        .size(th::TEXT_CAPTION)
                                         .color(th::text_dim()),
                                 )
                                 .truncate(),
@@ -122,17 +122,17 @@ fn radio_dialog(app: &mut App, ctx: &egui::Context) {
         .default_width(480.0)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
-            ui.label(RichText::new(tr("ui.name")).size(10.5));
+            ui.label(RichText::new(tr("ui.name")).size(th::TEXT_CAPTION));
             ui.add_sized(
                 [460.0, 22.0],
                 egui::TextEdit::singleline(&mut name).hint_text(tr("radio.station_name_hint")),
             );
-            ui.label(RichText::new(tr("radio.stream_url")).size(10.5));
+            ui.label(RichText::new(tr("radio.stream_url")).size(th::TEXT_CAPTION));
             ui.add_sized(
                 [460.0, 22.0],
                 egui::TextEdit::singleline(&mut url).hint_text("https://example.com/stream.mp3"),
             );
-            ui.label(RichText::new(tr("radio.genre_optional")).size(10.5));
+            ui.label(RichText::new(tr("radio.genre_optional")).size(th::TEXT_CAPTION));
             ui.add_sized(
                 [460.0, 22.0],
                 egui::TextEdit::singleline(&mut genre).hint_text(tr("radio.genre_hint")),

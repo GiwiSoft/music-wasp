@@ -8,11 +8,15 @@ use musicwasp_core::organize::{MoveStatus, OrganizePlan};
 use std::path::Path;
 
 fn hint(text: impl Into<String>) -> RichText {
-    RichText::new(text).size(10.5).color(th::text_dim())
+    RichText::new(text)
+        .size(th::TEXT_CAPTION)
+        .color(th::text_dim())
 }
 
 fn field_label(text: &str) -> RichText {
-    RichText::new(text).size(11.0).color(th::text_dim())
+    RichText::new(text)
+        .size(th::TEXT_SMALL)
+        .color(th::text_dim())
 }
 
 fn status_color(status: MoveStatus) -> egui::Color32 {
@@ -133,7 +137,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                 let count = state.plan.as_ref().map_or(0, |plan| plan.ready);
                 ui.label(
                     RichText::new(format!("Move {count} file(s) now?"))
-                        .size(12.0)
+                        .size(th::TEXT_BODY)
                         .strong()
                         .color(th::accent()),
                 );
@@ -153,7 +157,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                     }
                 });
             } else if let Some(status) = &state.status {
-                ui.label(RichText::new(status).size(10.5).color(th::text_dim()));
+                ui.label(RichText::new(status).size(th::TEXT_CAPTION).color(th::text_dim()));
             }
 
             if let Some(plan) = &state.plan {
@@ -176,7 +180,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                                 for row in &plan.rows {
                                     let colour = status_color(row.status);
                                     let status = ui.label(
-                                        RichText::new(row.status.label()).size(10.5).color(colour),
+                                        RichText::new(row.status.label()).size(th::TEXT_CAPTION).color(colour),
                                     );
                                     if !row.detail.is_empty() {
                                         status.on_hover_text(&row.detail);
@@ -214,9 +218,13 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
 fn path_cell(ui: &mut egui::Ui, path: &Path, root: &Path) {
     let text = relative(path, root);
     let label = ui.add(
-        egui::Label::new(RichText::new(&text).size(10.5).color(th::text()))
-            .truncate()
-            .sense(egui::Sense::hover()),
+        egui::Label::new(
+            RichText::new(&text)
+                .size(th::TEXT_CAPTION)
+                .color(th::text()),
+        )
+        .truncate()
+        .sense(egui::Sense::hover()),
     );
     label.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &text));
     label.on_hover_text(path.display().to_string());

@@ -9,7 +9,9 @@ use musicwasp_core::{ReconcileCandidate, Track};
 use std::collections::BTreeSet;
 
 fn hint(text: impl Into<String>) -> RichText {
-    RichText::new(text).size(10.5).color(th::text_dim())
+    RichText::new(text)
+        .size(th::TEXT_CAPTION)
+        .color(th::text_dim())
 }
 
 fn track_label(track: &Track) -> String {
@@ -42,7 +44,7 @@ fn path_line(ui: &mut egui::Ui, prefix: &str, path: &str) {
         ui.add(
             egui::Label::new(
                 RichText::new(format!("{prefix}  {path}"))
-                    .size(9.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             )
             .truncate(),
@@ -58,7 +60,7 @@ fn track_row(ui: &mut egui::Ui, selected: &mut BTreeSet<i64>, track: &Track) {
         ui.add(
             egui::Label::new(
                 RichText::new(track_label(track))
-                    .size(11.5)
+                    .size(th::TEXT_SMALL)
                     .color(th::text()),
             )
             .truncate(),
@@ -73,7 +75,7 @@ fn rename_row(ui: &mut egui::Ui, selected: &mut BTreeSet<i64>, candidate: &Recon
         ui.add(
             egui::Label::new(
                 RichText::new(track_label(&candidate.track))
-                    .size(11.5)
+                    .size(th::TEXT_SMALL)
                     .color(th::text()),
             )
             .truncate(),
@@ -81,7 +83,7 @@ fn rename_row(ui: &mut egui::Ui, selected: &mut BTreeSet<i64>, candidate: &Recon
         if candidate.replaces_id.is_some() {
             ui.label(
                 RichText::new("merges watcher duplicate")
-                    .size(9.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::accent()),
             );
         }
@@ -92,7 +94,7 @@ fn rename_row(ui: &mut egui::Ui, selected: &mut BTreeSet<i64>, candidate: &Recon
         ui.add_space(22.0);
         ui.label(
             RichText::new(format!("matches: {}", candidate.reasons.join(" · ")))
-                .size(9.5)
+                .size(th::TEXT_CAPTION)
                 .color(th::text_dim()),
         );
     });
@@ -150,7 +152,11 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             ui.separator();
             take_act(&mut act, hygiene_footer(ui, state));
             if let Some(status) = &state.status {
-                ui.label(RichText::new(status).size(10.5).color(th::accent()));
+                ui.label(
+                    RichText::new(status)
+                        .size(th::TEXT_CAPTION)
+                        .color(th::accent()),
+                );
             }
         });
 
@@ -184,7 +190,7 @@ fn hygiene_toolbar(ui: &mut egui::Ui, state: &HygieneState) -> Option<HygieneAct
                 state.duplicate_groups.len(),
                 duplicate_tracks
             ))
-            .size(11.0)
+            .size(th::TEXT_SMALL)
             .color(th::text_dim()),
         );
     });
@@ -263,7 +269,12 @@ fn hygiene_duplicates(ui: &mut egui::Ui, state: &mut HygieneState) -> Option<Hyg
                 heading.push_str("  ·  ");
                 heading.push_str(&first.album);
             }
-            ui.label(RichText::new(heading).size(11.5).strong().color(th::text()));
+            ui.label(
+                RichText::new(heading)
+                    .size(th::TEXT_SMALL)
+                    .strong()
+                    .color(th::text()),
+            );
             for track in group {
                 track_row(ui, &mut state.selected, track);
             }
@@ -299,7 +310,7 @@ fn hygiene_renames(ui: &mut egui::Ui, state: &mut HygieneState) -> Option<Hygien
                     "{} file(s) scanned · nothing changes until you apply",
                     plan.scanned_files
                 ))
-                .size(10.0)
+                .size(th::TEXT_CAPTION)
                 .color(th::text_dim()),
             );
             if plan.candidates.is_empty() {
@@ -358,7 +369,12 @@ fn confirm_bar(
     cancel: HygieneAct,
 ) -> Option<HygieneAct> {
     let mut act = None;
-    ui.label(RichText::new(title).size(12.0).strong().color(th::accent()));
+    ui.label(
+        RichText::new(title)
+            .size(th::TEXT_BODY)
+            .strong()
+            .color(th::text()),
+    );
     ui.label(hint(note));
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if crate::dialog::primary_button(ui, &action, true).clicked() {
@@ -380,7 +396,7 @@ fn hygiene_selection_bar(ui: &mut egui::Ui, state: &HygieneState) -> Option<Hygi
     ui.horizontal(|ui| {
         ui.label(
             RichText::new(format!("{} selected", state.selected.len()))
-                .size(11.0)
+                .size(th::TEXT_SMALL)
                 .color(th::text_dim()),
         );
         let remove_label = format!("Remove {} from library", state.selected.len());

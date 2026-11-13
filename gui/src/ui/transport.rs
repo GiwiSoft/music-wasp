@@ -51,6 +51,9 @@ pub(crate) fn seek_slider(ui: &mut egui::Ui, pos: &mut f64, max: f64) -> egui::R
     let height = ui
         .text_style_height(&egui::TextStyle::Body)
         .max(ui.spacing().interact_size.y);
+    // Sliders use the accent for their filled trail; keep that scope local so
+    // toggles in the same bar stay neutral.
+    ui.visuals_mut().selection.bg_fill = th::accent();
     let radius = (height / 2.5).max(1.0);
     let aspect_ratio = (th::SEEK_HANDLE_WIDTH / 2.0) / radius;
     let response = ui.add(
@@ -117,7 +120,6 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                 .inner_margin(egui::Margin::symmetric(14, 9)),
         )
         .show(ui, |ui| {
-            ui.visuals_mut().selection.bg_fill = th::accent();
             ui.horizontal(|ui| {
                 // Album art with a soft shadow so the bar reads as a raised surface.
                 let art_size = 64.0;
@@ -187,11 +189,16 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                         .or_else(|| current_track.as_ref().map(artist_album_line))
                         .unwrap_or_else(|| tr("transport.hint").to_string());
                     ui.add(
-                        egui::Label::new(th::semibold(title, 14.5).color(th::text())).truncate(),
+                        egui::Label::new(th::semibold(title, th::TEXT_TITLE).color(th::text()))
+                            .truncate(),
                     );
                     ui.add(
-                        egui::Label::new(RichText::new(sub).size(11.0).color(th::text_dim()))
-                            .truncate(),
+                        egui::Label::new(
+                            RichText::new(sub)
+                                .size(th::TEXT_SMALL)
+                                .color(th::text_dim()),
+                        )
+                        .truncate(),
                     );
 
                     ui.add_space(5.0);
@@ -236,8 +243,10 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(4.0);
                     ui.spacing_mut().slider_width = 100.0;
+                    ui.visuals_mut().selection.bg_fill = th::accent();
                     let volume =
                         ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
+                    ui.visuals_mut().selection.bg_fill = th::bg_selected();
                     volume.widget_info(|| {
                         WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.volume"))
                     });
@@ -266,7 +275,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                         egui::Label::new(
                             RichText::new(fmt_time(snap.position))
                                 .monospace()
-                                .size(10.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         ),
                     );
@@ -274,7 +283,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                         StreamKind::Radio => {
                             ui.label(
                                 RichText::new(tr("transport.live"))
-                                    .size(10.5)
+                                    .size(th::TEXT_CAPTION)
                                     .color(th::accent()),
                             );
                         }
@@ -288,7 +297,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                                         tr("transport.unknown_length").to_string()
                                     },
                                 ))
-                                .size(10.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                             );
                         }
@@ -301,7 +310,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                         egui::Label::new(
                             RichText::new(fmt_time(app.seek_drag.unwrap_or(snap.position)))
                                 .monospace()
-                                .size(10.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         ),
                     );
@@ -326,7 +335,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                         egui::Label::new(
                             RichText::new(fmt_time(duration))
                                 .monospace()
-                                .size(10.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         ),
                     );
@@ -338,7 +347,7 @@ pub fn transport(app: &mut App, ui: &mut egui::Ui) {
                     RichText::new(
                         tr("transport.audio_unavailable").replace("{error}", &err.to_string()),
                     )
-                    .size(10.0)
+                    .size(th::TEXT_CAPTION)
                     .color(Color32::from_rgb(220, 110, 110)),
                 );
             }
@@ -378,304 +387,384 @@ pub fn now_playing(app: &mut App, ui: &mut egui::Ui) {
 
     egui::CentralPanel::default().show(ui, |ui| {
         let avail = ui.available_size();
-        if app.settings.visualizer.enabled {
-            let rect = ui.max_rect();
-            if let Some(texture) = app.render_visualizer(ui.ctx(), rect.size()) {
+        let visualizer_on = app.settings.visualizer.enabled;
+        // Wide windows get the visualizer and a solid metadata panel side by
+        // side; narrow ones keep the centred stack over a calm scrim.
+        let split = visualizer_on && avail.x >= 880.0;
+        let panel_width = (avail.x * 0.38).clamp(380.0, 460.0);
+
+        if visualizer_on {
+            let viz_width = if split {
+                (avail.x - panel_width).max(320.0)
+            } else {
+                avail.x
+            };
+            let viz_size = egui::vec2(viz_width, avail.y);
+            if let Some(texture) = app.render_visualizer(ui.ctx(), viz_size) {
+                let rect = egui::Rect::from_min_size(ui.max_rect().min, viz_size);
                 ui.painter().image(
                     texture,
                     rect,
                     egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                     Color32::WHITE,
                 );
+                let scrim = if split {
+                    30
+                } else if th::skin().is_light() {
+                    120
+                } else {
+                    205
+                };
                 ui.painter().rect_filled(
                     rect,
                     egui::CornerRadius::ZERO,
-                    Color32::from_black_alpha(if th::skin().is_light() { 90 } else { 150 }),
+                    Color32::from_black_alpha(scrim),
                 );
             }
         }
-        if let Some(stream) = app.stream.info.clone() {
+
+        let content_rect = if split {
+            let panel = egui::Rect::from_min_size(
+                egui::pos2(ui.max_rect().right() - panel_width, ui.max_rect().top()),
+                egui::vec2(panel_width, avail.y),
+            );
+            ui.painter().rect_filled(
+                panel,
+                egui::CornerRadius::ZERO,
+                th::alpha(th::bg_dark(), 246),
+            );
+            ui.painter().vline(
+                panel.left(),
+                panel.y_range(),
+                egui::Stroke::new(1.0, th::hairline()),
+            );
+            panel.shrink2(egui::vec2(26.0, 22.0))
+        } else {
+            ui.max_rect().shrink2(egui::vec2(18.0, 14.0))
+        };
+        let width = content_rect.width();
+        let height = content_rect.height();
+
+        let mut body = |ui: &mut egui::Ui, width: f32, height: f32| {
+            if let Some(stream) = app.stream.info.clone() {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(if split { 8.0 } else { 30.0 });
+                    let art = (height * 0.30).clamp(120.0, 280.0).min(width * 0.62);
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(art, art), egui::Sense::hover());
+                    let icon = match stream.kind {
+                        StreamKind::Radio => icons::BROADCAST,
+                        StreamKind::Podcast => icons::MICROPHONE,
+                    };
+                    ui.painter()
+                        .rect_filled(rect, th::corner(14), th::bg_row_alt());
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        icon.as_str(),
+                        egui::FontId::proportional(art * 0.34),
+                        th::accent(),
+                    );
+                    ui.add_space(20.0);
+                    ui.add(
+                        egui::Label::new(
+                            th::semibold(&stream.title, th::TEXT_DISPLAY).color(th::text()),
+                        )
+                        .truncate(),
+                    );
+                    ui.label(
+                        RichText::new(&stream.subtitle)
+                            .size(th::TEXT_TITLE)
+                            .color(th::text_dim()),
+                    );
+                    ui.label(
+                        RichText::new(match stream.kind {
+                            StreamKind::Radio => tr("radio.subtitle"),
+                            StreamKind::Podcast => tr("podcasts.subtitle"),
+                        })
+                        .size(th::TEXT_CAPTION)
+                        .color(th::text_dim()),
+                    );
+                    ui.add_space(22.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(230.0, 46.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            let playing = snap.status == musicwasp_core::PlayerStatus::Playing;
+                            transport_buttons(
+                                app,
+                                ui,
+                                playing,
+                                TransportSize {
+                                    side: 18.0,
+                                    main: 28.0,
+                                    stop: 16.0,
+                                },
+                            );
+                        },
+                    );
+                    ui.add_space(14.0);
+                    let position = fmt_time(snap.position);
+                    if stream.kind == StreamKind::Radio {
+                        ui.label(
+                            RichText::new(format!("{position}  ·  {}", tr("transport.live")))
+                                .size(th::TEXT_SMALL)
+                                .color(th::accent()),
+                        );
+                    } else if stream.duration_secs > 0 {
+                        ui.label(
+                            RichText::new(format!(
+                                "{position} / {}",
+                                fmt_time(stream.duration_secs as f64)
+                            ))
+                            .size(th::TEXT_SMALL)
+                            .color(th::text_dim()),
+                        );
+                    } else {
+                        ui.label(
+                            RichText::new(position)
+                                .size(th::TEXT_SMALL)
+                                .color(th::text_dim()),
+                        );
+                    }
+                });
+                return;
+            }
+            let art = if split {
+                (height * 0.30).clamp(150.0, 300.0).min(width * 0.72)
+            } else {
+                (height * 0.40).clamp(140.0, 330.0).min(width * 0.42)
+            };
+
             ui.vertical_centered(|ui| {
-                ui.add_space(30.0);
-                let art = (avail.y * 0.34).clamp(150.0, 280.0);
+                ui.add_space(if split { 6.0 } else { 10.0 });
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(art, art), egui::Sense::hover());
-                let icon = match stream.kind {
-                    StreamKind::Radio => icons::BROADCAST,
-                    StreamKind::Podcast => icons::MICROPHONE,
-                };
-                ui.painter()
-                    .rect_filled(rect, th::corner(14), th::bg_row_alt());
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    icon.as_str(),
-                    egui::FontId::proportional(art * 0.34),
-                    th::accent(),
-                );
+                if !th::is_square() {
+                    ui.painter().rect_filled(
+                        rect.translate(egui::vec2(0.0, 6.0)).expand(2.0),
+                        th::corner(14),
+                        Color32::from_black_alpha(if th::skin().is_light() { 24 } else { 80 }),
+                    );
+                }
+                match &app.art {
+                    Some((_, tex)) => {
+                        egui::Image::new((tex.id(), egui::vec2(art, art)))
+                            .corner_radius(th::corner(12))
+                            .paint_at(ui, rect);
+                    }
+                    None => {
+                        ui.painter()
+                            .rect_filled(rect, th::corner(12), th::bg_row_alt());
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            icons::MUSIC_NOTES.as_str(),
+                            egui::FontId::proportional((art * 0.30).clamp(32.0, 96.0)),
+                            th::text_dim(),
+                        );
+                    }
+                }
+                if !th::is_square() {
+                    ui.painter().rect_stroke(
+                        rect,
+                        th::corner(12),
+                        egui::Stroke::new(1.0_f32, th::hairline()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+
                 ui.add_space(20.0);
+                let title = current_track
+                    .as_ref()
+                    .map(|t| t.title.clone())
+                    .unwrap_or_else(|| tr("transport.nothing_playing").to_string());
                 ui.add(
-                    egui::Label::new(th::semibold(&stream.title, 25.0).color(th::text()))
+                    egui::Label::new(th::semibold(title, th::TEXT_DISPLAY).color(th::text()))
                         .truncate(),
                 );
-                ui.label(
-                    RichText::new(&stream.subtitle)
-                        .size(14.0)
-                        .color(th::text_dim()),
+
+                ui.add_space(2.0);
+                let subtitle = current_track
+                    .as_ref()
+                    .map(artist_album_line)
+                    .unwrap_or_else(|| tr("transport.pick_track").to_string());
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(subtitle)
+                            .size(th::TEXT_TITLE)
+                            .color(th::text_dim()),
+                    )
+                    .truncate(),
                 );
-                ui.label(
-                    RichText::new(match stream.kind {
-                        StreamKind::Radio => tr("radio.subtitle"),
-                        StreamKind::Podcast => tr("podcasts.subtitle"),
-                    })
-                    .size(10.5)
-                    .color(th::text_dim()),
-                );
-                ui.add_space(22.0);
-                ui.allocate_ui_with_layout(
-                    egui::vec2(230.0, 46.0),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        let playing = snap.status == musicwasp_core::PlayerStatus::Playing;
+                if let Some(track) = &current_track {
+                    let mut rating = None;
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(5.0 * 20.0, 24.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            rating = rating_stars(ui, track.rating, true, 18.0);
+                        },
+                    );
+                    if let Some(rating) = rating {
+                        app.set_track_rating(track.id, rating);
+                    }
+                }
+
+                ui.add_space(16.0);
+                let seek_row = if split {
+                    width.min(360.0)
+                } else {
+                    (width * 0.46).clamp(360.0, 620.0)
+                };
+                ui.allocate_ui(egui::vec2(seek_row, 24.0), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(fmt_time(app.seek_drag.unwrap_or(snap.position)))
+                                .monospace()
+                                .size(th::TEXT_SMALL)
+                                .color(th::text_dim()),
+                        );
+                        let mut pos = app.seek_drag.unwrap_or(snap.position);
+                        let max = duration.max(1.0);
+                        ui.spacing_mut().slider_width = (seek_row - 100.0).max(160.0);
+                        let resp = seek_slider(ui, &mut pos, max);
+                        resp.widget_info(|| {
+                            WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
+                        });
+                        if resp.dragged() {
+                            app.seek_drag = Some(pos);
+                        }
+                        if resp.drag_stopped() {
+                            if let Some(p) = &app.player {
+                                p.seek(pos);
+                            }
+                            app.seek_drag = None;
+                        }
+                        ui.label(
+                            RichText::new(fmt_time(duration))
+                                .monospace()
+                                .size(th::TEXT_SMALL)
+                                .color(th::text_dim()),
+                        );
+                    });
+                });
+
+                ui.add_space(12.0);
+                ui.allocate_ui(egui::vec2(330.0, 34.0), |ui| {
+                    ui.horizontal(|ui| {
                         transport_buttons(
                             app,
                             ui,
                             playing,
                             TransportSize {
-                                side: 18.0,
-                                main: 28.0,
-                                stop: 16.0,
+                                side: 22.0,
+                                main: 30.0,
+                                stop: 18.0,
                             },
                         );
-                    },
-                );
-                ui.add_space(14.0);
-                let position = fmt_time(snap.position);
-                if stream.kind == StreamKind::Radio {
-                    ui.label(
-                        RichText::new(format!("{position}  ·  {}", tr("transport.live")))
-                            .size(11.5)
-                            .color(th::accent()),
-                    );
-                } else if stream.duration_secs > 0 {
-                    ui.label(
-                        RichText::new(format!(
-                            "{position} / {}",
-                            fmt_time(stream.duration_secs as f64)
-                        ))
-                        .size(11.5)
-                        .color(th::text_dim()),
-                    );
-                } else {
-                    ui.label(RichText::new(position).size(11.5).color(th::text_dim()));
-                }
-            });
-            return;
-        }
-        let art = (avail.y * 0.40).clamp(140.0, 330.0).min(avail.x * 0.42);
-
-        ui.vertical_centered(|ui| {
-            ui.visuals_mut().selection.bg_fill = th::accent();
-            ui.add_space(10.0);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(art, art), egui::Sense::hover());
-            if !th::is_square() {
-                ui.painter().rect_filled(
-                    rect.translate(egui::vec2(0.0, 6.0)).expand(2.0),
-                    th::corner(14),
-                    Color32::from_black_alpha(if th::skin().is_light() { 24 } else { 80 }),
-                );
-            }
-            match &app.art {
-                Some((_, tex)) => {
-                    egui::Image::new((tex.id(), egui::vec2(art, art)))
-                        .corner_radius(th::corner(12))
-                        .paint_at(ui, rect);
-                }
-                None => {
-                    ui.painter()
-                        .rect_filled(rect, th::corner(12), th::bg_row_alt());
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        icons::MUSIC_NOTES.as_str(),
-                        egui::FontId::proportional((art * 0.30).clamp(32.0, 96.0)),
-                        th::text_dim(),
-                    );
-                }
-            }
-            if !th::is_square() {
-                ui.painter().rect_stroke(
-                    rect,
-                    th::corner(12),
-                    egui::Stroke::new(1.0_f32, th::hairline()),
-                    egui::StrokeKind::Inside,
-                );
-            }
-
-            ui.add_space(20.0);
-            let title = current_track
-                .as_ref()
-                .map(|t| t.title.clone())
-                .unwrap_or_else(|| tr("transport.nothing_playing").to_string());
-            ui.label(th::semibold(title, 27.0).color(th::text()));
-
-            ui.add_space(2.0);
-            let subtitle = current_track
-                .as_ref()
-                .map(artist_album_line)
-                .unwrap_or_else(|| tr("transport.pick_track").to_string());
-            ui.label(RichText::new(subtitle).size(14.0).color(th::text_dim()));
-            if let Some(track) = &current_track {
-                let mut rating = None;
-                ui.allocate_ui_with_layout(
-                    egui::vec2(5.0 * 20.0, 24.0),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        rating = rating_stars(ui, track.rating, true, 18.0);
-                    },
-                );
-                if let Some(rating) = rating {
-                    app.set_track_rating(track.id, rating);
-                }
-            }
-
-            ui.add_space(16.0);
-            let seek_row = (avail.x * 0.46).clamp(360.0, 620.0);
-            ui.allocate_ui(egui::vec2(seek_row, 24.0), |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(fmt_time(app.seek_drag.unwrap_or(snap.position)))
-                            .monospace()
-                            .size(11.0)
-                            .color(th::text_dim()),
-                    );
-                    let mut pos = app.seek_drag.unwrap_or(snap.position);
-                    let max = duration.max(1.0);
-                    ui.spacing_mut().slider_width = (seek_row - 100.0).max(160.0);
-                    let resp = seek_slider(ui, &mut pos, max);
-                    resp.widget_info(|| {
-                        WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.seek"))
-                    });
-                    if resp.dragged() {
-                        app.seek_drag = Some(pos);
-                    }
-                    if resp.drag_stopped() {
-                        if let Some(p) = &app.player {
-                            p.seek(pos);
-                        }
-                        app.seek_drag = None;
-                    }
-                    ui.label(
-                        RichText::new(fmt_time(duration))
-                            .monospace()
-                            .size(11.0)
-                            .color(th::text_dim()),
-                    );
-                });
-            });
-
-            ui.add_space(12.0);
-            ui.allocate_ui(egui::vec2(330.0, 34.0), |ui| {
-                ui.horizontal(|ui| {
-                    transport_buttons(
-                        app,
-                        ui,
-                        playing,
-                        TransportSize {
-                            side: 22.0,
-                            main: 30.0,
-                            stop: 18.0,
-                        },
-                    );
-                    let repeat_icon = if app.repeat == crate::app::RepeatMode::One {
-                        icons::REPEAT_ONCE
-                    } else {
-                        icons::REPEAT
-                    };
-                    if icons::toggle(
-                        ui,
-                        app.repeat != crate::app::RepeatMode::Off,
-                        repeat_icon,
-                        app.repeat.label(),
-                    )
-                    .clicked()
-                    {
-                        app.repeat = app.repeat.next();
-                    }
-                    if icons::toggle(ui, app.shuffle, icons::SHUFFLE, tr("transport.shuffle"))
-                        .clicked()
-                    {
-                        app.shuffle = !app.shuffle;
-                    }
-                    if icons::toggle(
-                        ui,
-                        app.settings.lyrics_open,
-                        icons::QUOTES,
-                        tr("lyrics.toggle"),
-                    )
-                    .clicked()
-                    {
-                        app.toggle_lyrics();
-                    }
-                });
-            });
-
-            ui.add_space(12.0);
-            ui.allocate_ui(egui::vec2(160.0, 24.0), |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(icons::text(icons::SPEAKER_HIGH, 14.0).color(th::text_dim()));
-                    ui.spacing_mut().slider_width = 120.0;
-                    let volume =
-                        ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
-                    volume.widget_info(|| {
-                        WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.volume"))
-                    });
-                });
-            });
-
-            ui.add_space(26.0);
-            match &upcoming {
-                Some(track) => {
-                    ui.label(
-                        th::semibold(
-                            format!("{} {}", icons::QUEUE.as_str(), tr("queue.up_next_upper")),
-                            10.0,
+                        let repeat_icon = if app.repeat == crate::app::RepeatMode::One {
+                            icons::REPEAT_ONCE
+                        } else {
+                            icons::REPEAT
+                        };
+                        if icons::toggle(
+                            ui,
+                            app.repeat != crate::app::RepeatMode::Off,
+                            repeat_icon,
+                            app.repeat.label(),
                         )
-                        .color(th::text_dim()),
-                    );
-                    ui.add_space(4.0);
-                    ui.label(th::semibold(&track.title, 15.0).color(th::text()));
-                    ui.label(
-                        RichText::new(format!("{}  ·  {}", track.artist, track.album))
-                            .size(11.0)
+                        .clicked()
+                        {
+                            app.repeat = app.repeat.next();
+                        }
+                        if icons::toggle(ui, app.shuffle, icons::SHUFFLE, tr("transport.shuffle"))
+                            .clicked()
+                        {
+                            app.shuffle = !app.shuffle;
+                        }
+                        if icons::toggle(
+                            ui,
+                            app.settings.lyrics_open,
+                            icons::QUOTES,
+                            tr("lyrics.toggle"),
+                        )
+                        .clicked()
+                        {
+                            app.toggle_lyrics();
+                        }
+                    });
+                });
+
+                ui.add_space(12.0);
+                ui.allocate_ui(egui::vec2(160.0, 24.0), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(icons::text(icons::SPEAKER_HIGH, 14.0).color(th::text_dim()));
+                        ui.spacing_mut().slider_width = 120.0;
+                        ui.visuals_mut().selection.bg_fill = th::accent();
+                        let volume =
+                            ui.add(egui::Slider::new(&mut app.volume, 0.0..=1.0).show_value(false));
+                        ui.visuals_mut().selection.bg_fill = th::bg_selected();
+                        volume.widget_info(|| {
+                            WidgetInfo::labeled(WidgetType::Slider, true, tr("transport.volume"))
+                        });
+                    });
+                });
+
+                ui.add_space(if split { 18.0 } else { 26.0 });
+                match &upcoming {
+                    Some(track) => {
+                        ui.label(
+                            th::semibold(
+                                format!("{} {}", icons::QUEUE.as_str(), tr("queue.up_next_upper")),
+                                th::TEXT_CAPTION,
+                            )
                             .color(th::text_dim()),
-                    );
+                        );
+                        ui.add_space(4.0);
+                        ui.label(th::semibold(&track.title, th::TEXT_TITLE).color(th::text()));
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(format!("{}  ·  {}", track.artist, track.album))
+                                    .size(th::TEXT_SMALL)
+                                    .color(th::text_dim()),
+                            )
+                            .truncate(),
+                        );
+                    }
+                    None => {
+                        ui.label(
+                            RichText::new(format!(
+                                "{} {}",
+                                icons::CHECK.as_str(),
+                                tr("transport.end_of_queue")
+                            ))
+                            .size(th::TEXT_SMALL)
+                            .color(th::text_dim()),
+                        );
+                    }
                 }
-                None => {
+
+                if let Some(err) = &app.audio_error {
+                    ui.add_space(8.0);
                     ui.label(
                         RichText::new(format!(
                             "{} {}",
-                            icons::CHECK.as_str(),
-                            tr("transport.end_of_queue")
+                            icons::WARNING.as_str(),
+                            tr("transport.audio_unavailable").replace("{error}", &err.to_string())
                         ))
-                        .size(11.0)
-                        .color(th::text_dim()),
+                        .size(th::TEXT_CAPTION)
+                        .color(Color32::from_rgb(220, 110, 110)),
                     );
                 }
-            }
+            });
+        };
 
-            if let Some(err) = &app.audio_error {
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(format!(
-                        "{} {}",
-                        icons::WARNING.as_str(),
-                        tr("transport.audio_unavailable").replace("{error}", &err.to_string())
-                    ))
-                    .size(10.0)
-                    .color(Color32::from_rgb(220, 110, 110)),
-                );
-            }
-        });
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(content_rect)
+                .layout(egui::Layout::top_down(egui::Align::Center)),
+            |ui| body(ui, width, height),
+        );
     });
 
     if let Some(p) = &app.player {

@@ -2,11 +2,13 @@
 
 use crate::app::App;
 use crate::theme as th;
-use egui::RichText;
+use egui::{Color32, RichText};
 use std::path::Path;
 
 fn hint(text: impl Into<String>) -> RichText {
-    RichText::new(text).size(10.5).color(th::text_dim())
+    RichText::new(text)
+        .size(th::TEXT_CAPTION)
+        .color(th::text_dim())
 }
 
 fn size(bytes: u64) -> String {
@@ -41,7 +43,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             ));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Backups").size(10.0).strong());
+                ui.label(RichText::new("Backups").size(th::TEXT_CAPTION).strong());
                 if ui.small_button("Refresh").clicked() {
                     refresh = true;
                 }
@@ -73,7 +75,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             }
 
             ui.add_space(6.0);
-            ui.label(RichText::new("Backup file").size(10.0).strong());
+            ui.label(RichText::new("Backup file").size(th::TEXT_CAPTION).strong());
             ui.add(
                 egui::TextEdit::singleline(&mut draft.path)
                     .desired_width(500.0)
@@ -84,9 +86,9 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             if draft.confirm {
                 ui.label(
                     RichText::new("Replace the current library with this backup?")
-                        .size(11.5)
+                        .size(th::TEXT_SMALL)
                         .strong()
-                        .color(th::accent()),
+                        .color(Color32::from_rgb(230, 120, 120)),
                 );
                 let (restore_clicked, cancel_clicked) =
                     crate::dialog::save_cancel(ui, "Restore library", true);
@@ -103,7 +105,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
             }
 
             if let Some(status) = &draft.status {
-                ui.label(RichText::new(status).size(10.5).color(th::accent()));
+                ui.label(RichText::new(status).size(th::TEXT_CAPTION).color(th::text_dim()));
             }
         });
 

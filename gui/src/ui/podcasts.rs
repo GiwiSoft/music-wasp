@@ -37,14 +37,14 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
         if let Some(status) = &app.podcast.status {
             ui.label(
                 RichText::new(status.as_str())
-                    .size(10.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
         }
         if app.podcast.loading {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(RichText::new(tr("podcasts.fetching_feed")).size(11.0));
+                ui.label(RichText::new(tr("podcasts.fetching_feed")).size(th::TEXT_SMALL));
             });
         }
         ui.separator();
@@ -54,7 +54,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                 ui.centered_and_justified(|ui| {
                     ui.label(
                         RichText::new(tr("podcasts.empty"))
-                            .size(12.0)
+                            .size(th::TEXT_BODY)
                             .color(th::text_dim()),
                     );
                 });
@@ -79,9 +79,11 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                             let width = (ui.available_width() - 36.0).max(80.0);
                             let response = ui.add_sized(
                                 [width, 28.0],
-                                egui::Label::new(RichText::new(label).size(12.5).color(th::text()))
-                                    .sense(egui::Sense::click())
-                                    .truncate(),
+                                egui::Label::new(
+                                    RichText::new(label).size(th::TEXT_BODY).color(th::text()),
+                                )
+                                .sense(egui::Sense::click())
+                                .truncate(),
                             );
                             if response
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -97,7 +99,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                         });
                         ui.label(
                             RichText::new(feed.url.as_str())
-                                .size(9.5)
+                                .size(th::TEXT_CAPTION)
                                 .color(th::text_dim()),
                         );
                         ui.add_space(3.0);
@@ -123,13 +125,13 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                     app.podcast.selected_feed = None;
                     app.podcast.episodes.clear();
                 }
-                ui.label(th::semibold(title, 15.0).color(th::text()));
+                ui.label(th::semibold(title, th::TEXT_TITLE).color(th::text()));
                 ui.label(
                     RichText::new(
                         tr("podcasts.episode_count")
                             .replace("{count}", &app.podcast.episodes.len().to_string()),
                     )
-                    .size(10.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
                 );
             });
@@ -137,7 +139,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
             if app.podcast.episodes.is_empty() {
                 ui.label(
                     RichText::new(tr("podcasts.no_episodes"))
-                        .size(11.0)
+                        .size(th::TEXT_SMALL)
                         .color(th::text_dim()),
                 );
                 return;
@@ -178,7 +180,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                                         ui.vertical(|ui| {
                                             ui.add(
                                                 egui::Label::new(
-                                                    th::semibold(&episode.title, 12.5)
+                                                    th::semibold(&episode.title, th::TEXT_BODY)
                                                         .color(th::text()),
                                                 )
                                                 .truncate(),
@@ -203,7 +205,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                                                                 .collect()
                                                         }
                                                     ))
-                                                    .size(10.0)
+                                                    .size(th::TEXT_CAPTION)
                                                     .color(th::text_dim()),
                                                 )
                                                 .truncate(),
@@ -224,7 +226,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                                                             fmt_time(episode.position_secs as f64),
                                                             fmt_time(episode.duration_secs as f64)
                                                         ))
-                                                        .size(10.0)
+                                                        .size(th::TEXT_CAPTION)
                                                         .color(th::text_dim()),
                                                     );
                                                 } else if episode.duration_secs > 0 {
@@ -232,7 +234,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                                                         RichText::new(fmt_time(
                                                             episode.duration_secs as f64,
                                                         ))
-                                                        .size(10.0)
+                                                        .size(th::TEXT_CAPTION)
                                                         .color(th::text_dim()),
                                                     );
                                                 }
@@ -269,14 +271,14 @@ fn podcast_dialog(app: &mut App, ctx: &egui::Context) {
         .default_width(480.0)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
-            ui.label(RichText::new(tr("podcasts.feed_url")).size(10.5));
+            ui.label(RichText::new(tr("podcasts.feed_url")).size(th::TEXT_CAPTION));
             ui.add_sized(
                 [460.0, 22.0],
                 egui::TextEdit::singleline(&mut url).hint_text("https://example.com/feed.xml"),
             );
             ui.label(
                 RichText::new(tr("podcasts.feed_storage_hint"))
-                    .size(9.5)
+                    .size(th::TEXT_CAPTION)
                     .color(th::text_dim()),
             );
             ui.add_space(8.0);
