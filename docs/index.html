@@ -6,7 +6,7 @@
 <title>MusicWasp - Native Music Player, Library &amp; Tag Editor for Linux, Windows and macOS</title>
 <meta name="description" content="MusicWasp is a fast, native music library, player, tag editor and MilkDrop visualizer for Linux, Windows and macOS. Scan, search, play, tag, manage playlists, podcasts, radio and synchronized lyrics locally.">
 <meta name="author" content="Giwi">
-<meta name="theme-color" content="#161a16">
+<meta name="theme-color" content="#121412">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 <meta name="application-name" content="MusicWasp">
 <meta name="apple-mobile-web-app-title" content="MusicWasp">
@@ -140,7 +140,7 @@
 
 <header class="site-header">
   <a class="brand" href="#top" aria-label="MusicWasp home">
-    <img src="logo.png" alt="" width="34" height="34">
+    <img src="logo-mark.png" alt="" width="28" height="28">
     <span>MusicWasp</span>
   </a>
   <nav class="site-nav" aria-label="Main navigation">
@@ -158,12 +158,11 @@
 <main id="main">
   <section class="hero" id="top">
     <div class="hero-copy">
-      <p class="eyebrow">Linux · Windows · macOS · GPL-3.0</p>
-      <h1>Your music.<br><span class="accent">Native and fast.</span></h1>
+      <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span>~/Music · local library</p>
+      <h1>The native music library <br>for your files</h1>
       <p class="lead">
-        A library, player and tag editor in one native app for Linux, Windows and macOS. Scan your
-        folders, then browse, search, play, follow synchronized lyrics, fix tags, build playlists,
-        subscribe to podcasts, stream radio and run MilkDrop visuals.
+        A player, tag editor and organizer for Linux, Windows and macOS. Your music stays local,
+        organized and yours.
       </p>
       <div class="actions">
         <div class="download" data-download>
@@ -187,11 +186,11 @@
               <span><i class="bi bi-windows" aria-hidden="true"></i> Windows</span>
               <span class="download-meta">x86_64 · .zip</span>
             </a>
-            <a role="menuitem" data-download-os="macos-arm64">
+            <a role="menuitem" data-download-os="macos-arm64" href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-macos-arm64.tar.gz">
               <span><i class="bi bi-apple" aria-hidden="true"></i> macOS</span>
               <span class="download-meta">Apple Silicon · .tar.gz</span>
             </a>
-            <a role="menuitem" data-download-os="macos-x86_64">
+            <a role="menuitem" data-download-os="macos-x86_64" href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-macos-x86_64.tar.gz">
               <span><i class="bi bi-apple" aria-hidden="true"></i> macOS</span>
               <span class="download-meta">Intel · .tar.gz</span>
             </a>
@@ -199,66 +198,58 @@
         </div>
         <a class="button" href="https://github.com/GiwiSoft/music-wasp/wiki">Documentation</a>
       </div>
-      <ul class="badges" aria-label="Highlights">
-        <li>18 audio formats</li>
-        <li>Background indexing</li>
-        <li>Auto-tag + undo</li>
-        <li>Synchronized .lrc lyrics</li>
-        <li>Podcasts &amp; radio</li>
-        <li>MilkDrop visualizer</li>
-      </ul>
+      <p class="hero-meta">18 audio formats · FLAC, MP3, OGG and more · no account</p>
     </div>
-    <div class="hero-art">
-      <img src="logo.png" alt="MusicWasp logo" width="512" height="512">
-    </div>
-  </section>
-
-  <section class="showcase" aria-label="MusicWasp screenshot">
-    <div class="window-frame">
-      <div class="window-bar"><span></span><span></span><span></span><b>MusicWasp</b></div>
-      <img src="screenshot.png" alt="MusicWasp music library with album art, playback queue and MilkDrop visualizer" width="1280" height="800" fetchpriority="high" decoding="async">
+    <div class="hero-visual">
+      <div class="window-frame">
+        <div class="window-bar"><b>MusicWasp</b><span class="window-note">Library</span></div>
+        <picture>
+          <source media="(max-width: 720px)" srcset="album-grid.png">
+          <img src="screenshot.png" alt="MusicWasp music library with album art, playback queue and MilkDrop visualizer" width="1280" height="800" fetchpriority="high" decoding="async">
+        </picture>
+      </div>
     </div>
   </section>
 
   <section id="features" class="section">
     <div class="section-head">
-      <p class="kicker">Everything in one window</p>
+      <p class="kicker"><span class="status-dot" aria-hidden="true"></span>One window</p>
       <h2>Built for a local music library</h2>
     </div>
-    <div class="grid cards">
-      <article class="card">
+    <div class="feature-list">
+      <article class="feature-row">
         <h3>Fast local library</h3>
         <p>Incremental background scans, SQLite indexing, backup and restore, advanced field search, saved searches and persistent track columns.</p>
       </article>
-      <article class="card">
+      <article class="feature-row">
         <h3>Playback that fits</h3>
         <p>Gapless playback, crossfade, ReplayGain, 10-band EQ, queue management and selectable output.</p>
       </article>
-      <article class="card">
+      <article class="feature-row">
         <h3>MilkDrop visualizer</h3>
         <p>26 bundled MilkDrop presets, including Ryan Geiss classics, rendered on wgpu. Pick one preset or shuffle, in a library panel, behind Now Playing or fullscreen.</p>
       </article>
-      <article class="card">
+      <article class="feature-row">
         <h3>Synchronized lyrics</h3>
         <p>Show sidecar .lrc lyrics with the active line highlighted and auto-scrolled. Click a line to seek, or fall back to embedded tag lyrics and plain text.</p>
       </article>
-      <article class="card">
+      <article class="feature-row">
         <h3>Podcasts and radio</h3>
         <p>Subscribe to RSS/Atom podcast feeds with per-episode progress, or add internet radio stations and stream them directly in the same player.</p>
       </article>
-      <article class="card">
+      <article class="feature-row">
         <h3>Tags and covers</h3>
         <p>Edit properties in place, set per-track ReplayGain, batch-fix metadata, auto-tag from MusicBrainz or an AcoustID fingerprint, organize files and manage artwork with undo.</p>
       </article>
-      <article class="card">
+      <article class="feature-row">
         <h3>Playlists and history</h3>
         <p>Nested playlist folders, smart rules, M3U import/export, ratings, play counts and listening filters.</p>
       </article>
-      <article class="card">
+      <article class="feature-row">
         <h3>Make it yours</h3>
         <p>English, French, German and Spanish; fifteen skins, custom JSON themes, background images and a live colour editor; compact and album-art layouts.</p>
       </article>
-      <article class="card">
+      <article class="feature-row">
         <h3>Desktop native</h3>
         <p>Runs on Linux, Windows and macOS. Mini player, Linux MPRIS and tray controls, native Wayland drag-and-drop, session restore and ListenBrainz scrobbling.</p>
       </article>
@@ -267,7 +258,7 @@
 
   <section id="screenshots" class="section">
     <div class="section-head">
-      <p class="kicker">Look around</p>
+      <p class="kicker"><span class="status-dot" aria-hidden="true"></span>Product views</p>
       <h2>Screenshots</h2>
       <p class="section-lead">Click any thumbnail to open it full size. Use the arrow keys to browse.</p>
     </div>
@@ -349,13 +340,14 @@
 
   <section id="install" class="section install">
     <div class="section-head">
-      <p class="kicker">Get started</p>
+      <p class="kicker"><span class="status-dot" aria-hidden="true"></span>Install</p>
       <h2>Build it or download a release</h2>
     </div>
     <div class="grid split">
       <article class="panel">
         <h3>Linux</h3>
-        <pre><code><span class="prompt">$</span> sudo apt install libasound2-dev pkg-config
+        <pre><code><span class="prompt">$</span> sudo apt install libasound2-dev \
+  pkg-config
 <span class="prompt">$</span> cargo build --release
 <span class="prompt">$</span> ./scripts/install-desktop.sh</code></pre>
         <p>Release archives include the binaries, desktop entry, icons, sample skins and translation catalogues.</p>
@@ -377,7 +369,7 @@
         <h3>macOS</h3>
         <pre><code><span class="prompt">$</span> cargo build --release</code></pre>
         <p>Apple Silicon and Intel builds. Unsigned first launches may need Finder's <b>Open</b> context menu.</p>
-        <a class="button small" data-download-os="macos-arm64" aria-disabled="true">
+        <a class="button small" data-download-os="macos-arm64" href="https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-macos-arm64.tar.gz">
           <i class="bi bi-apple" aria-hidden="true"></i> Download for macOS
         </a>
       </article>
@@ -386,7 +378,7 @@
 
   <section id="faq" class="section">
     <div class="section-head">
-      <p class="kicker">Common questions</p>
+      <p class="kicker"><span class="status-dot" aria-hidden="true"></span>Questions</p>
       <h2>MusicWasp FAQ</h2>
     </div>
     <div class="faq">
@@ -420,7 +412,7 @@
 
 <footer class="site-footer">
   <div class="footer-brand">
-    <img src="logo.png" alt="" width="30" height="30">
+    <img src="logo-mark.png" alt="" width="24" height="24">
     <span>MusicWasp <b>v0.7.0</b></span>
   </div>
   <p>Copyright © 2026 <a href="https://giwi.fr">giwi.fr</a>. Released under the GNU GPL v3.</p>
@@ -513,7 +505,9 @@
   var api = 'https://api.github.com/repos/GiwiSoft/music-wasp/releases/latest';
   var fallback = {
     linux: 'https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-linux-x86_64.tar.gz',
-    windows: 'https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-windows-x86_64.zip'
+    windows: 'https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-windows-x86_64.zip',
+    'macos-arm64': 'https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-macos-arm64.tar.gz',
+    'macos-x86_64': 'https://github.com/GiwiSoft/music-wasp/releases/download/v0.7.0/musicwasp-v0.7.0-macos-x86_64.tar.gz'
   };
   var assets = {};
   var current = 'linux';
