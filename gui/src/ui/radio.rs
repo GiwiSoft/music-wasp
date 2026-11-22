@@ -70,86 +70,96 @@ pub fn radio_view(app: &mut App, ui: &mut egui::Ui) {
                 .id_salt("radio_stations_grid")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = egui::vec2(16.0, 16.0);
-                        for index in 0..app.radio.stations.len() {
-                            let station = &app.radio.stations[index];
-                            let texture = app.remote_covers.texture(
-                                &ctx,
-                                &station.image_url,
-                                musicwasp_core::netguard::Access::AnyHost,
-                            );
-                            let playing = app.stream.info.as_ref().is_some_and(|stream| {
-                                stream.kind == StreamKind::Radio && stream.url == station.url
-                            });
-                            let id = station.id;
-                            let name = station.name.clone();
-                            let genre = station.genre.clone();
-                            let initials = initials(&name);
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(168.0, 220.0),
-                                egui::Layout::top_down(egui::Align::Min),
-                                |ui| {
-                                    let cover = cover_art(
-                                        ui,
-                                        texture.as_ref(),
-                                        168.0,
-                                        &initials,
-                                        icons::BROADCAST,
-                                    );
-                                    if cover.clicked() {
-                                        station_action = Some(StationAction::Play(index));
-                                    }
-                                    let cover = cover.on_hover_text(tr("radio.play_station"));
-                                    cover.widget_info(|| {
-                                        WidgetInfo::labeled(WidgetType::Button, true, &name)
-                                    });
-                                    if playing {
-                                        ui.painter().circle_filled(
-                                            cover.rect.right_bottom() - egui::vec2(14.0, 14.0),
-                                            4.0,
-                                            th::accent(),
+                    let gap = 16.0;
+                    let tile_size = 168.0;
+                    let cols = (((ui.available_width() + gap) / (tile_size + gap)).floor()
+                        as usize)
+                        .max(1);
+                    let len = app.radio.stations.len();
+                    for start in (0..len).step_by(cols) {
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = gap;
+                            for index in start..(start + cols).min(len) {
+                                let station = &app.radio.stations[index];
+                                let texture = app.remote_covers.texture(
+                                    &ctx,
+                                    &station.image_url,
+                                    musicwasp_core::netguard::Access::AnyHost,
+                                );
+                                let playing = app.stream.info.as_ref().is_some_and(|stream| {
+                                    stream.kind == StreamKind::Radio && stream.url == station.url
+                                });
+                                let id = station.id;
+                                let name = station.name.clone();
+                                let genre = station.genre.clone();
+                                let initials = initials(&name);
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(168.0, 220.0),
+                                    egui::Layout::top_down(egui::Align::Min),
+                                    |ui| {
+                                        let cover = cover_art(
+                                            ui,
+                                            texture.as_ref(),
+                                            168.0,
+                                            &initials,
+                                            icons::BROADCAST,
                                         );
-                                    }
-                                    cover.context_menu(|ui| {
-                                        if ui.button(tr("radio.delete_station")).clicked() {
-                                            station_action = Some(StationAction::Delete(id));
-                                            ui.close();
+                                        if cover.clicked() {
+                                            station_action = Some(StationAction::Play(index));
                                         }
-                                    });
-                                    ui.add_space(6.0);
-                                    ui.add(
-                                        egui::Label::new(
-                                            th::semibold(&name, th::TEXT_BODY).color(th::text()),
-                                        )
-                                        .truncate(),
-                                    );
-                                    ui.horizontal(|ui| {
-                                        ui.label(
-                                            RichText::new(genre)
-                                                .size(th::TEXT_CAPTION)
-                                                .color(th::text_dim()),
+                                        let cover = cover.on_hover_text(tr("radio.play_station"));
+                                        cover.widget_info(|| {
+                                            WidgetInfo::labeled(WidgetType::Button, true, &name)
+                                        });
+                                        if playing {
+                                            ui.painter().circle_filled(
+                                                cover.rect.right_bottom() - egui::vec2(14.0, 14.0),
+                                                4.0,
+                                                th::accent(),
+                                            );
+                                        }
+                                        cover.context_menu(|ui| {
+                                            if ui.button(tr("radio.delete_station")).clicked() {
+                                                station_action = Some(StationAction::Delete(id));
+                                                ui.close();
+                                            }
+                                        });
+                                        ui.add_space(6.0);
+                                        ui.add(
+                                            egui::Label::new(
+                                                th::semibold(&name, th::TEXT_BODY)
+                                                    .color(th::text()),
+                                            )
+                                            .truncate(),
                                         );
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                if icons::compact(
-                                                    ui,
-                                                    icons::TRASH,
-                                                    tr("radio.delete_station"),
-                                                )
-                                                .clicked()
-                                                {
-                                                    station_action =
-                                                        Some(StationAction::Delete(id));
-                                                }
-                                            },
-                                        );
-                                    });
-                                },
-                            );
-                        }
-                    });
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                RichText::new(genre)
+                                                    .size(th::TEXT_CAPTION)
+                                                    .color(th::text_dim()),
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if icons::compact(
+                                                        ui,
+                                                        icons::TRASH,
+                                                        tr("radio.delete_station"),
+                                                    )
+                                                    .clicked()
+                                                    {
+                                                        station_action =
+                                                            Some(StationAction::Delete(id));
+                                                    }
+                                                },
+                                            );
+                                        });
+                                    },
+                                );
+                            }
+                        });
+                        ui.add_space(gap);
+                    }
                 });
         } else {
             egui::ScrollArea::vertical()

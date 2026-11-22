@@ -91,78 +91,95 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                     .id_salt("podcast_feeds_grid")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing = egui::vec2(16.0, 16.0);
-                            for index in 0..app.podcast.feeds.len() {
-                                let feed = &app.podcast.feeds[index];
-                                let texture =
-                                    app.remote_covers.texture(&ctx, &feed.image_url, access);
-                                let id = feed.id;
-                                let title = feed.title.clone();
-                                let summary = format!(
-                                    "{} episodes · {} unplayed",
-                                    feed.episode_count, feed.unplayed_count
-                                );
-                                let initials = initials(&title);
-                                ui.allocate_ui_with_layout(
-                                    egui::vec2(168.0, 220.0),
-                                    egui::Layout::top_down(egui::Align::Min),
-                                    |ui| {
-                                        let cover = cover_art(
-                                            ui,
-                                            texture.as_ref(),
-                                            168.0,
-                                            &initials,
-                                            icons::MICROPHONE,
-                                        );
-                                        if cover.clicked() {
-                                            feed_action = Some(FeedAction::Select(id));
-                                        }
-                                        cover.widget_info(|| {
-                                            WidgetInfo::labeled(WidgetType::Button, true, &title)
-                                        });
-                                        cover.context_menu(|ui| {
-                                            if ui
-                                                .button(tr("podcasts.delete_subscription"))
-                                                .clicked()
-                                            {
-                                                feed_action = Some(FeedAction::Delete(id));
-                                                ui.close();
+                        let gap = 16.0;
+                        let tile_size = 168.0;
+                        let cols = (((ui.available_width() + gap) / (tile_size + gap)).floor()
+                            as usize)
+                            .max(1);
+                        let len = app.podcast.feeds.len();
+                        for start in (0..len).step_by(cols) {
+                            ui.horizontal_top(|ui| {
+                                ui.spacing_mut().item_spacing.x = gap;
+                                for index in start..(start + cols).min(len) {
+                                    let feed = &app.podcast.feeds[index];
+                                    let texture =
+                                        app.remote_covers.texture(&ctx, &feed.image_url, access);
+                                    let id = feed.id;
+                                    let title = feed.title.clone();
+                                    let summary = format!(
+                                        "{} episodes · {} unplayed",
+                                        feed.episode_count, feed.unplayed_count
+                                    );
+                                    let initials = initials(&title);
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(168.0, 220.0),
+                                        egui::Layout::top_down(egui::Align::Min),
+                                        |ui| {
+                                            ui.set_min_size(egui::vec2(168.0, 220.0));
+                                            let cover = cover_art(
+                                                ui,
+                                                texture.as_ref(),
+                                                168.0,
+                                                &initials,
+                                                icons::MICROPHONE,
+                                            );
+                                            if cover.clicked() {
+                                                feed_action = Some(FeedAction::Select(id));
                                             }
-                                        });
-                                        ui.add_space(6.0);
-                                        ui.add(
-                                            egui::Label::new(
-                                                th::semibold(&title, th::TEXT_BODY)
-                                                    .color(th::text()),
-                                            )
-                                            .truncate(),
-                                        );
-                                        ui.horizontal(|ui| {
-                                            ui.label(
-                                                RichText::new(summary)
-                                                    .size(th::TEXT_CAPTION)
-                                                    .color(th::text_dim()),
-                                            );
-                                            ui.with_layout(
-                                                egui::Layout::right_to_left(egui::Align::Center),
-                                                |ui| {
-                                                    if icons::compact(
-                                                        ui,
-                                                        icons::TRASH,
-                                                        tr("podcasts.delete_subscription"),
-                                                    )
+                                            cover.widget_info(|| {
+                                                WidgetInfo::labeled(
+                                                    WidgetType::Button,
+                                                    true,
+                                                    &title,
+                                                )
+                                            });
+                                            cover.context_menu(|ui| {
+                                                if ui
+                                                    .button(tr("podcasts.delete_subscription"))
                                                     .clicked()
-                                                    {
-                                                        feed_action = Some(FeedAction::Delete(id));
-                                                    }
-                                                },
+                                                {
+                                                    feed_action = Some(FeedAction::Delete(id));
+                                                    ui.close();
+                                                }
+                                            });
+                                            ui.add_space(6.0);
+                                            ui.add(
+                                                egui::Label::new(
+                                                    th::semibold(&title, th::TEXT_BODY)
+                                                        .color(th::text()),
+                                                )
+                                                .truncate(),
                                             );
-                                        });
-                                    },
-                                );
-                            }
-                        });
+                                            ui.horizontal(|ui| {
+                                                ui.label(
+                                                    RichText::new(summary)
+                                                        .size(th::TEXT_CAPTION)
+                                                        .color(th::text_dim()),
+                                                );
+                                                ui.with_layout(
+                                                    egui::Layout::right_to_left(
+                                                        egui::Align::Center,
+                                                    ),
+                                                    |ui| {
+                                                        if icons::compact(
+                                                            ui,
+                                                            icons::TRASH,
+                                                            tr("podcasts.delete_subscription"),
+                                                        )
+                                                        .clicked()
+                                                        {
+                                                            feed_action =
+                                                                Some(FeedAction::Delete(id));
+                                                        }
+                                                    },
+                                                );
+                                            });
+                                        },
+                                    );
+                                }
+                            });
+                            ui.add_space(gap);
+                        }
                     });
             } else {
                 egui::ScrollArea::vertical()
