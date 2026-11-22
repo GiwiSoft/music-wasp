@@ -27,6 +27,10 @@ Published advisories: <https://github.com/GiwiSoft/music-wasp/security/advisorie
 
 Security fixes are issued for the latest release only. Upgrade before reporting; if an issue affects only an older version, say which one. A new minor release supersedes the previous minor immediately.
 
+## Supply chain
+
+Each tagged release publishes a CycloneDX 1.6 SBOM (`musicwasp-<tag>-sbom.cdx.json`) for the workspace and its Cargo dependency graph. It is generated in CI from `Cargo.lock` and attached to the release. Use it to identify components and versions when reporting a vulnerability. Missing, incomplete or inaccurate SBOM data is in scope for this policy.
+
 ## Scope
 
 In scope:

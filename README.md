@@ -64,6 +64,13 @@ cargo build --release
 
 Or download a release from <https://github.com/GiwiSoft/music-wasp/releases>.
 
+### Release assets
+
+Each tagged release publishes Linux, Windows, macOS arm64 and macOS x86_64 archives, plus
+`musicwasp-<tag>-sbom.cdx.json`. The SBOM is CycloneDX 1.6 JSON for the full workspace and Cargo
+dependency graph, generated from `Cargo.lock` by CI. Attach it to vulnerability scans or use it to
+check which crate versions a release contains.
+
 Optional Linux desktop launcher:
 
 ```bash
@@ -195,8 +202,7 @@ Report vulnerabilities privately through GitHub Security Advisories:
 <https://github.com/GiwiSoft/music-wasp/security/advisories/new>.
 See [SECURITY.md](SECURITY.md) for scope, supported versions and response times.
 
-Tagged releases include a CycloneDX 1.6 SBOM (`*-sbom.cdx.json`) generated from
-`Cargo.lock` by CI.
+Tagged releases include a CycloneDX 1.6 SBOM; see [Release assets](#release-assets).
 
 ## License
 
