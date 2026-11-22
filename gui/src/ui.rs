@@ -1328,7 +1328,39 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                 divider(ui);
 
                 if let Some(track) = &current_track {
-                    ui.add_space(4.0);
+                    ui.add_space(8.0);
+                    let cover = (ui.available_width() * 0.62).clamp(120.0, 176.0);
+                    ui.vertical_centered(|ui| {
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(cover, cover), egui::Sense::hover());
+                        match &app.art {
+                            Some((_, tex)) => {
+                                egui::Image::new((tex.id(), rect.size()))
+                                    .corner_radius(th::corner(10))
+                                    .paint_at(ui, rect);
+                            }
+                            None => {
+                                ui.painter()
+                                    .rect_filled(rect, th::corner(10), th::bg_row_alt());
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    icons::MUSIC_NOTES.as_str(),
+                                    egui::FontId::proportional(cover * 0.28),
+                                    th::text_dim(),
+                                );
+                            }
+                        }
+                        if !th::is_square() {
+                            ui.painter().rect_stroke(
+                                rect,
+                                th::corner(10),
+                                egui::Stroke::new(1.0, th::hairline()),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                    });
+                    ui.add_space(8.0);
                     ui.label(
                         th::semibold(tr("queue.now_playing"), th::TEXT_CAPTION)
                             .color(th::text_dim()),
