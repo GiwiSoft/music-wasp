@@ -189,6 +189,15 @@ scripts/dev-watch.sh                   # restart GUI on save
 WATCH_MODE=check scripts/dev-watch.sh  # fast check
 ```
 
+## Security
+
+Report vulnerabilities privately through GitHub Security Advisories:
+<https://github.com/GiwiSoft/music-wasp/security/advisories/new>.
+See [SECURITY.md](SECURITY.md) for scope, supported versions and response times.
+
+Tagged releases include a CycloneDX 1.6 SBOM (`*-sbom.cdx.json`) generated from
+`Cargo.lock` by CI.
+
 ## License
 
 GPL-3.0-only. See [LICENSE](LICENSE).

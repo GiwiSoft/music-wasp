@@ -65,6 +65,73 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+  # CycloneDX SBOM for the dependency graph. Runs on every CI event and is
+  # attached to tagged releases as a separate asset.
+  sbom:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install cargo-sbom
+        run: cargo install cargo-sbom --locked --version 0.10.0
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          set -euo pipefail
+          suffix="${GITHUB_REF_NAME//\//-}"
+          name="musicwasp-${suffix}-sbom.cdx.json"
+          package_version=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(p["version"] for p in d["packages"] if p["name"] == "musicwasp-gui"))')
+          version="$package_version"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [ "$tag_version" != "$package_version" ]; then
+              echo "::error::tag $tag_version does not match musicwasp-gui $package_version"
+              exit 1
+            fi
+          fi
+          cargo sbom --output-format cyclone_dx_json_1_6 > "$name"
+          python3 - "$name" "$version" <<'PY'
+          import json
+          import sys
+
+          path, version = sys.argv[1], sys.argv[2]
+          with open(path, encoding="utf-8") as source:
+              document = json.load(source)
+
+          assert document["bomFormat"] == "CycloneDX"
+          assert document["specVersion"] == "1.6"
+          components = document.get("components", [])
+          assert components, "SBOM has no components"
+
+          # cargo-sbom leaves the root component version empty.
+          root = document["metadata"]["component"]
+          root["name"] = "MusicWasp"
+          root["version"] = version
+
+          with open(path, "w", encoding="utf-8") as target:
+              json.dump(document, target, indent=2)
+              target.write("\n")
+
+          print(f"{path}: {len(components)} components, version {version}")
+          PY
+          test -s "$name"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: "*-sbom.cdx.json"
+          if-no-files-found: error
+
   # Tag pushes skip tests (main already passed) and build the release archives.
   # The production environment supplies the AcoustID application key that the
   # core build script bakes into the binary.
@@ -173,7 +240,7 @@ jobs:
   # commits and pull requests since the last tag.
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build-release
+    needs: [build-release, sbom]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -203,6 +270,20 @@ jobs:
           tar -tzf dist/*-macos-x86_64.tar.gz | grep -q '/musicwasp$'
           tar -tzf dist/*-macos-x86_64.tar.gz | grep -q '/musicwasp-cli$'
           tar -tzf dist/*-macos-x86_64.tar.gz | grep -q 'assets/i18n/fr.json'
+          sbom=$(find dist -maxdepth 1 -name '*-sbom.cdx.json' -print -quit)
+          test -n "$sbom"
+          python3 - "$sbom" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              document = json.load(source)
+          assert document["bomFormat"] == "CycloneDX"
+          assert document["specVersion"] == "1.6"
+          assert document.get("components"), "SBOM has no components"
+          assert document["metadata"]["component"].get("version"), "SBOM has no product version"
+          print(f"SBOM verified: {len(document['components'])} components")
+          PY
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -240,5 +321,9 @@ jobs:
           }
           test -n "$(printf '%s\n' "$assets" | grep 'macos-x86_64.tar.gz')" || {
             echo "macOS x86_64 archive is not attached to the release" >&2
+            exit 1
+          }
+          test -n "$(printf '%s\n' "$assets" | grep 'sbom.cdx.json')" || {
+            echo "SBOM is not attached to the release" >&2
             exit 1
           }
