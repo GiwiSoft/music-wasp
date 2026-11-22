@@ -1,6 +1,7 @@
 //! MusicWasp core: library database, metadata scanning, playback engine.
 
 pub mod analysis;
+pub mod artwork;
 pub mod autotag;
 pub mod backup;
 pub mod bounded;

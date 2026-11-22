@@ -227,5 +227,9 @@
   "ui.auto_tag_selection": "Auto-tag de la sélection",
   "queue.now_playing": "Lecture en cours",
   "ui.back_up_library": "Sauvegarder la bibliothèque",
-  "ui.restore": "Restaurer…"
+  "ui.restore": "Restaurer…",
+  "ui.grid_view": "Vue grille",
+  "ui.list_view": "Vue liste",
+  "radio.cover_url_optional": "URL de la pochette (facultatif)",
+  "radio.cover_url_hint": "https://example.com/logo.png"
 }

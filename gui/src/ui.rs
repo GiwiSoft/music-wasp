@@ -168,6 +168,68 @@ fn nav_row(
     response
 }
 
+/// Square remote artwork with a quiet fallback. Podcasts use a microphone
+/// glyph; radio stations pass initials so each station still gets a cover.
+pub(crate) fn cover_art(
+    ui: &mut egui::Ui,
+    texture: Option<&egui::TextureHandle>,
+    size: f32,
+    label: &str,
+    icon: egui_phosphor_icons::Icon,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
+    match texture {
+        Some(texture) => {
+            egui::Image::new((texture.id(), rect.size()))
+                .corner_radius(th::corner(8))
+                .paint_at(ui, rect);
+        }
+        None => {
+            ui.painter()
+                .rect_filled(rect, th::corner(8), th::bg_row_alt());
+            let font = egui::FontId::new(
+                size * 0.26,
+                egui::FontFamily::Name(th::SEMIBOLD_FAMILY.into()),
+            );
+            if label.is_empty() {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    icon.as_str(),
+                    egui::FontId::proportional(size * 0.34),
+                    th::text_dim(),
+                );
+            } else {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    font,
+                    th::text_dim(),
+                );
+            }
+        }
+    }
+    if !th::is_square() {
+        ui.painter().rect_stroke(
+            rect,
+            th::corner(8),
+            egui::Stroke::new(1.0, th::hairline()),
+            egui::StrokeKind::Inside,
+        );
+    }
+    response
+}
+
+/// Up to two initials from a station or feed name.
+pub(crate) fn initials(name: &str) -> String {
+    name.split_whitespace()
+        .filter_map(|word| word.chars().find(|ch| ch.is_alphanumeric()))
+        .take(2)
+        .flat_map(|ch| ch.to_uppercase())
+        .collect()
+}
+
 /// Thin horizontal rule with generous breathing room.
 fn divider(ui: &mut egui::Ui) {
     let width = ui.available_width();

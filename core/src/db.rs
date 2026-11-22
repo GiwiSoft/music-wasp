@@ -110,11 +110,12 @@ fn migrate(conn: &Connection) -> Result<()> {
 
         -- Internet radio stations; playback streams straight from the URL.
         CREATE TABLE IF NOT EXISTS radio_stations (
-            id       INTEGER PRIMARY KEY,
-            name     TEXT NOT NULL,
-            url      TEXT NOT NULL UNIQUE,
-            genre    TEXT NOT NULL DEFAULT '',
-            added_at INTEGER NOT NULL DEFAULT (unixepoch())
+            id        INTEGER PRIMARY KEY,
+            name      TEXT NOT NULL,
+            url       TEXT NOT NULL UNIQUE,
+            genre     TEXT NOT NULL DEFAULT '',
+            image_url TEXT NOT NULL DEFAULT '',
+            added_at  INTEGER NOT NULL DEFAULT (unixepoch())
         );
 
         -- Podcast subscriptions and their episodes. Progress is kept per
@@ -173,6 +174,13 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_smart_playlists_folder ON smart_playlists(folder_id)",
         [],
     )?;
+    // Station artwork was added after the first radio schema.
+    if !has_column(conn, "radio_stations", "image_url")? {
+        conn.execute(
+            "ALTER TABLE radio_stations ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
 
     // Playback statistics were added after the first schema. Keep these
     // additive migrations so old libraries keep their rows and tags.

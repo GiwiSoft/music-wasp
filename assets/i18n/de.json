@@ -227,5 +227,9 @@
   "ui.auto_tag_selection": "Auswahl automatisch taggen",
   "queue.now_playing": "Wird wiedergegeben",
   "ui.back_up_library": "Bibliothek sichern",
-  "ui.restore": "Wiederherstellen…"
+  "ui.restore": "Wiederherstellen…",
+  "ui.grid_view": "Rasteransicht",
+  "ui.list_view": "Listenansicht",
+  "radio.cover_url_optional": "Cover-URL (optional)",
+  "radio.cover_url_hint": "https://example.com/logo.png"
 }

@@ -1393,6 +1393,8 @@ pub struct App {
     pub album_view: bool,
     pub album_groups: Vec<AlbumGroup>,
     pub(crate) album_covers: CoverCache,
+    /// Remote artwork for podcasts and radio, keyed by image URL.
+    pub(crate) remote_covers: crate::remote_covers::RemoteCoverCache,
     albums_dirty: bool,
     /// MilkDrop visualizer state.
     pub wgpu_state: Option<eframe::egui_wgpu::RenderState>,
@@ -1611,6 +1613,7 @@ impl App {
             album_view: false,
             album_groups: Vec::new(),
             album_covers: CoverCache::default(),
+            remote_covers: crate::remote_covers::RemoteCoverCache::default(),
             albums_dirty: true,
             wgpu_state,
             visualizer: None,
@@ -3007,6 +3010,16 @@ impl App {
     ) -> Option<egui::TextureHandle> {
         let key = album_key(&group.album, &group.artist);
         load_cover_texture(ctx, &mut self.album_covers, &key, Path::new(&group.path))
+    }
+
+    /// Cached remote artwork for a podcast or radio image URL.
+    pub fn remote_cover_texture(
+        &mut self,
+        ctx: &egui::Context,
+        url: &str,
+        access: musicwasp_core::netguard::Access,
+    ) -> Option<egui::TextureHandle> {
+        self.remote_covers.texture(ctx, url, access)
     }
 
     pub fn toggle_album_view(&mut self) {
@@ -5734,6 +5747,7 @@ impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
         self.album_covers.pump(&ctx);
+        self.remote_covers.pump(&ctx);
         crate::theme::paint_backdrop(root, self.settings.skin);
         self.capture_window(&ctx);
         if self.watch_dirty {

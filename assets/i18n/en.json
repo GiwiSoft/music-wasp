@@ -228,5 +228,9 @@
   "ui.auto_tag_selection": "Auto-tag selection",
   "queue.now_playing": "Now playing",
   "ui.back_up_library": "Back up library",
-  "ui.restore": "Restore…"
+  "ui.restore": "Restore…",
+  "ui.grid_view": "Grid view",
+  "ui.list_view": "List view",
+  "radio.cover_url_optional": "Cover URL (optional)",
+  "radio.cover_url_hint": "https://example.com/logo.png"
 }

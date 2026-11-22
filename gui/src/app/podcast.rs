@@ -20,6 +20,7 @@ pub struct PodcastState {
     pub loading: bool,
     pub rx: Option<Receiver<PodcastMsg>>,
     pub show_dialog: bool,
+    pub grid: bool,
     pub url: String,
 }
 

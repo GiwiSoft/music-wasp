@@ -32,6 +32,26 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                 {
                     app.refresh_selected_podcast();
                 }
+                if app.podcast.selected_feed.is_none() {
+                    let grid = app.podcast.grid;
+                    if icons::compact(
+                        ui,
+                        if grid {
+                            icons::LIST
+                        } else {
+                            icons::SQUARES_FOUR
+                        },
+                        if grid {
+                            tr("ui.list_view")
+                        } else {
+                            tr("ui.grid_view")
+                        },
+                    )
+                    .clicked()
+                    {
+                        app.podcast.grid = !grid;
+                    }
+                }
             });
         });
         if let Some(status) = &app.podcast.status {
@@ -48,6 +68,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
             });
         }
         ui.separator();
+        let access = app.podcast_access();
 
         if app.podcast.selected_feed.is_none() {
             if app.podcast.feeds.is_empty() {
@@ -65,46 +86,161 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                 Delete(i64),
             }
             let mut feed_action = None;
-            egui::ScrollArea::vertical()
-                .id_salt("podcast_feeds")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for index in 0..app.podcast.feeds.len() {
-                        let feed = &app.podcast.feeds[index];
-                        ui.horizontal(|ui| {
-                            let label = tr("podcasts.feed_summary")
-                                .replace("{title}", &feed.title)
-                                .replace("{count}", &feed.episode_count.to_string())
-                                .replace("{unplayed}", &feed.unplayed_count.to_string());
-                            let width = (ui.available_width() - 36.0).max(80.0);
-                            let response = ui.add_sized(
-                                [width, 28.0],
-                                egui::Label::new(
-                                    RichText::new(label).size(th::TEXT_BODY).color(th::text()),
-                                )
-                                .sense(egui::Sense::click())
-                                .truncate(),
-                            );
-                            if response
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                feed_action = Some(FeedAction::Select(feed.id));
-                            }
-                            if icons::compact(ui, icons::TRASH, tr("podcasts.delete_subscription"))
-                                .clicked()
-                            {
-                                feed_action = Some(FeedAction::Delete(feed.id));
+            if app.podcast.grid {
+                egui::ScrollArea::vertical()
+                    .id_salt("podcast_feeds_grid")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing = egui::vec2(16.0, 16.0);
+                            for index in 0..app.podcast.feeds.len() {
+                                let feed = &app.podcast.feeds[index];
+                                let texture =
+                                    app.remote_covers.texture(&ctx, &feed.image_url, access);
+                                let id = feed.id;
+                                let title = feed.title.clone();
+                                let summary = format!(
+                                    "{} episodes · {} unplayed",
+                                    feed.episode_count, feed.unplayed_count
+                                );
+                                let initials = initials(&title);
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(168.0, 220.0),
+                                    egui::Layout::top_down(egui::Align::Min),
+                                    |ui| {
+                                        let cover = cover_art(
+                                            ui,
+                                            texture.as_ref(),
+                                            156.0,
+                                            &initials,
+                                            icons::MICROPHONE,
+                                        );
+                                        if cover.clicked() {
+                                            feed_action = Some(FeedAction::Select(id));
+                                        }
+                                        cover.widget_info(|| {
+                                            WidgetInfo::labeled(WidgetType::Button, true, &title)
+                                        });
+                                        cover.context_menu(|ui| {
+                                            if ui
+                                                .button(tr("podcasts.delete_subscription"))
+                                                .clicked()
+                                            {
+                                                feed_action = Some(FeedAction::Delete(id));
+                                                ui.close();
+                                            }
+                                        });
+                                        ui.add_space(6.0);
+                                        ui.add(
+                                            egui::Label::new(
+                                                th::semibold(&title, th::TEXT_BODY)
+                                                    .color(th::text()),
+                                            )
+                                            .truncate(),
+                                        );
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                RichText::new(summary)
+                                                    .size(th::TEXT_CAPTION)
+                                                    .color(th::text_dim()),
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if icons::compact(
+                                                        ui,
+                                                        icons::TRASH,
+                                                        tr("podcasts.delete_subscription"),
+                                                    )
+                                                    .clicked()
+                                                    {
+                                                        feed_action = Some(FeedAction::Delete(id));
+                                                    }
+                                                },
+                                            );
+                                        });
+                                    },
+                                );
                             }
                         });
-                        ui.label(
-                            RichText::new(feed.url.as_str())
-                                .size(th::TEXT_CAPTION)
-                                .color(th::text_dim()),
-                        );
-                        ui.add_space(3.0);
-                    }
-                });
+                    });
+            } else {
+                egui::ScrollArea::vertical()
+                    .id_salt("podcast_feeds")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for index in 0..app.podcast.feeds.len() {
+                            let feed = &app.podcast.feeds[index];
+                            let texture = app.remote_covers.texture(&ctx, &feed.image_url, access);
+                            let id = feed.id;
+                            let title = feed.title.clone();
+                            let url = feed.url.clone();
+                            let summary = format!(
+                                "{} episodes · {} unplayed",
+                                feed.episode_count, feed.unplayed_count
+                            );
+                            let initials = initials(&title);
+                            ui.horizontal(|ui| {
+                                let cover = cover_art(
+                                    ui,
+                                    texture.as_ref(),
+                                    48.0,
+                                    &initials,
+                                    icons::MICROPHONE,
+                                );
+                                if cover.clicked() {
+                                    feed_action = Some(FeedAction::Select(id));
+                                }
+                                let cover = cover.on_hover_text(&title);
+                                cover.context_menu(|ui| {
+                                    if ui.button(tr("podcasts.delete_subscription")).clicked() {
+                                        feed_action = Some(FeedAction::Delete(id));
+                                        ui.close();
+                                    }
+                                });
+                                ui.vertical(|ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            th::semibold(&title, th::TEXT_BODY).color(th::text()),
+                                        )
+                                        .truncate(),
+                                    );
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(summary)
+                                                .size(th::TEXT_CAPTION)
+                                                .color(th::text_dim()),
+                                        )
+                                        .truncate(),
+                                    );
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(url)
+                                                .size(th::TEXT_CAPTION)
+                                                .color(th::text_dim()),
+                                        )
+                                        .truncate(),
+                                    );
+                                });
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if icons::compact(
+                                            ui,
+                                            icons::TRASH,
+                                            tr("podcasts.delete_subscription"),
+                                        )
+                                        .clicked()
+                                        {
+                                            feed_action = Some(FeedAction::Delete(id));
+                                        }
+                                    },
+                                );
+                            });
+                            ui.add_space(4.0);
+                        }
+                    });
+            }
             if let Some(action) = feed_action {
                 match action {
                     FeedAction::Select(id) => app.select_podcast_feed(id),
@@ -113,27 +249,45 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
             }
         } else {
             let feed_id = app.podcast.selected_feed.unwrap_or_default();
-            let title = app
+            let feed = app
                 .podcast
                 .feeds
                 .iter()
                 .find(|feed| feed.id == feed_id)
+                .cloned();
+            let title = feed
+                .as_ref()
                 .map(|feed| feed.title.clone())
                 .unwrap_or_else(|| tr("podcasts.feed_fallback").to_string());
+            let feed_image = feed
+                .as_ref()
+                .map(|feed| feed.image_url.clone())
+                .unwrap_or_default();
+            let feed_initials = initials(&title);
             ui.horizontal(|ui| {
                 if ui.button(tr("podcasts.all_feeds")).clicked() {
                     app.podcast.selected_feed = None;
                     app.podcast.episodes.clear();
                 }
-                ui.label(th::semibold(title, th::TEXT_TITLE).color(th::text()));
-                ui.label(
-                    RichText::new(
-                        tr("podcasts.episode_count")
-                            .replace("{count}", &app.podcast.episodes.len().to_string()),
-                    )
-                    .size(th::TEXT_CAPTION)
-                    .color(th::text_dim()),
+                let texture = app.remote_covers.texture(&ctx, &feed_image, access);
+                cover_art(
+                    ui,
+                    texture.as_ref(),
+                    44.0,
+                    &feed_initials,
+                    icons::MICROPHONE,
                 );
+                ui.vertical(|ui| {
+                    ui.label(th::semibold(title, th::TEXT_TITLE).color(th::text()));
+                    ui.label(
+                        RichText::new(
+                            tr("podcasts.episode_count")
+                                .replace("{count}", &app.podcast.episodes.len().to_string()),
+                        )
+                        .size(th::TEXT_CAPTION)
+                        .color(th::text_dim()),
+                    );
+                });
             });
             ui.add_space(4.0);
             if app.podcast.episodes.is_empty() {
@@ -147,7 +301,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
             let mut play_episode = None;
             // Two single-line labels plus the separator. `show_rows` needs an
             // exact height, so descriptions are truncated instead of wrapping.
-            let row_height = 46.0;
+            let row_height = 62.0;
             egui::ScrollArea::vertical()
                 .id_salt("podcast_episodes")
                 .auto_shrink([false, false])
@@ -177,6 +331,20 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                                         {
                                             play_episode = Some(index);
                                         }
+                                        let image = if episode.image_url.is_empty() {
+                                            feed_image.as_str()
+                                        } else {
+                                            episode.image_url.as_str()
+                                        };
+                                        let texture =
+                                            app.remote_covers.texture(&ctx, image, access);
+                                        cover_art(
+                                            ui,
+                                            texture.as_ref(),
+                                            44.0,
+                                            &feed_initials,
+                                            icons::MICROPHONE,
+                                        );
                                         ui.vertical(|ui| {
                                             ui.add(
                                                 egui::Label::new(

@@ -27,9 +27,11 @@ pub struct RadioState {
     pub stations: Vec<RadioStation>,
     pub status: Option<String>,
     pub show_dialog: bool,
+    pub grid: bool,
     pub name: String,
     pub url: String,
     pub genre: String,
+    pub image_url: String,
 }
 
 pub struct StreamState {
@@ -60,7 +62,7 @@ impl App {
         }
     }
 
-    pub fn add_radio_station(&mut self, name: &str, url: &str, genre: &str) {
+    pub fn add_radio_station(&mut self, name: &str, url: &str, genre: &str, image_url: &str) {
         let url = url.trim();
         if !(url.starts_with("https://") || url.starts_with("http://")) {
             self.radio.status = Some(tr("radio.invalid_url").to_string());
@@ -70,12 +72,16 @@ impl App {
             self.radio.status = Some(tr("radio.invalid_name").to_string());
             return;
         }
-        match self.lib.add_radio_station(name, url, genre) {
+        match self
+            .lib
+            .add_radio_station_with_image(name, url, genre, image_url)
+        {
             Ok(_) => {
                 self.radio.show_dialog = false;
                 self.radio.name.clear();
                 self.radio.url.clear();
                 self.radio.genre.clear();
+                self.radio.image_url.clear();
                 self.radio.status = Some(tr("radio.saved").to_string());
                 self.refresh_radio_stations();
             }

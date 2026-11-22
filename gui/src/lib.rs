@@ -16,6 +16,7 @@ mod mini_player;
 #[cfg(target_os = "linux")]
 mod mpris;
 mod organize;
+mod remote_covers;
 pub mod settings;
 mod skin_editor;
 pub mod theme;

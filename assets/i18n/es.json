@@ -227,5 +227,9 @@
   "ui.auto_tag_selection": "Etiquetar selección automáticamente",
   "queue.now_playing": "Reproduciendo",
   "ui.back_up_library": "Copia de seguridad",
-  "ui.restore": "Restaurar…"
+  "ui.restore": "Restaurar…",
+  "ui.grid_view": "Vista de cuadrícula",
+  "ui.list_view": "Vista de lista",
+  "radio.cover_url_optional": "URL de la portada (opcional)",
+  "radio.cover_url_hint": "https://example.com/logo.png"
 }

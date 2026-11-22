@@ -33,6 +33,10 @@ pub(super) fn apply_initial(app: &mut App) {
     if debug_env::is_set("MUSICWASP_LYRICS") {
         app.settings.lyrics_open = true;
     }
+    if debug_env::is_set("MUSICWASP_GRID") {
+        app.podcast.grid = true;
+        app.radio.grid = true;
+    }
 }
 
 impl App {

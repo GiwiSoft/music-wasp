@@ -137,11 +137,28 @@ impl Library {
     }
 
     pub fn add_radio_station(&self, name: &str, url: &str, genre: &str) -> Result<i64> {
-        crate::radio::add(&self.conn, name, url, genre)
+        crate::radio::add(&self.conn, name, url, genre, "")
     }
 
-    pub fn update_radio_station(&self, id: i64, name: &str, url: &str, genre: &str) -> Result<()> {
-        crate::radio::update(&self.conn, id, name, url, genre)
+    pub fn add_radio_station_with_image(
+        &self,
+        name: &str,
+        url: &str,
+        genre: &str,
+        image_url: &str,
+    ) -> Result<i64> {
+        crate::radio::add(&self.conn, name, url, genre, image_url)
+    }
+
+    pub fn update_radio_station(
+        &self,
+        id: i64,
+        name: &str,
+        url: &str,
+        genre: &str,
+        image_url: &str,
+    ) -> Result<()> {
+        crate::radio::update(&self.conn, id, name, url, genre, image_url)
     }
 
     pub fn delete_radio_station(&self, id: i64) -> Result<()> {
