@@ -94,15 +94,23 @@ impl RemoteCoverCache {
                         .ok()
                         .and_then(|bytes| crate::images::from_bytes(&bytes).ok())
                         .map(|image| {
-                            let image = image.resize_to_fill(
+                            let rgba = trim_background(image.to_rgba8());
+                            let resized = image::DynamicImage::ImageRgba8(rgba).resize(
                                 SIDE,
                                 SIDE,
                                 image::imageops::FilterType::Triangle,
                             );
-                            let rgba = image.to_rgba8();
+                            // Letterbox instead of cropping: station logos are often
+                            // wider than they are tall.
+                            let mut canvas =
+                                image::RgbaImage::from_pixel(SIDE, SIDE, image::Rgba([0, 0, 0, 0]));
+                            let rgba = resized.to_rgba8();
+                            let x = i64::from((SIDE - rgba.width()) / 2);
+                            let y = i64::from((SIDE - rgba.height()) / 2);
+                            image::imageops::overlay(&mut canvas, &rgba, x, y);
                             ColorImage::from_rgba_unmultiplied(
                                 [SIDE as usize, SIDE as usize],
-                                &rgba.into_raw(),
+                                &canvas.into_raw(),
                             )
                         });
                     if done_tx.send((job.url, image)).is_err() {
@@ -147,4 +155,33 @@ impl RemoteCoverCache {
             }
         }
     }
+}
+
+/// Drop uniform margins so a logo on a plain background fills its tile.
+fn trim_background(image: image::RgbaImage) -> image::RgbaImage {
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 {
+        return image;
+    }
+    let background = image.get_pixel(0, 0).0;
+    let differs = |pixel: &image::Rgba<u8>| {
+        pixel
+            .0
+            .iter()
+            .zip(background.iter())
+            .any(|(value, base)| value.abs_diff(*base) > 12)
+    };
+    let (mut left, mut top, mut right, mut bottom) = (width, height, 0, 0);
+    for (x, y, pixel) in image.enumerate_pixels() {
+        if differs(pixel) {
+            left = left.min(x);
+            top = top.min(y);
+            right = right.max(x);
+            bottom = bottom.max(y);
+        }
+    }
+    if left > right || top > bottom {
+        return image;
+    }
+    image::imageops::crop_imm(&image, left, top, right - left + 1, bottom - top + 1).to_image()
 }

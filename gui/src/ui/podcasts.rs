@@ -111,7 +111,7 @@ pub fn podcasts_view(app: &mut App, ui: &mut egui::Ui) {
                                         let cover = cover_art(
                                             ui,
                                             texture.as_ref(),
-                                            156.0,
+                                            168.0,
                                             &initials,
                                             icons::MICROPHONE,
                                         );

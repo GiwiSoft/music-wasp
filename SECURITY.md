@@ -21,8 +21,8 @@ Published advisories: <https://github.com/GiwiSoft/music-wasp/security/advisorie
 
 | Version | Supported |
 | --- | --- |
-| v0.8.x (latest release line) | Yes |
-| v0.7.x and older | No |
+| v0.9.x (current release line) | Yes |
+| v0.8.x and older | No |
 | `main` (next release) | Fixes land here first, not a production build |
 
 Security fixes are issued for the latest release only. Upgrade before reporting; if an issue affects only an older version, say which one. A new minor release supersedes the previous minor immediately.
