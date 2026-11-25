@@ -85,6 +85,8 @@ pub fn builder() -> egui::ViewportBuilder {
     egui::ViewportBuilder::default()
         .with_title("MusicWasp mini")
         .with_app_id("musicwasp-mini")
+        // Keep the mini player movable and closable through the desktop.
+        .with_decorations(true)
         .with_inner_size([330.0, 142.0])
         .with_min_inner_size([300.0, 132.0])
         .with_resizable(false)

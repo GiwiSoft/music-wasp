@@ -21,6 +21,10 @@ fi
 
 case "$mode" in
     gui)
+        # GNOME Wayland does not provide server-side decorations, so the window
+        # has no system title bar. Dev runs use XWayland by default; set
+        # MUSICWASP_X11=0 to test native Wayland drag-and-drop instead.
+        export MUSICWASP_X11="${MUSICWASP_X11:-1}"
         action="run -p musicwasp-gui"
         ;;
     check)

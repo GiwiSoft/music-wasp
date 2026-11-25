@@ -19,6 +19,8 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 800.0])
         .with_min_inner_size([900.0, 560.0])
+        // Let the desktop draw the title bar, borders and window controls.
+        .with_decorations(true)
         .with_drag_and_drop(true)
         // Match the `StartupWMClass` in `packaging/musicwasp.desktop`, so the
         // desktop shows the launcher icon for a running window.
